@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { PoseMetrics } from "./poseTracker";
 
 const API_URL =
   (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001") + "/api";
@@ -17,10 +18,29 @@ export async function clearToken(): Promise<void> {
   await AsyncStorage.removeItem(TOKEN_KEY);
 }
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** Thrown when the request never reached the server (offline, DNS, timeout). */
+export class NetworkError extends Error {
+  constructor(message = "Can't reach the server. Check your connection.") {
+    super(message);
+    this.name = "NetworkError";
+  }
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
-  timeoutMs = 15000
+  timeoutMs = 15000,
 ): Promise<T> {
   const token = await getToken();
   const headers: Record<string, string> = {
@@ -32,33 +52,31 @@ async function request<T>(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  let res: Response;
   try {
-    const res = await fetch(`${API_URL}${path}`, {
-      ...options,
-      headers,
-      signal: controller.signal,
-    });
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: "Request failed" }));
-      throw new ApiError(body.error ?? "Request failed", res.status, body.code);
+    res = await fetch(`${API_URL}${path}`, { ...options, headers, signal: controller.signal });
+  } catch (err) {
+    // Distinguish "server said no" from "never got there" — the UI treats them
+    // very differently (retry vs. sign out).
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new NetworkError("That took too long. Please try again.");
     }
-
-    return res.json() as Promise<T>;
+    throw new NetworkError();
   } finally {
     clearTimeout(timer);
   }
-}
 
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-    public code?: string
-  ) {
-    super(message);
-    this.name = "ApiError";
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}) as Record<string, unknown>);
+    throw new ApiError(
+      (body.error as string) ?? "Something went wrong. Please try again.",
+      res.status,
+      body.code as string | undefined,
+    );
   }
+
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -67,13 +85,13 @@ export const auth = {
   signup: (email: string, password: string, name: string) =>
     request<{ token: string; user: { id: string; email: string; name: string } }>(
       "/auth/signup",
-      { method: "POST", body: JSON.stringify({ email, password, name }) }
+      { method: "POST", body: JSON.stringify({ email, password, name }) },
     ),
 
   login: (email: string, password: string) =>
     request<{ token: string; user: { id: string; email: string; name: string } }>(
       "/auth/login",
-      { method: "POST", body: JSON.stringify({ email, password }) }
+      { method: "POST", body: JSON.stringify({ email, password }) },
     ),
 
   me: () =>
@@ -82,6 +100,18 @@ export const auth = {
       profile: Profile | null;
       subscription: SubscriptionRecord | null;
     }>("/auth/me"),
+
+  forgotPassword: (email: string) =>
+    request<{ message: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    request<{ message: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
+    }),
 };
 
 // ─── Profile ─────────────────────────────────────────────────────────────────
@@ -108,8 +138,7 @@ export interface SubscriptionRecord {
 }
 
 export const profile = {
-  get: () =>
-    request<{ profile: Profile; subscription: SubscriptionRecord }>("/profile"),
+  get: () => request<{ profile: Profile; subscription: SubscriptionRecord }>("/profile"),
 
   update: (data: Partial<Omit<Profile, "id" | "userId">>) =>
     request<{ profile: Profile }>("/profile", {
@@ -118,9 +147,18 @@ export const profile = {
     }),
 };
 
-// ─── Analyses ─────────────────────────────────────────────────────────────────
+// ─── Analyses ────────────────────────────────────────────────────────────────
 
-export type JointKey = "leftKnee" | "rightKnee" | "leftHip" | "rightHip" | "leftElbow" | "rightElbow";
+/**
+ * How an analysis's numbers were produced.
+ *
+ * - `pose-measured`      scores computed from measured joint angles
+ * - `unscored`           the clip couldn't be tracked; no scores exist
+ * - `legacy-unverified`  created before measurement existed — scores were
+ *                        generated text, not measurements, and the UI labels
+ *                        them as such rather than presenting them as data
+ */
+export type AnalysisMethod = "pose-measured" | "unscored" | "legacy-unverified";
 
 export interface AnalysisRecord {
   id: string;
@@ -128,18 +166,20 @@ export interface AnalysisRecord {
   title: string;
   sport: string;
   status: "pending" | "processing" | "complete" | "failed";
+  analysisMethod: AnalysisMethod;
   videoUrl?: string;
-  thumbnailUrl?: string;
   duration?: number;
-  overallScore?: number;
-  techniqueScore?: number;
-  powerScore?: number;
-  balanceScore?: number;
-  consistencyScore?: number;
-  mobilityScore?: number;
-  speedScore?: number;
+  /** `null` means "not measured" — never render a null score as 0. */
+  overallScore: number | null;
+  techniqueScore: number | null;
+  powerScore: number | null;
+  balanceScore: number | null;
+  consistencyScore: number | null;
+  mobilityScore: number | null;
+  speedScore: number | null;
   strengths: string[];
   improvements: string[];
+  summary?: string | null;
   uploadedAt: string;
 }
 
@@ -155,37 +195,51 @@ export interface TipRecord {
 export interface RiskRecord {
   id: string;
   joint: string;
+  /** Share of tracked frames in the risk band — a measurement, not a forecast. */
   riskPercent: number;
+  cautionPercent?: number | null;
+  observedMin?: number | null;
+  observedMax?: number | null;
   description: string;
   prevention: string;
 }
 
+export interface UsageRecord {
+  tier: "free" | "pro" | "elite";
+  /** `-1` means unlimited. */
+  limit: number;
+  used: number;
+  remaining: number;
+  resetsAt: string;
+}
+
 export const analyses = {
-  list: () =>
-    request<{ analyses: AnalysisRecord[] }>("/analyses"),
+  list: () => request<{ analyses: AnalysisRecord[] }>("/analyses"),
+
+  usage: () => request<UsageRecord>("/analyses/usage"),
 
   create: (data: {
     title: string;
     sport: string;
     videoUrl?: string;
     duration?: number;
-    jointAngles?: Record<string, number>;
+    poseMetrics?: PoseMetrics;
   }) =>
-    request<{ analysis: AnalysisRecord }>("/analyses", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }, 120000),  // Claude analysis can take up to 2 minutes
+    request<{ analysis: AnalysisRecord }>(
+      "/analyses",
+      { method: "POST", body: JSON.stringify(data) },
+      30000,
+    ),
 
   get: (id: string) =>
     request<{ analysis: AnalysisRecord; tips: TipRecord[]; injuryRisks: RiskRecord[] }>(
-      `/analyses/${id}`
+      `/analyses/${id}`,
     ),
 
-  delete: (id: string) =>
-    request<{ success: boolean }>(`/analyses/${id}`, { method: "DELETE" }),
+  delete: (id: string) => request<{ success: boolean }>(`/analyses/${id}`, { method: "DELETE" }),
 };
 
-// ─── Chat ─────────────────────────────────────────────────────────────────────
+// ─── Chat ────────────────────────────────────────────────────────────────────
 
 export interface ChatRecord {
   id: string;
@@ -196,38 +250,37 @@ export interface ChatRecord {
 }
 
 export const chat = {
-  history: () =>
-    request<{ messages: ChatRecord[] }>("/chat"),
+  history: () => request<{ messages: ChatRecord[] }>("/chat"),
 
   send: (content: string, referencedAnalysisId?: string) =>
-    request<{ userMessage: ChatRecord; assistantMessage: ChatRecord }>("/chat", {
-      method: "POST",
-      body: JSON.stringify({ content, referencedAnalysisId }),
-    }),
+    request<{ userMessage: ChatRecord; assistantMessage: ChatRecord }>(
+      "/chat",
+      { method: "POST", body: JSON.stringify({ content, referencedAnalysisId }) },
+      45000, // coach replies involve model inference
+    ),
 
   clear: () => request<{ success: boolean }>("/chat", { method: "DELETE" }),
 };
 
-// ─── Progress ─────────────────────────────────────────────────────────────────
+// ─── Progress ────────────────────────────────────────────────────────────────
 
 export interface ProgressRecord {
   id: string;
   date: string;
   overallScore: number;
-  techniqueScore?: number;
-  powerScore?: number;
-  balanceScore?: number;
-  consistencyScore?: number;
-  mobilityScore?: number;
-  speedScore?: number;
+  techniqueScore: number | null;
+  powerScore: number | null;
+  balanceScore: number | null;
+  consistencyScore: number | null;
+  mobilityScore: number | null;
+  speedScore: number | null;
 }
 
 export const progress = {
-  list: () =>
-    request<{ entries: ProgressRecord[] }>("/progress"),
+  list: () => request<{ entries: ProgressRecord[] }>("/progress"),
 };
 
-// ─── Achievements ──────────────────────────────────────────────────────────────
+// ─── Achievements ────────────────────────────────────────────────────────────
 
 export interface AchievementRecord {
   id: string;
@@ -241,14 +294,13 @@ export interface AchievementRecord {
 }
 
 export const achievements = {
-  list: () =>
-    request<{ achievements: AchievementRecord[] }>("/achievements"),
+  list: () => request<{ achievements: AchievementRecord[] }>("/achievements"),
 };
 
-// ─── Subscriptions ─────────────────────────────────────────────────────────────
+// ─── Subscriptions ───────────────────────────────────────────────────────────
 
 export interface Plan {
-  id: string;
+  id: "free" | "pro" | "elite";
   name: string;
   price: number;
   period: string | null;
@@ -264,17 +316,31 @@ export interface Plan {
 }
 
 export const subscriptions = {
-  plans: () =>
-    request<{ plans: Plan[] }>("/subscriptions/plans"),
+  /**
+   * `billingEnabled` reports whether in-app purchases actually work. When it is
+   * false the pricing screen must not present a working buy button — tapping it
+   * previously granted a paid tier with no payment taken.
+   */
+  plans: () => request<{ plans: Plan[]; billingEnabled: boolean }>("/subscriptions/plans"),
 
   current: () =>
-    request<{ subscription: SubscriptionRecord; plan: Plan }>(
-      "/subscriptions/current"
-    ),
+    request<{ subscription: SubscriptionRecord | null; plan: Plan }>("/subscriptions/current"),
 
-  update: (tier: "free" | "pro" | "elite", revenueCatCustomerId?: string) =>
-    request<{ subscription: SubscriptionRecord }>("/subscriptions/update", {
+  /** Self-service downgrade to Free. */
+  cancel: () =>
+    request<{ subscription: SubscriptionRecord }>("/subscriptions/cancel", { method: "POST" }),
+
+  /** Submit a store receipt for server-side verification. */
+  verifyPurchase: (receipt: string, platform: "ios" | "android") =>
+    request<{ subscription: SubscriptionRecord }>("/subscriptions/verify-purchase", {
       method: "POST",
-      body: JSON.stringify({ tier, revenueCatCustomerId }),
+      body: JSON.stringify({ receipt, platform }),
+    }),
+
+  /** Dev builds only; the server returns 404 unless explicitly enabled. */
+  devSetTier: (tier: "free" | "pro" | "elite") =>
+    request<{ subscription: SubscriptionRecord }>("/subscriptions/dev-set-tier", {
+      method: "POST",
+      body: JSON.stringify({ tier }),
     }),
 };

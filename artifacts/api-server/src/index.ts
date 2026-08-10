@@ -1,6 +1,14 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 
+// Validate required environment variables at startup
+const REQUIRED_ENV = ["DATABASE_URL", "JWT_SECRET", "ANTHROPIC_API_KEY"] as const;
+for (const key of REQUIRED_ENV) {
+  if (!process.env[key]) {
+    throw new Error(`Required environment variable "${key}" is missing. Check your .env file.`);
+  }
+}
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {

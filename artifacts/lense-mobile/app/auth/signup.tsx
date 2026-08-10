@@ -17,6 +17,13 @@ import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/lib/authContext";
 
+/**
+ * Kept in step with `safePassword` in the API's lib/validate.ts. Length is the
+ * single biggest factor in real-world resistance, so we ask for length rather
+ * than character-class rules people work around with "Password1!".
+ */
+const MIN_PASSWORD_LENGTH = 12;
+
 export default function SignupScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -37,7 +44,10 @@ export default function SignupScreen() {
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   async function handleSignup() {
-    if (!name.trim() || !email.trim() || password.length < 8) return;
+    // Must match `safePassword` on the server (min 12). A lower bar here would
+    // let the user submit and get back only a generic validation error, with no
+    // way to tell what was wrong.
+    if (!name.trim() || !email.trim() || password.length < MIN_PASSWORD_LENGTH) return;
     setError(null);
     setLoading(true);
     try {
@@ -50,9 +60,17 @@ export default function SignupScreen() {
     }
   }
 
-  const canSubmit = name.trim().length > 0 && email.trim().length > 0 && password.length >= 8;
+  const canSubmit =
+    name.trim().length > 0 && email.trim().length > 0 && password.length >= MIN_PASSWORD_LENGTH;
 
-  const passwordStrength = password.length === 0 ? null : password.length < 8 ? "weak" : password.length < 12 ? "good" : "strong";
+  const passwordStrength =
+    password.length === 0
+      ? null
+      : password.length < MIN_PASSWORD_LENGTH
+        ? "weak"
+        : password.length < 16
+          ? "good"
+          : "strong";
   const strengthColor = passwordStrength === "weak" ? colors.destructive : passwordStrength === "good" ? colors.warning : colors.success;
 
   const s = StyleSheet.create({
@@ -210,7 +228,11 @@ export default function SignupScreen() {
               }]} />
             </View>
             <Text style={[s.strengthText, { color: strengthColor }]}>
-              {passwordStrength === "weak" ? "Too short" : passwordStrength === "good" ? "Good" : "Strong"}
+              {passwordStrength === "weak"
+                ? `At least ${MIN_PASSWORD_LENGTH} characters`
+                : passwordStrength === "good"
+                  ? "Good"
+                  : "Strong"}
             </Text>
           </View>
         )}

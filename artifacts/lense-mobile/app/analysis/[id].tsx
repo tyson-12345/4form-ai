@@ -27,8 +27,21 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
-function scoreForKey(analysis: AnalysisRecord, key: typeof SCORE_KEYS[number]): number {
-  return (analysis as any)[`${key}Score`] ?? 0;
+/**
+ * Read a sub-score, preserving `null`.
+ *
+ * `null` means the dimension was not measurable — power and speed cannot be
+ * derived from 2D joint angles, and every score is null when a clip was too
+ * poorly tracked to measure. Collapsing that to 0 (the previous behaviour)
+ * displays "not measured" as "you scored zero", which is both wrong and
+ * demoralising.
+ */
+function scoreForKey(
+  analysis: AnalysisRecord,
+  key: (typeof SCORE_KEYS)[number],
+): number | null {
+  const value = (analysis as unknown as Record<string, number | null>)[`${key}Score`];
+  return typeof value === "number" ? value : null;
 }
 
 export default function AnalysisDetailScreen() {
@@ -133,7 +146,11 @@ export default function AnalysisDetailScreen() {
     );
   }
 
-  const overallScore = analysis.overallScore ?? 0;
+  const overallScore = analysis.overallScore;
+  /** Scores exist only when the clip was tracked well enough to measure. */
+  const isMeasured = analysis.analysisMethod === "pose-measured";
+  /** Created before measurement existed — its numbers were generated, not measured. */
+  const isLegacy = analysis.analysisMethod === "legacy-unverified";
 
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
@@ -148,6 +165,47 @@ export default function AnalysisDetailScreen() {
     heroTitle: { fontSize: 22, fontFamily: "Archivo_800ExtraBold", color: colors.foreground, letterSpacing: -0.4 },
     heroMeta:  { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 4, textTransform: "capitalize" },
     scoreRow:  { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 16 },
+    summary: {
+      fontSize: 14,
+      lineHeight: 21,
+      color: colors.foreground,
+      fontFamily: "Inter_400Regular",
+      marginTop: 14,
+    },
+    provenanceNote: {
+      flexDirection: "row",
+      gap: 9,
+      alignItems: "flex-start",
+      backgroundColor: colors.warning + "18",
+      borderWidth: 1,
+      borderColor: colors.warning + "44",
+      borderRadius: 12,
+      padding: 12,
+      marginTop: 14,
+    },
+    provenanceText: {
+      flex: 1,
+      fontSize: 12,
+      lineHeight: 17,
+      color: colors.foreground,
+      fontFamily: "Inter_400Regular",
+    },
+    unscoredCard: {
+      flexDirection: "row",
+      gap: 11,
+      alignItems: "flex-start",
+      backgroundColor: colors.surface3,
+      borderRadius: 12,
+      padding: 14,
+      marginTop: 16,
+    },
+    unscoredText: {
+      flex: 1,
+      fontSize: 12.5,
+      lineHeight: 18,
+      color: colors.mutedForeground,
+      fontFamily: "Inter_400Regular",
+    },
     overallCircle: {
       width: 72, height: 72, borderRadius: 36,
       borderWidth: 3, borderColor: colors.primary,
@@ -202,27 +260,70 @@ export default function AnalysisDetailScreen() {
             {" · "}{formatDate(analysis.uploadedAt)}
           </Text>
 
-          <View style={s.scoreRow}>
-            <View style={s.overallCircle}>
-              <Text style={s.overallNum}>{Math.round(overallScore)}</Text>
-              <Text style={s.overallLabel}>SCORE</Text>
+          {isLegacy && (
+            <View style={s.provenanceNote}>
+              <Feather name="alert-triangle" size={13} color={colors.warning} />
+              <Text style={s.provenanceText}>
+                This analysis predates pose measurement. Its scores were generated text, not
+                measurements from your video — treat them as indicative only. Re-upload the clip
+                for measured results.
+              </Text>
             </View>
-            <View style={s.scoresMini}>
-              {SCORE_KEYS.map((key) => {
-                const score = scoreForKey(analysis, key);
-                const clr = getScoreColor(score);
-                return (
-                  <View key={key} style={s.scoreMiniRow}>
-                    <Text style={s.scoreMiniLabel}>{key}</Text>
-                    <View style={s.scoreMiniBarBg}>
-                      <View style={[s.scoreMiniBarFill, { width: `${score}%` as any, backgroundColor: clr }]} />
+          )}
+
+          {analysis.summary ? <Text style={s.summary}>{analysis.summary}</Text> : null}
+
+          {overallScore !== null && (
+            <View style={s.scoreRow}>
+              <View style={s.overallCircle}>
+                <Text style={s.overallNum}>{Math.round(overallScore)}</Text>
+                <Text style={s.overallLabel}>SCORE</Text>
+              </View>
+              <View style={s.scoresMini}>
+                {SCORE_KEYS.map((key) => {
+                  const score = scoreForKey(analysis, key);
+                  // Render unmeasured dimensions explicitly rather than as an
+                  // empty bar, so "we couldn't measure this" never reads as
+                  // "you scored badly here".
+                  if (score === null) {
+                    return (
+                      <View key={key} style={s.scoreMiniRow}>
+                        <Text style={s.scoreMiniLabel}>{key}</Text>
+                        <View style={s.scoreMiniBarBg} />
+                        <Text style={[s.scoreMiniNum, { color: colors.mutedForeground }]}>n/a</Text>
+                      </View>
+                    );
+                  }
+                  const clr = getScoreColor(score);
+                  return (
+                    <View key={key} style={s.scoreMiniRow}>
+                      <Text style={s.scoreMiniLabel}>{key}</Text>
+                      <View style={s.scoreMiniBarBg}>
+                        <View
+                          style={[
+                            s.scoreMiniBarFill,
+                            { width: `${score}%` as `${number}%`, backgroundColor: clr },
+                          ]}
+                        />
+                      </View>
+                      <Text style={s.scoreMiniNum}>{Math.round(score)}</Text>
                     </View>
-                    <Text style={s.scoreMiniNum}>{Math.round(score)}</Text>
-                  </View>
-                );
-              })}
+                  );
+                })}
+              </View>
             </View>
-          </View>
+          )}
+
+          {overallScore === null && isMeasured === false && (
+            <View style={s.unscoredCard}>
+              <Feather name="camera-off" size={18} color={colors.mutedForeground} />
+              <Text style={s.unscoredText}>
+                We couldn&apos;t track your body reliably enough in this clip to measure joint
+                angles, so there are no scores. Film side-on with your whole body in frame, in good
+                light, with the camera steady.
+              </Text>
+            </View>
+          )}
 
           <TouchableOpacity
             style={{
@@ -334,22 +435,38 @@ export default function AnalysisDetailScreen() {
                   <Text style={{ fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.primary, textTransform: "uppercase", letterSpacing: 0.5 }}>Claude AI</Text>
                 </View>
               </View>
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 20, marginBottom: 10 }}>
-                {"Your "}{analysis.sport}{" session scored "}{Math.round(overallScore)}{"/100 overall. "}
-                {overallScore >= 80
-                  ? "This is an excellent performance — you're demonstrating strong athletic competency in most areas."
-                  : overallScore >= 65
-                  ? "This is a solid session with clear room to grow in targeted areas."
-                  : "There are meaningful areas to address that will significantly improve your performance and safety."}
+              {/*
+                The readout comes from the server, where it was written against
+                the actual measurements. It used to be assembled here from
+                score thresholds, which meant the "AI analysis" was really a
+                template the client filled in.
+              */}
+              <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 20, marginBottom: 10 }}>
+                {analysis.summary ??
+                  "No written analysis is available for this session."}
               </Text>
-              <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 20 }}>
-                {"Your strongest dimension is "}{
-                  SCORE_KEYS.reduce((best, k) => scoreForKey(analysis, k) > scoreForKey(analysis, best) ? k : best, SCORE_KEYS[0])
-                }{" and the area with the most improvement potential is "}{
-                  SCORE_KEYS.reduce((worst, k) => scoreForKey(analysis, k) < scoreForKey(analysis, worst) ? k : worst, SCORE_KEYS[0])
-                }{". "}
-                {tips.length > 0 && `Atlas has identified ${tips.length} coaching tip${tips.length > 1 ? "s" : ""} and ${risks.length} injury risk factor${risks.length !== 1 ? "s" : ""} to address in your training.`}
-              </Text>
+
+              {(() => {
+                // Rank only the dimensions that were actually measured — a null
+                // would otherwise always win "most improvement potential".
+                const measured = SCORE_KEYS
+                  .map((k) => ({ key: k, score: scoreForKey(analysis, k) }))
+                  .filter((e): e is { key: (typeof SCORE_KEYS)[number]; score: number } => e.score !== null);
+
+                if (measured.length < 2) return null;
+
+                const best = measured.reduce((a, b) => (b.score > a.score ? b : a));
+                const worst = measured.reduce((a, b) => (b.score < a.score ? b : a));
+
+                return (
+                  <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 20 }}>
+                    {`Strongest measured dimension: ${best.key} (${Math.round(best.score)}). `}
+                    {`Most room to improve: ${worst.key} (${Math.round(worst.score)}). `}
+                    {tips.length > 0 &&
+                      `${tips.length} coaching tip${tips.length > 1 ? "s" : ""} and ${risks.length} flagged joint${risks.length !== 1 ? "s" : ""} below.`}
+                  </Text>
+                );
+              })()}
             </View>
 
             {/* Key insight cards */}

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Platform,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -23,43 +24,70 @@ export default function PricingScreen() {
   const currentTier = useTier();
 
   const [plans, setPlans] = useState<Plan[]>([]);
+  /**
+   * Whether purchases actually work. Reported by the server, not assumed here.
+   *
+   * This screen used to show real prices, claim payments were "processed by
+   * Apple App Store or Google Play", and then grant the tier without charging
+   * anything — a paywall anyone could walk through, and a false statement about
+   * billing. Until a payment provider is wired up, the buttons say so.
+   */
+  const [billingEnabled, setBillingEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [working, setWorking] = useState<string | null>(null);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   useEffect(() => {
-    subscriptions.plans()
-      .then((r) => { setPlans(r.plans); })
+    subscriptions
+      .plans()
+      .then((r) => {
+        setPlans(r.plans);
+        setBillingEnabled(r.billingEnabled);
+      })
       .catch(() => {})
-      .finally(() => { setLoading(false); });
+      .finally(() => {
+        setLoading(false);
+      });
   }, []);
 
   async function handleSelectPlan(plan: Plan) {
     if (plan.id === currentTier) return;
+
+    // Downgrading is free and instant — it only ever removes entitlements.
     if (plan.id === "free") {
-      setUpgrading("free");
+      setWorking("free");
       try {
-        await subscriptions.update("free");
+        await subscriptions.cancel();
         await refreshProfile();
         router.back();
+      } catch {
+        Alert.alert("Couldn't switch plans", "Please try again in a moment.");
       } finally {
-        setUpgrading(null);
+        setWorking(null);
       }
       return;
     }
 
-    // In production: launch RevenueCat purchase flow here
-    // For now, simulate a successful upgrade
-    setUpgrading(plan.id);
-    try {
-      await subscriptions.update(plan.id as "pro" | "elite");
-      await refreshProfile();
-      router.back();
-    } finally {
-      setUpgrading(null);
+    if (!billingEnabled) {
+      Alert.alert(
+        "Not available yet",
+        `${plan.name} isn't available to buy yet — we're still setting up payments. ` +
+          "Nothing has been charged and your plan hasn't changed.",
+        [{ text: "Got it" }],
+      );
+      return;
     }
+
+    // With billing configured this launches the native purchase sheet and
+    // submits the resulting receipt to /subscriptions/verify-purchase, which
+    // sets the tier from the *verified* product. See docs/BILLING.md.
+    Alert.alert(
+      "Purchases coming soon",
+      "In-app purchases are being finalised. Nothing has been charged.",
+      [{ text: "OK" }],
+    );
   }
 
   const s = StyleSheet.create({
@@ -162,10 +190,30 @@ export default function PricingScreen() {
     selectBtnPrimary: { backgroundColor: colors.primary },
     selectBtnOutline: { borderWidth: 1.5, borderColor: colors.border },
     selectBtnCurrent: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.success },
+    selectBtnDisabled: { backgroundColor: colors.surface3, borderWidth: 1, borderColor: colors.border },
     selectBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
     selectBtnTextPrimary: { color: colors.primaryForeground },
     selectBtnTextOutline: { color: colors.foreground },
     selectBtnTextCurrent: { color: colors.success },
+    selectBtnTextDisabled: { color: colors.mutedForeground },
+    notice: {
+      flexDirection: "row",
+      gap: 10,
+      alignItems: "flex-start",
+      backgroundColor: colors.warning + "18",
+      borderWidth: 1,
+      borderColor: colors.warning + "44",
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 20,
+    },
+    noticeText: {
+      flex: 1,
+      fontSize: 12.5,
+      lineHeight: 18,
+      color: colors.foreground,
+      fontFamily: "Inter_400Regular",
+    },
     faq: {
       marginTop: 8,
       padding: 16,
@@ -202,10 +250,21 @@ export default function PricingScreen() {
         <Text style={s.heroText}>Unlock Your{"\n"}Full Potential</Text>
         <Text style={s.heroSub}>Elite AI coaching, unlimited analyses,{"\n"}and injury prevention — all in one app.</Text>
 
+        {!billingEnabled && (
+          <View style={s.notice}>
+            <Feather name="info" size={16} color={colors.warning} style={{ marginTop: 1 }} />
+            <Text style={s.noticeText}>
+              Paid plans aren&apos;t available to buy yet — we&apos;re still setting up payments.
+              You can browse what&apos;s coming, but nothing can be purchased or charged right now.
+            </Text>
+          </View>
+        )}
+
         {plans.map((plan) => {
           const isCurrent = plan.id === currentTier;
           const isPopular = !!plan.popular;
-          const isUpgrading = upgrading === plan.id;
+          const isWorking = working === plan.id;
+          const isPaidAndUnavailable = plan.price > 0 && !billingEnabled;
 
           return (
             <View key={plan.id} style={[s.planCard, isPopular && s.planCardPopular]}>
@@ -241,24 +300,45 @@ export default function PricingScreen() {
               <TouchableOpacity
                 style={[
                   s.selectBtn,
-                  isCurrent ? s.selectBtnCurrent : isPopular ? s.selectBtnPrimary : s.selectBtnOutline,
+                  isCurrent
+                    ? s.selectBtnCurrent
+                    : isPaidAndUnavailable
+                      ? s.selectBtnDisabled
+                      : isPopular
+                        ? s.selectBtnPrimary
+                        : s.selectBtnOutline,
                 ]}
                 onPress={() => handleSelectPlan(plan)}
-                disabled={isCurrent || !!upgrading}
+                disabled={isCurrent || !!working}
                 activeOpacity={0.85}
               >
-                {isUpgrading ? (
-                  <ActivityIndicator color={isPopular ? colors.primaryForeground : colors.primary} size="small" />
+                {isWorking ? (
+                  <ActivityIndicator
+                    color={isPopular ? colors.primaryForeground : colors.primary}
+                    size="small"
+                  />
                 ) : (
                   <>
                     {isCurrent && <Feather name="check" size={16} color={colors.success} />}
                     <Text
                       style={[
                         s.selectBtnText,
-                        isCurrent ? s.selectBtnTextCurrent : isPopular ? s.selectBtnTextPrimary : s.selectBtnTextOutline,
+                        isCurrent
+                          ? s.selectBtnTextCurrent
+                          : isPaidAndUnavailable
+                            ? s.selectBtnTextDisabled
+                            : isPopular
+                              ? s.selectBtnTextPrimary
+                              : s.selectBtnTextOutline,
                       ]}
                     >
-                      {isCurrent ? "Current Plan" : plan.price === 0 ? "Downgrade to Free" : `Get ${plan.name}`}
+                      {isCurrent
+                        ? "Current plan"
+                        : plan.price === 0
+                          ? "Switch to Free"
+                          : isPaidAndUnavailable
+                            ? "Coming soon"
+                            : `Get ${plan.name}`}
                     </Text>
                   </>
                 )}
@@ -270,17 +350,26 @@ export default function PricingScreen() {
         <View style={s.faq}>
           <Text style={s.faqTitle}>Frequently Asked Questions</Text>
           {[
+            // These answers describe how billing will work once it ships. They
+            // previously stated as fact that payments were already being
+            // processed through the App Store, while no payment path existed.
             {
-              q: "Can I cancel anytime?",
-              a: "Yes. Cancel anytime from the App Store or Google Play. Your plan stays active until the end of the billing period.",
+              q: "Can I buy a plan right now?",
+              a: billingEnabled
+                ? "Yes. Purchases go through the App Store or Google Play, and you can cancel anytime from your store account."
+                : "Not yet. Paid plans are still being set up, so nothing can be purchased or charged today. Everything on the Free plan works normally.",
             },
             {
-              q: "Is my payment secure?",
-              a: "All payments are processed by Apple App Store or Google Play. We never store your card details.",
+              q: "How will payments be handled?",
+              a: "When paid plans launch, purchases will be handled entirely by the App Store or Google Play. AthleteAI will never see or store your card details.",
             },
             {
-              q: "What happens to my analyses if I downgrade?",
-              a: "Your existing analyses are always accessible. You just won't be able to create new ones beyond the free plan limit.",
+              q: "What happens to my analyses if I switch to Free?",
+              a: "Your existing analyses stay accessible. You just won't be able to create new ones beyond the Free plan's monthly limit.",
+            },
+            {
+              q: "How is my technique actually scored?",
+              a: "We track your joints frame by frame in the video and measure real angles — range of motion, left/right symmetry, and time spent in high-strain positions. Scores are calculated from those measurements, so the same clip always scores the same.",
             },
           ].map(({ q, a }) => (
             <View key={q} style={s.faqItem}>

@@ -16,25 +16,17 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 
 import { useColors } from "@/hooks/useColors";
-import { analyses as analysesApi, type AnalysisRecord, ApiError } from "@/lib/api";
-import { useAuth, useCanAccessFeature } from "@/lib/authContext";
+import { analyses as analysesApi, type AnalysisRecord, type UsageRecord } from "@/lib/api";
+import { deleteVideo } from "@/lib/videoStore";
+import { useAuth } from "@/lib/authContext";
 import * as Haptics from "expo-haptics";
 
 const SPORTS = [
   "Weightlifting", "Running", "Basketball", "Golf", "Tennis",
   "Swimming", "CrossFit", "Boxing", "Soccer", "Gymnastics", "Other",
-];
-
-const ANALYSIS_STEPS = [
-  "Extracting video frames...",
-  "Detecting body pose...",
-  "Calculating joint angles...",
-  "Running AI analysis...",
-  "Generating report...",
 ];
 
 function getScoreColor(score: number, colors: ReturnType<typeof useColors>) {
@@ -52,13 +44,11 @@ export default function AnalyzeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { profile } = useAuth();
-  const canUnlimited = useCanAccessFeature("unlimitedAnalyses");
 
   const [analysisList, setAnalysisList] = useState<AnalysisRecord[]>([]);
+  const [usage, setUsage] = useState<UsageRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysisStep, setAnalysisStep] = useState(0);
 
   // Sport picker modal state
   const [showSportPicker, setShowSportPicker] = useState(false);
@@ -71,10 +61,14 @@ export default function AnalyzeScreen() {
 
   const loadAnalyses = useCallback(async () => {
     try {
-      const { analyses } = await analysesApi.list();
-      setAnalysisList(analyses);
-    } catch {
-      // ignore
+      // Usage is fetched alongside the list so the quota shown in the header is
+      // the server's number, not a count of rows that happen to be loaded.
+      const [listResult, usageResult] = await Promise.allSettled([
+        analysesApi.list(),
+        analysesApi.usage(),
+      ]);
+      if (listResult.status === "fulfilled") setAnalysisList(listResult.value.analyses);
+      if (usageResult.status === "fulfilled") setUsage(usageResult.value);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -127,50 +121,36 @@ export default function AnalyzeScreen() {
     }
   }
 
-  async function submitAnalysis() {
+  function submitAnalysis() {
     if (!selectedSport || !pendingUri) return;
-    setShowSportPicker(false);
-    setAnalyzing(true);
-    setAnalysisStep(0);
 
-    // Animate steps while API processes
-    const stepInterval = setInterval(() => {
-      setAnalysisStep((s) => Math.min(s + 1, ANALYSIS_STEPS.length - 1));
-    }, 900);
-
-    try {
-      const { analysis } = await analysesApi.create({
-        title: pendingTitle.trim() || `${selectedSport} — Analysis`,
-        sport: selectedSport.toLowerCase(),
-        videoUrl: pendingUri,
-      });
-
-      // Persist the local video URI so the skeleton overlay can find it later
-      await AsyncStorage.setItem(`video_uri_${analysis.id}`, pendingUri);
-
-      clearInterval(stepInterval);
-      setAnalysisStep(ANALYSIS_STEPS.length - 1);
-      await new Promise((r) => setTimeout(r, 500));
-      setAnalyzing(false);
-
-      await loadAnalyses();
-      router.push(`/analysis/${analysis.id}`);
-    } catch (err) {
-      clearInterval(stepInterval);
-      setAnalyzing(false);
-      if (err instanceof ApiError && err.code === "UPGRADE_REQUIRED") {
-        Alert.alert(
-          "Upgrade Required",
-          err.message,
-          [
-            { text: "Not now", style: "cancel" },
-            { text: "View Plans", onPress: () => router.push("/pricing") },
-          ]
-        );
-      } else {
-        Alert.alert("Analysis failed", "Please try again.");
-      }
+    // Check the quota before spending a minute measuring a clip we'd then be
+    // unable to save.
+    if (usage && usage.limit !== -1 && usage.remaining <= 0) {
+      setShowSportPicker(false);
+      Alert.alert(
+        "Monthly limit reached",
+        `Your plan includes ${usage.limit} analyses per month. Your next ${usage.limit} unlock on ${new Date(usage.resetsAt).toLocaleDateString("en-US", { month: "long", day: "numeric" })}.`,
+        [
+          { text: "Not now", style: "cancel" },
+          { text: "See plans", onPress: () => router.push("/pricing") },
+        ],
+      );
+      return;
     }
+
+    setShowSportPicker(false);
+
+    // Measurement happens first; the analysis is created on the other side of
+    // it, from real joint angles rather than from the title string.
+    router.push({
+      pathname: "/analysis/measure",
+      params: {
+        uri: pendingUri,
+        sport: selectedSport.toLowerCase(),
+        title: pendingTitle.trim(),
+      },
+    });
   }
 
   const s = StyleSheet.create({
@@ -217,17 +197,6 @@ export default function AnalyzeScreen() {
 
   return (
     <View style={s.container}>
-      {/* Processing overlay */}
-      <Modal visible={analyzing} transparent animationType="fade">
-        <View style={s.overlay}>
-          <View style={s.overlayCard}>
-            <ActivityIndicator color={colors.primary} size="large" />
-            <Text style={s.overlayTitle}>Analyzing your video</Text>
-            <Text style={s.overlayStep}>{ANALYSIS_STEPS[analysisStep]}</Text>
-          </View>
-        </View>
-      </Modal>
-
       {/* Sport/title picker modal */}
       <Modal visible={showSportPicker} animationType="slide">
         <View style={s.pickerModal}>
@@ -285,7 +254,11 @@ export default function AnalyzeScreen() {
             <View style={s.header}>
               <Text style={s.title}>Analyses</Text>
               <Text style={s.subtitle}>
-                {canUnlimited ? "Unlimited" : `${analysisList.length}/3`} analyses used
+                {usage
+                  ? usage.limit === -1
+                    ? "Unlimited analyses"
+                    : `${usage.used}/${usage.limit} analyses used this month`
+                  : " "}
               </Text>
             </View>
             <TouchableOpacity style={s.uploadBtn} onPress={handleUpload} activeOpacity={0.85}>
@@ -311,8 +284,10 @@ export default function AnalyzeScreen() {
         }
         renderItem={({ item }) => {
           const isProcessing = item.status === "processing" || item.status === "pending";
-          const score = item.overallScore ?? 0;
-          const scoreColor = getScoreColor(score, colors);
+          // A null score means "not measured" — showing 0 would read as a
+          // terrible result rather than an absent one.
+          const score = item.overallScore;
+          const scoreColor = score === null ? colors.mutedForeground : getScoreColor(score, colors);
           return (
             <TouchableOpacity
               style={s.card}
@@ -330,7 +305,11 @@ export default function AnalyzeScreen() {
                       onPress: async () => {
                         try {
                           await analysesApi.delete(item.id);
+                          // Reclaim the clip too, or deleted analyses keep
+                          // occupying device storage indefinitely.
+                          await deleteVideo(item.id);
                           setAnalysisList((prev) => prev.filter((a) => a.id !== item.id));
+                          void loadAnalyses();
                           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                         } catch {
                           Alert.alert("Couldn't delete", "Please try again.");
@@ -356,7 +335,9 @@ export default function AnalyzeScreen() {
                   <Feather name="alert-circle" size={22} color={colors.destructive} />
                 ) : (
                   <View style={[s.scoreCircle, { borderColor: scoreColor }]}>
-                    <Text style={[s.scoreText, { color: scoreColor }]}>{Math.round(score)}</Text>
+                    <Text style={[s.scoreText, { color: scoreColor }]}>
+                      {score === null ? "–" : Math.round(score)}
+                    </Text>
                   </View>
                 )}
               </View>

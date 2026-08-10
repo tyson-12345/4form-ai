@@ -57,6 +57,17 @@ export const usersTable = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  /**
+   * Which algorithm produced `passwordHash`. Anything other than "bcrypt" is a
+   * legacy hash that must be re-hashed the next time the user authenticates
+   * successfully. See `migratePasswordHash` in routes/auth.ts.
+   */
+  passwordAlgo: text("password_algo").notNull().default("bcrypt"),
+  /** Consecutive failed logins. Reset to 0 on any successful login. */
+  failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
+  /** When set and in the future, authentication is refused regardless of password. */
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  lastFailedLoginAt: timestamp("last_failed_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -68,6 +79,30 @@ export const insertUserSchema = createInsertSchema(usersTable).omit({
 });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof usersTable.$inferSelect;
+
+// ─── Password Reset Tokens ──────────────────────────────────────────────────
+
+/**
+ * Single-use password reset tokens.
+ *
+ * Only the SHA-256 hash of the token is stored — a database leak therefore does
+ * not let an attacker reset accounts, because the raw token (emailed to the
+ * user) cannot be recovered from the hash.
+ */
+export const passwordResetTokensTable = pgTable("password_reset_tokens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => usersTable.id, { onDelete: "cascade" }),
+  /** SHA-256 of the raw token. Never store the raw value. */
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  /** Set when redeemed; a token with this set is refused. */
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type PasswordResetToken = typeof passwordResetTokensTable.$inferSelect;
 
 // ─── Athlete Profiles ───────────────────────────────────────────────────────
 
@@ -144,6 +179,21 @@ export const analysesTable = pgTable("analyses", {
   speedScore: real("speed_score"),
   strengths: jsonb("strengths").$type<string[]>().notNull().default([]),
   improvements: jsonb("improvements").$type<string[]>().notNull().default([]),
+  /** Plain-language readout generated from the measurements. */
+  summary: text("summary"),
+  /**
+   * The raw pose measurements this analysis was computed from.
+   *
+   * Stored so a score is always reproducible and auditable: re-running
+   * `computeScores` on this blob must reproduce the stored scores exactly.
+   */
+  poseMetrics: jsonb("pose_metrics"),
+  /**
+   * How the scores were produced. "pose-measured" is the only value that
+   * represents real measurement; "unscored" means the clip could not be
+   * tracked well enough to score.
+   */
+  analysisMethod: text("analysis_method").notNull().default("pose-measured"),
   comparedToAthlete: text("compared_to_athlete"),
   similarityScore: real("similarity_score"),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
@@ -188,7 +238,18 @@ export const injuryRisksTable = pgTable("injury_risks", {
     .notNull()
     .references(() => analysesTable.id, { onDelete: "cascade" }),
   joint: text("joint").notNull(),
+  /**
+   * Share of tracked frames the joint spent in the risk band.
+   *
+   * This is a measurement of time-in-position, NOT a predicted probability of
+   * injury. UI copy must not present it as the latter.
+   */
   riskPercent: real("risk_percent").notNull(),
+  /** Share of tracked frames in the (milder) caution band. */
+  cautionPercent: real("caution_percent"),
+  /** Angle extremes actually observed for this joint, in degrees. */
+  observedMin: real("observed_min"),
+  observedMax: real("observed_max"),
   description: text("description").notNull(),
   prevention: text("prevention").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
