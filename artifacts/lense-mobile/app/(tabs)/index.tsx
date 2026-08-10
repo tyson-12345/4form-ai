@@ -1,292 +1,318 @@
-import React, { useCallback, useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Platform,
-  ActivityIndicator,
-  RefreshControl,
-  StyleSheet,
-} from "react-native";
+/**
+ * Home — the instrument panel.
+ *
+ * One reading (Form Index, always shown against the band it came from), one
+ * prescription, and the recent record. Nothing else competes.
+ *
+ * Sport-agnostic by construction: every string that could name a sport is read
+ * from the athlete's own sessions rather than hardcoded, so a boxer and a
+ * swimmer get the same screen with their own vocabulary.
+ */
+
+import React, { useCallback, useMemo, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
+import { useFocusEffect } from "expo-router";
 
-import { useAuth, useTier } from "@/lib/authContext";
-import { analyses as analysesApi, achievements as achievementsApi, type AnalysisRecord, type AchievementRecord } from "@/lib/api";
-import { useColors } from "@/hooks/useColors";
-
-const SCORE_KEYS = ["technique", "power", "balance", "consistency", "mobility", "speed"] as const;
-
-function dateLabel() {
-  return new Date().toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" }).toUpperCase();
-}
+import {
+  Screen,
+  Card,
+  Label,
+  MetricBand,
+  Prescription,
+  Avatar,
+  Chevron,
+} from "@/components/caliper";
+import { color, type as T, GUTTER, TAB_BAR, delta, stampDate } from "@/constants/caliper";
+import { useAuth } from "@/lib/authContext";
+import { analyses as analysesApi, type AnalysisRecord } from "@/lib/api";
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, profile } = useAuth();
-  const tier = useTier();
-  const C = useColors();
+  const { profile, user } = useAuth();
 
-  const [recentAnalyses, setRecentAnalyses] = useState<AnalysisRecord[]>([]);
-  const [achievements, setAchievements] = useState<AchievementRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [list, setList] = useState<AnalysisRecord[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
-  const topPad = Platform.OS === "web" ? 24 : insets.top + 8;
-  const bottomPad = Platform.OS === "web" ? 34 + 84 : insets.bottom + 84 + 16;
-
-  const loadData = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
-      const [{ analyses }, { achievements: ach }] = await Promise.all([
-        analysesApi.list(),
-        achievementsApi.list(),
-      ]);
-      setRecentAnalyses(analyses.slice(0, 5));
-      setAchievements(ach);
+      const { analyses } = await analysesApi.list();
+      setList(analyses);
     } catch {
-      // ignore
+      /* offline — keep whatever we already have */
     } finally {
-      setLoading(false);
+      setLoaded(true);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
-  const latestComplete = recentAnalyses.find((a) => a.status === "complete");
-  const weeklyProgress = profile?.weeklyProgress ?? 0;
-  const weeklyGoal = profile?.weeklyGoal ?? 4;
-  const streakDays = profile?.streakDays ?? 0;
-  const firstName = (profile?.name ?? user?.name ?? "Athlete").split(" ")[0];
+  // ── Derivations ──
+  // Only measured sessions contribute. A legacy or unscored analysis has no
+  // measurement behind its number, so including it would corrupt the band.
+  const measuredSessions = useMemo(
+    () =>
+      list.filter(
+        (a) =>
+          a.status === "complete" &&
+          a.analysisMethod === "pose-measured" &&
+          a.overallScore !== null,
+      ),
+    [list],
+  );
 
-  function scoreColor(score: number) {
-    if (score >= 80) return C.success;
-    if (score >= 65) return C.volt;
-    return C.warning;
-  }
+  const latest = measuredSessions[0];
+  const previous = measuredSessions[1];
 
-  const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: C.background },
-    header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 12 },
-    dateLabel: { fontFamily: "SpaceMono_700Bold", fontSize: 11, letterSpacing: 1.5, color: C.textSecondary },
-    welcomeText: { fontFamily: "Archivo_800ExtraBold", fontSize: 24, color: C.textPrimary, letterSpacing: -0.5, marginTop: 3 },
-    avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: C.surface3, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: C.borderStrong },
-    avatarBadge: { position: "absolute", top: -1, right: -1, width: 12, height: 12, borderRadius: 6, backgroundColor: C.volt, borderWidth: 2, borderColor: C.background },
-    statsRow: { flexDirection: "row", gap: 10, paddingHorizontal: 20, marginBottom: 16 },
-    statCard: { flex: 1, backgroundColor: C.surface2, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: C.border },
-    statCardHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
-    statCardLabel: { fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1, color: C.textSecondary },
-    statCardValueRow: { flexDirection: "row", alignItems: "baseline", gap: 4, marginTop: 6 },
-    statCardValue: { fontFamily: "Archivo_800ExtraBold", fontSize: 30, color: C.textPrimary, letterSpacing: -1 },
-    statCardUnit: { fontFamily: "Inter_500Medium", fontSize: 13, color: C.textSecondary },
-    heroCard: { marginHorizontal: 20, marginBottom: 16, backgroundColor: C.surface2, borderRadius: 22, padding: 14, flexDirection: "row", gap: 14, alignItems: "center", borderWidth: 1, borderColor: C.border },
-    heroThumb: { width: 92, height: 92, borderRadius: 16, backgroundColor: C.surface3, alignItems: "center", justifyContent: "center" },
-    sportPill: { backgroundColor: C.volt + "22", borderWidth: 1, borderColor: C.volt + "66", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
-    sportPillText: { fontFamily: "SpaceMono_700Bold", fontSize: 9, letterSpacing: 1, color: C.volt },
-    heroTime: { fontFamily: "Inter_500Medium", fontSize: 11, color: C.textSecondary },
-    heroTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.textPrimary, marginTop: 8 },
-    heroScore: { fontFamily: "Archivo_800ExtraBold", fontSize: 24, color: C.textPrimary, letterSpacing: -0.5 },
-    heroScoreLabel: { fontFamily: "Inter_500Medium", fontSize: 11, color: C.textSecondary },
-    emptyHeroCard: { marginHorizontal: 20, marginBottom: 16, backgroundColor: C.surface2, borderRadius: 22, padding: 28, alignItems: "center", gap: 8, borderWidth: 1, borderColor: C.border },
-    emptyHeroTitle: { fontFamily: "Inter_700Bold", fontSize: 16, color: C.textPrimary },
-    emptyHeroSub: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary, textAlign: "center" },
-    section: { paddingHorizontal: 20, marginBottom: 20 },
-    sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-    sectionTitle: { fontFamily: "Inter_700Bold", fontSize: 15, color: C.textPrimary },
-    seeAll: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: C.volt },
-    emptyMsg: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, textAlign: "center", paddingVertical: 16 },
-    analysisRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
-    analysisThumb: { width: 52, height: 52, borderRadius: 13, backgroundColor: C.surface3, alignItems: "center", justifyContent: "center" },
-    analysisTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.textPrimary },
-    analysisMeta: { fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1, color: C.textSecondary, marginTop: 2 },
-    analysisScore: { fontFamily: "Archivo_800ExtraBold", fontSize: 17, color: C.textPrimary },
-    upgradeCard: { marginHorizontal: 20, backgroundColor: C.volt, borderRadius: 18, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 },
-    upgradeTitle: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.ink },
-    upgradeSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(7,9,11,0.7)", marginTop: 1 },
-    upgradePrice: { fontFamily: "Archivo_800ExtraBold", fontSize: 14, color: C.ink },
-  });
+  const scores = measuredSessions.map((a) => a.overallScore!);
+  const band = useMemo(() => {
+    // The athlete's own working range across their measured history. With fewer
+    // than three sessions there isn't a band yet — showing one would imply more
+    // certainty than two readings support.
+    if (scores.length < 3) return null;
+    return { low: Math.min(...scores), high: Math.max(...scores) };
+  }, [scores]);
 
-  if (loading) {
-    return (
-      <View style={[s.container, { alignItems: "center", justifyContent: "center" }]}>
-        <ActivityIndicator color={C.volt} size="large" />
-      </View>
-    );
-  }
+  const change = latest && previous ? latest.overallScore! - previous.overallScore! : null;
+
+  const headline = useMemo(() => buildHeadline(latest, measuredSessions.length), [latest, measuredSessions.length]);
+
+  const prescription = useMemo(() => {
+    if (!latest) return null;
+    const first = latest.improvements?.[0];
+    if (!first) return null;
+    return { text: first, why: `From ${latest.title}` };
+  }, [latest]);
+
+  const recent = list.slice(0, 4);
+  const displayName = profile?.name || user?.name || "Athlete";
 
   return (
-    <View style={s.container}>
+    <Screen>
       <ScrollView
+        contentContainerStyle={{
+          paddingTop: insets.top + 14,
+          paddingBottom: TAB_BAR.clearance + insets.bottom,
+        }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: bottomPad }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} tintColor={C.volt} />}
-      >
-        {/* Header */}
-        <View style={[s.header, { paddingTop: topPad }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.dateLabel}>{dateLabel()}</Text>
-            <Text style={s.welcomeText}>Welcome back, {firstName}</Text>
-          </View>
-          <TouchableOpacity
-            style={s.avatar}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push("/(tabs)/profile" as any);
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              void load();
             }}
-          >
-            <Feather name="user" size={20} color={C.textSecondary} />
-            {tier === "pro" && <View style={s.avatarBadge} />}
-          </TouchableOpacity>
+            tintColor={color.textFaint}
+          />
+        }
+      >
+        {/* ── Header ── */}
+        <View style={s.header}>
+          <View style={{ flex: 1, paddingRight: 14 }}>
+            <Label>
+              {stampDate(new Date())}
+              {measuredSessions.length > 0 ? ` · SESSION ${measuredSessions.length}` : ""}
+            </Label>
+            <Text style={[T.screenTitle, s.headline]}>{headline}</Text>
+          </View>
+          <Pressable onPress={() => router.push("/(tabs)/profile")}>
+            <Avatar name={displayName} />
+          </Pressable>
         </View>
 
-        {/* Streak + Weekly row */}
-        <View style={s.statsRow}>
-          <View style={s.statCard}>
-            <View style={s.statCardHeader}>
-              <Feather name="zap" size={16} color={C.volt} />
-              <Text style={s.statCardLabel}>STREAK</Text>
-            </View>
-            <View style={s.statCardValueRow}>
-              <Text style={s.statCardValue}>{streakDays}</Text>
-              <Text style={s.statCardUnit}>days</Text>
-            </View>
-          </View>
-          <View style={s.statCard}>
-            <View style={s.statCardHeader}>
-              <Text style={s.statCardLabel}>THIS WEEK</Text>
-              <Text style={[s.statCardLabel, { color: C.textPrimary }]}>{weeklyProgress}/{weeklyGoal}</Text>
-            </View>
-            <WeekBars progress={weeklyProgress} goal={weeklyGoal} voltColor={C.volt} surfaceColor={C.surface3} />
-          </View>
-        </View>
-
-        {/* Hero card — latest analysis */}
-        {latestComplete ? (
-          <TouchableOpacity
-            style={s.heroCard}
-            onPress={() => router.push(`/analysis/${latestComplete.id}`)}
-            activeOpacity={0.88}
-          >
-            <View style={s.heroThumb}>
-              <Feather name="play" size={26} color={C.volt} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <View style={s.sportPill}>
-                  <Text style={s.sportPillText}>{(latestComplete.sport ?? "sport").toUpperCase()}</Text>
+        {/* ── Form Index ── */}
+        {latest ? (
+          <Card style={s.block}>
+            <View style={s.metricHead}>
+              <View>
+                <Label>FORM INDEX</Label>
+                <View style={s.metricRow}>
+                  <Text style={T.metricHero}>{Math.round(latest.overallScore!)}</Text>
+                  {change !== null && delta(change) && (
+                    <Text style={[T.measured, { color: color.cobalt }]}>{delta(change)}</Text>
+                  )}
                 </View>
-                <Text style={s.heroTime}>Latest</Text>
               </View>
-              <Text style={s.heroTitle} numberOfLines={1}>{latestComplete.title}</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6 }}>
-                <Text style={s.heroScore}>{Math.round(latestComplete.overallScore ?? 0)}</Text>
-                <Text style={s.heroScoreLabel}>score</Text>
+              <View style={{ alignItems: "flex-end" }}>
+                <Label tone={color.textFaint}>{band ? "YOUR BAND" : "MEASURED"}</Label>
+                <Text style={[T.measured, { marginTop: 3 }]}>
+                  {band
+                    ? `${Math.round(band.low)} – ${Math.round(band.high)}`
+                    : `${measuredSessions.length} SESSION${measuredSessions.length === 1 ? "" : "S"}`}
+                </Text>
               </View>
             </View>
-          </TouchableOpacity>
+
+            <MetricBand
+              value={latest.overallScore!}
+              bandLow={band?.low ?? null}
+              bandHigh={band?.high ?? null}
+            />
+          </Card>
         ) : (
-          <TouchableOpacity style={s.emptyHeroCard} onPress={() => router.push("/(tabs)/analyze")} activeOpacity={0.88}>
-            <Feather name="upload" size={28} color={C.volt} />
-            <Text style={s.emptyHeroTitle}>Upload your first clip</Text>
-            <Text style={s.emptyHeroSub}>Get AI-powered form analysis in seconds</Text>
-          </TouchableOpacity>
+          <Card style={s.block}>
+            <Label>FORM INDEX</Label>
+            <Text style={[T.metricHero, { color: color.textGhost, marginTop: 2 }]}>—</Text>
+            <Text style={[T.body, { marginTop: 8 }]}>
+              {loaded
+                ? "Film a clip and we'll measure your joint angles frame by frame. Your Form Index is calculated from those measurements, so it means the same thing every time."
+                : "Loading your sessions…"}
+            </Text>
+          </Card>
         )}
 
-        {/* Recent analyses */}
-        <View style={s.section}>
-          <View style={s.sectionRow}>
-            <Text style={s.sectionTitle}>Recent analyses</Text>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/analyze")}>
-              <Text style={s.seeAll}>See all</Text>
-            </TouchableOpacity>
+        {/* ── The one next action ── */}
+        {prescription && (
+          <View style={s.block}>
+            <Prescription
+              text={prescription.text}
+              why={prescription.why}
+              actionLabel="Open"
+              onPress={() => latest && router.push(`/analysis/${latest.id}`)}
+            />
           </View>
-          {recentAnalyses.length === 0 ? (
-            <Text style={s.emptyMsg}>No analyses yet — tap + to upload a video</Text>
-          ) : (
-            recentAnalyses.map((a) => (
-              <TouchableOpacity
-                key={a.id}
-                style={s.analysisRow}
-                onPress={() => router.push(`/analysis/${a.id}`)}
-                activeOpacity={0.85}
-              >
-                <View style={s.analysisThumb}>
-                  <Feather name="activity" size={18} color={C.textSecondary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.analysisTitle} numberOfLines={1}>{a.title}</Text>
-                  <Text style={s.analysisMeta}>{(a.sport ?? "sport").toUpperCase()} · {new Date(a.uploadedAt).toLocaleDateString("en-US", { weekday: "short" }).toUpperCase()}</Text>
-                </View>
-                {a.status === "complete" ? (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <RiskDots analysis={a} />
-                    <Text style={[s.analysisScore, { color: scoreColor(a.overallScore ?? 0) }]}>
-                      {Math.round(a.overallScore ?? 0)}
-                    </Text>
-                  </View>
-                ) : (
-                  <ActivityIndicator color={C.volt} size="small" />
-                )}
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
+        )}
 
-        {/* Upgrade banner */}
-        {tier === "free" && (
-          <TouchableOpacity style={s.upgradeCard} onPress={() => router.push("/pricing")} activeOpacity={0.88}>
-            <Feather name="zap" size={22} color={C.ink} />
-            <View style={{ flex: 1 }}>
-              <Text style={s.upgradeTitle}>Upgrade to Pro</Text>
-              <Text style={s.upgradeSub}>Unlock AI coach + unlimited analyses</Text>
+        {/* ── Record ── */}
+        {recent.length > 0 && (
+          <View style={[s.block, { marginTop: 22 }]}>
+            <View style={s.sectionHead}>
+              <Label>LAST {recent.length === 1 ? "SESSION" : `${recent.length} SESSIONS`}</Label>
+              <Pressable onPress={() => router.push("/(tabs)/analyze")}>
+                <Text style={[T.buttonSmall, { color: color.cobalt }]}>All</Text>
+              </Pressable>
             </View>
-            <Text style={s.upgradePrice}>$9.99/mo</Text>
-          </TouchableOpacity>
+
+            {recent.map((item, i) => (
+              <SessionRow
+                key={item.id}
+                item={item}
+                first={i === 0}
+                onPress={() => router.push(`/analysis/${item.id}`)}
+              />
+            ))}
+          </View>
+        )}
+
+        {loaded && list.length === 0 && (
+          <Card style={[s.block, { marginTop: 12 }]}>
+            <Text style={T.cardTitle}>Nothing measured yet</Text>
+            <Text style={[T.body, { marginTop: 6 }]}>
+              Tap the blue button below to add your first clip. Film side-on, whole body in
+              frame, ten seconds or longer.
+            </Text>
+          </Card>
         )}
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 
-function RiskDots({ analysis }: { analysis: AnalysisRecord }) {
-  const scores = [
-    analysis.techniqueScore ?? 0,
-    analysis.powerScore ?? 0,
-    analysis.balanceScore ?? 0,
-  ];
+// ─── Row ─────────────────────────────────────────────────────────────────────
+
+function SessionRow({
+  item,
+  first,
+  onPress,
+}: {
+  item: AnalysisRecord;
+  first: boolean;
+  onPress: () => void;
+}) {
+  const processing = item.status === "processing" || item.status === "pending";
+  const note = processing
+    ? "Measuring…"
+    : item.status === "failed"
+      ? "Couldn't measure"
+      : item.analysisMethod === "unscored"
+        ? "Not trackable"
+        : item.sport;
+
   return (
-    <View style={{ flexDirection: "row", gap: 3 }}>
-      {scores.map((score, i) => (
-        <View
-          key={i}
-          style={{
-            width: 7, height: 7, borderRadius: 4,
-            backgroundColor: score >= 80 ? "#C6FF3A" : score >= 60 ? "#FFC53D" : "#FF5A4D",
-          }}
-        />
-      ))}
-    </View>
+    <Pressable
+      onPress={processing ? undefined : onPress}
+      style={({ pressed }) => [s.row, first && { borderTopWidth: 0 }, pressed && { opacity: 0.7 }]}
+    >
+      <Text style={[T.measuredSmall, { width: 36 }]}>
+        {new Date(item.uploadedAt)
+          .toLocaleDateString("en-GB", { weekday: "short" })
+          .toUpperCase()}
+      </Text>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={T.rowTitle} numberOfLines={1}>
+          {item.title}
+        </Text>
+        <Text style={[T.rowSubtitle, { marginTop: 1, textTransform: "capitalize" }]}>{note}</Text>
+      </View>
+      <Text style={T.metricRow}>
+        {item.overallScore === null ? "—" : Math.round(item.overallScore)}
+      </Text>
+      <Chevron />
+    </Pressable>
   );
 }
 
-function WeekBars({ progress, goal, voltColor, surfaceColor }: { progress: number; goal: number; voltColor: string; surfaceColor: string }) {
-  return (
-    <View style={{ flexDirection: "row", gap: 5, marginTop: 14, alignItems: "flex-end", height: 30 }}>
-      {Array.from({ length: goal }).map((_, i) => (
-        <View
-          key={i}
-          style={{
-            flex: 1,
-            height: i < progress ? 24 + (i % 3) * 4 : 16,
-            backgroundColor: i < progress ? voltColor : surfaceColor,
-            borderRadius: 4,
-          }}
-        />
-      ))}
-    </View>
-  );
+// ─── Copy ────────────────────────────────────────────────────────────────────
+
+/**
+ * A headline that says something true about the athlete's own data.
+ *
+ * Deliberately not motivational filler — the design's premise is an instrument,
+ * so the headline reports rather than cheers.
+ */
+function buildHeadline(latest: AnalysisRecord | undefined, count: number): string {
+  if (!latest) return "Measure your first session.";
+
+  if (latest.status === "processing" || latest.status === "pending") {
+    return "Measuring your latest clip.";
+  }
+  if (latest.analysisMethod === "unscored") {
+    return "That clip wasn't trackable.";
+  }
+  if (latest.improvements?.[0]) {
+    // The model already writes these grounded in measurements; the first one
+    // is the highest-signal thing to surface.
+    return latest.improvements[0].length <= 62
+      ? latest.improvements[0]
+      : "Your latest session is measured.";
+  }
+  if (count === 1) return "First session on the board.";
+  return "Your latest session is measured.";
 }
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  header: {
+    paddingHorizontal: GUTTER,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+  headline: { marginTop: 8, maxWidth: 280 },
+  block: { marginHorizontal: GUTTER, marginTop: 22 },
+  metricHead: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
+  metricRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 2 },
+  sectionHead: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 11,
+    borderTopWidth: 1,
+    borderTopColor: color.rule,
+  },
+});

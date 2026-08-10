@@ -36,6 +36,24 @@ const client = new Anthropic({
 /** Current Sonnet-tier model. */
 const MODEL = "claude-sonnet-5";
 
+/**
+ * Whether written coaching output is available.
+ *
+ * Callers check this so a missing key degrades a feature rather than failing a
+ * request — measurement and scoring never touch Claude.
+ */
+export function claudeConfigured(): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY);
+}
+
+/** Thrown when a narrative was requested but Claude isn't available. */
+export class CoachUnavailableError extends Error {
+  constructor(message = "Coaching write-up is unavailable") {
+    super(message);
+    this.name = "CoachUnavailableError";
+  }
+}
+
 // ─── Coaching narrative ──────────────────────────────────────────────────────
 
 const NarrativeSchema = z.object({
@@ -102,6 +120,8 @@ export async function generateNarrative(input: {
   goals?: string[];
   injuryConcerns?: string[];
 }): Promise<Narrative> {
+  if (!claudeConfigured()) throw new CoachUnavailableError();
+
   const prompt = buildNarrativePrompt(input);
 
   const message = await client.messages.parse({

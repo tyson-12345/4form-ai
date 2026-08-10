@@ -1,261 +1,158 @@
-import React, { useEffect, useRef } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Platform,
-  Animated,
-  ScrollView,
-} from "react-native";
+/**
+ * Landing — the first screen, and the promise.
+ *
+ * The old copy led with "Elite coaching. Powered by AI." and claimed
+ * "biomechanics analysis, personalized coaching, and injury prevention in
+ * seconds". Two problems: it sold the model rather than the measurement, and
+ * "injury prevention" is a claim the product cannot support.
+ *
+ * Caliper's promise is narrower and true — we measure your joints and show you
+ * the numbers. That is also the more interesting claim.
+ */
+
+import React, { useEffect } from "react";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Feather } from "@expo/vector-icons";
+import Svg, { Line, Circle } from "react-native-svg";
 
-import { useColors } from "@/hooks/useColors";
+import { Screen, Label, PrimaryButton, Chip } from "@/components/caliper";
+import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
+import { SPORTS } from "@/constants/sports";
 
-const SPORTS = ["Fencing", "Weightlifting", "Basketball", "Golf", "Tennis", "Running"];
-
-const FEATURES = [
-  { icon: "activity" as const, color: "#06b6d4", label: "AI Motion Analysis" },
-  { icon: "shield" as const, color: "#f97316", label: "Injury Prevention" },
-  { icon: "trending-up" as const, color: "#22d3ee", label: "Progress Tracking" },
-  { icon: "users" as const, color: "#10b981", label: "Pro Comparisons" },
-];
+/** A representative slice of the catalogue — the full list lives in onboarding. */
+const SHOWCASE = SPORTS.slice(0, 8);
 
 export default function LandingScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, profile } = useAuth();
 
-  // Skip landing page for returning users
+  // Already signed in — go straight to the instrument panel. Onboarding is only
+  // for accounts that haven't picked a sport yet.
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
-      router.replace("/(tabs)");
-    }
-  }, [isLoading, isAuthenticated]);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
-    ]).start();
-  }, []);
-
-  const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
-    inner: {
-      flex: 1,
-      paddingHorizontal: 24,
-      paddingTop: topPad + 40,
-      paddingBottom: bottomPad + 24,
-      justifyContent: "space-between",
-    },
-    topSection: { alignItems: "center" },
-    logoRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-      marginBottom: 40,
-    },
-    logoIcon: {
-      width: 48,
-      height: 48,
-      borderRadius: 14,
-      backgroundColor: colors.primary + "22",
-      borderWidth: 1.5,
-      borderColor: colors.primary + "44",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    logoText: {
-      fontSize: 24,
-      fontFamily: "Archivo_800ExtraBold",
-      color: colors.foreground,
-      letterSpacing: -0.5,
-    },
-    headline: {
-      fontSize: 38,
-      fontFamily: "Archivo_900Black",
-      color: colors.foreground,
-      textAlign: "center",
-      lineHeight: 44,
-      letterSpacing: -1,
-      marginBottom: 14,
-    },
-    accent: { color: colors.primary },
-    subhead: {
-      fontSize: 15,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-      textAlign: "center",
-      lineHeight: 22,
-      maxWidth: 300,
-    },
-    sportsRow: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      justifyContent: "center",
-      gap: 8,
-      marginTop: 28,
-    },
-    sportPill: {
-      paddingHorizontal: 14,
-      paddingVertical: 6,
-      borderRadius: 20,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    sportPillText: {
-      fontSize: 12,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-    },
-    featuresGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 10,
-      marginTop: 32,
-    },
-    featureItem: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      width: "47%",
-      backgroundColor: colors.card,
-      borderRadius: 12,
-      padding: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    featureText: {
-      fontSize: 12,
-      fontFamily: "Inter_500Medium",
-      color: colors.foreground,
-      flex: 1,
-    },
-    statsRow: {
-      flexDirection: "row",
-      justifyContent: "center",
-      gap: 32,
-      marginTop: 28,
-    },
-    stat: { alignItems: "center" },
-    statValue: {
-      fontSize: 22,
-      fontFamily: "Inter_700Bold",
-      color: colors.primary,
-    },
-    statLabel: {
-      fontSize: 11,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-      marginTop: 2,
-    },
-    bottomSection: { gap: 12 },
-    primaryBtn: {
-      backgroundColor: colors.primary,
-      borderRadius: 16,
-      paddingVertical: 16,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-    },
-    primaryBtnText: {
-      color: colors.primaryForeground,
-      fontSize: 16,
-      fontFamily: "Inter_700Bold",
-    },
-    secondaryBtn: {
-      borderRadius: 16,
-      paddingVertical: 14,
-      alignItems: "center",
-      justifyContent: "center",
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    secondaryBtnText: {
-      color: colors.mutedForeground,
-      fontSize: 15,
-      fontFamily: "Inter_500Medium",
-    },
-    freeNote: {
-      textAlign: "center",
-      fontSize: 12,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-    },
-  });
+    if (!isAuthenticated) return;
+    router.replace(profile?.sport ? "/(tabs)" : "/onboarding");
+  }, [isAuthenticated, profile?.sport, router]);
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false} bounces={false}>
-      <Animated.View
-        style={[s.inner, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
+    <Screen>
+      <ScrollView
+        contentContainerStyle={{
+          paddingTop: insets.top + 40,
+          paddingBottom: insets.bottom + 28,
+          paddingHorizontal: GUTTER,
+          flexGrow: 1,
+        }}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={s.topSection}>
-          <View style={s.logoRow}>
-            <View style={s.logoIcon}>
-              <Feather name="zap" size={22} color={colors.primary} />
+        <Label>ATHLETE AI</Label>
+
+        <Text style={[T.headline, s.headline]}>
+          Your technique,{"\n"}measured.
+        </Text>
+
+        <Text style={[T.body, s.sub]}>
+          Film a set. We track your joints frame by frame and show you the angles — with the
+          range each one should sit in. Same clip, same numbers, every time.
+        </Text>
+
+        <MeasureMark />
+
+        <View style={s.chips}>
+          {SHOWCASE.map((sport) => (
+            <Chip key={sport} label={sport} />
+          ))}
+          <Chip label={`+${SPORTS.length - SHOWCASE.length} more`} />
+        </View>
+
+        <View style={s.points}>
+          {[
+            ["Measured, not guessed", "Joint angles from your own video, not an estimate from a text description."],
+            ["Shown against a band", "Every number arrives with the range it came from, so you know what it means."],
+            ["Flags carry evidence", "A flagged joint always shows the angle that produced it."],
+          ].map(([title, body]) => (
+            <View key={title} style={s.point}>
+              <Text style={T.rowTitle}>{title}</Text>
+              <Text style={[T.bodySmall, { marginTop: 3 }]}>{body}</Text>
             </View>
-            <Text style={s.logoText}>AthleteAI</Text>
-          </View>
-
-          <Text style={s.headline}>
-            Elite coaching.{"\n"}
-            <Text style={s.accent}>Powered by AI.</Text>
-          </Text>
-          <Text style={s.subhead}>
-            Upload any training video. Get biomechanics analysis, personalized coaching, and injury prevention in seconds.
-          </Text>
-
-          <View style={s.sportsRow}>
-            {SPORTS.map((sport) => (
-              <View key={sport} style={s.sportPill}>
-                <Text style={s.sportPillText}>{sport}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={s.featuresGrid}>
-            {FEATURES.map((f) => (
-              <View key={f.label} style={s.featureItem}>
-                <Feather name={f.icon} size={16} color={f.color} />
-                <Text style={s.featureText}>{f.label}</Text>
-              </View>
-            ))}
-          </View>
-
+          ))}
         </View>
 
-        <View style={s.bottomSection}>
-          <TouchableOpacity
-            style={s.primaryBtn}
-            activeOpacity={0.85}
-            onPress={() => router.push("/auth/signup")}
-          >
-            <Feather name="zap" size={18} color={colors.primaryForeground} />
-            <Text style={s.primaryBtnText}>Get Started Free</Text>
-          </TouchableOpacity>
+        <View style={{ flex: 1, minHeight: 24 }} />
 
-          <TouchableOpacity
-            style={s.secondaryBtn}
-            activeOpacity={0.75}
-            onPress={() => router.push("/auth/login")}
-          >
-            <Text style={s.secondaryBtnText}>Sign in</Text>
-          </TouchableOpacity>
+        <PrimaryButton
+          label="Start measuring"
+          onPress={() => router.push("/auth/signup")}
+          trailingArrow
+        />
 
-          <Text style={s.freeNote}>Free to start · No credit card required</Text>
-        </View>
-      </Animated.View>
-    </ScrollView>
+        <View style={{ height: 10 }} />
+
+        <PrimaryButton
+          label="Sign in"
+          onPress={() => router.push("/auth/login")}
+          tone={color.card}
+          labelTone={color.textPrimary}
+        />
+
+        <Text style={s.footnote}>Free to start. No card required.</Text>
+      </ScrollView>
+    </Screen>
   );
 }
+
+/**
+ * The mark: a caliper measuring a joint angle.
+ *
+ * Says what the product does in one glyph — the cobalt arc is the reading, and
+ * it's the only cobalt on the screen until the primary button.
+ */
+function MeasureMark() {
+  return (
+    <View style={s.mark}>
+      <Svg width={200} height={120} viewBox="0 0 200 120">
+        {/* limb */}
+        <Line x1={30} y1={20} x2={92} y2={70} stroke={color.ink} strokeWidth={2.5} strokeLinecap="round" />
+        <Line x1={92} y1={70} x2={170} y2={58} stroke={color.ink} strokeWidth={2.5} strokeLinecap="round" />
+        {/* joint */}
+        <Circle cx={92} cy={70} r={6} fill={color.ink} />
+        <Circle cx={30} cy={20} r={4} fill={color.ink} opacity={0.35} />
+        <Circle cx={170} cy={58} r={4} fill={color.ink} opacity={0.35} />
+        {/* the reading */}
+        <Circle
+          cx={92}
+          cy={70}
+          r={30}
+          stroke={color.cobalt}
+          strokeWidth={2}
+          fill="none"
+          strokeDasharray="47 200"
+          strokeDashoffset={-6}
+        />
+      </Svg>
+      <Text style={[T.measured, { color: color.cobalt, marginTop: -18 }]}>142°</Text>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  headline: { marginTop: 12 },
+  sub: { marginTop: 14, maxWidth: 320 },
+  mark: { alignItems: "center", marginTop: 18, marginBottom: 4 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 12 },
+  points: { marginTop: 28, gap: 16 },
+  point: {
+    borderLeftWidth: 2,
+    borderLeftColor: color.ruleStrong,
+    paddingLeft: 14,
+  },
+  footnote: {
+    textAlign: "center",
+    marginTop: 14,
+    fontFamily: font.body,
+    fontSize: 12,
+    color: color.textFaint,
+  },
+});

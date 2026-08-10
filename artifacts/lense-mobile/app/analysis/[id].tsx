@@ -1,533 +1,462 @@
-import React, { useState, useEffect, useCallback } from "react";
+/**
+ * Analysis detail — the readout for one session.
+ *
+ * ── One honesty constraint shapes this screen ───────────────────────────────
+ * The mockup's hero carries a waveform along the clip's timeline, and each flag
+ * carries the timestamp that produced it. We measure per-joint statistics, not
+ * a per-frame timeline, so a time-axis waveform here would be decoration drawn
+ * to look like data — the exact failure this redesign is named after.
+ *
+ * Both keep their visual role, backed by measurements we actually have:
+ *   - the hero strip shows one band per tracked joint, coloured by its reading
+ *   - each flag's stamp is the extreme angle observed for that joint
+ *
+ * Same rhythm, same information density, nothing invented.
+ */
+
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  Platform,
+  Pressable,
   ActivityIndicator,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Feather } from "@expo/vector-icons";
+import Svg, { Defs, Pattern, Rect, Line, Circle } from "react-native-svg";
 
-import { useColors } from "@/hooks/useColors";
-import { analyses as analysesApi, type AnalysisRecord, type TipRecord, type RiskRecord } from "@/lib/api";
+import {
+  Screen,
+  Card,
+  Label,
+  MetricBar,
+  Prescription,
+  FlagRow,
+  Chevron,
+  PlayGlyph,
+} from "@/components/caliper";
+import { color, type as T, radius, GUTTER, font, delta } from "@/constants/caliper";
+import {
+  analyses as analysesApi,
+  type AnalysisRecord,
+  type TipRecord,
+  type RiskRecord,
+} from "@/lib/api";
+import { displaySport } from "@/constants/sports";
 
-const SCORE_KEYS = ["technique", "power", "balance", "consistency", "mobility", "speed"] as const;
+const HERO_H = 340;
+const { width: SCREEN_W } = Dimensions.get("window");
 
-const SEVERITY_CONFIG = {
-  info:     { color: "#38bdf8", icon: "info"          as const, label: "Info"     },
-  warning:  { color: "#f59e0b", icon: "alert-triangle" as const, label: "Warning"  },
-  critical: { color: "#ef4444", icon: "alert-circle"  as const, label: "Critical" },
-};
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-}
-
-/**
- * Read a sub-score, preserving `null`.
- *
- * `null` means the dimension was not measurable — power and speed cannot be
- * derived from 2D joint angles, and every score is null when a clip was too
- * poorly tracked to measure. Collapsing that to 0 (the previous behaviour)
- * displays "not measured" as "you scored zero", which is both wrong and
- * demoralising.
- */
-function scoreForKey(
-  analysis: AnalysisRecord,
-  key: (typeof SCORE_KEYS)[number],
-): number | null {
-  const value = (analysis as unknown as Record<string, number | null>)[`${key}Score`];
-  return typeof value === "number" ? value : null;
-}
+/** Sub-scores in the order they're presented. Power/speed are excluded — they
+ *  are structurally unmeasurable from 2D pose and would only ever read "—". */
+const DIMENSIONS = [
+  { key: "technique", label: "Technique" },
+  { key: "balance", label: "Balance" },
+  { key: "consistency", label: "Consistency" },
+  { key: "mobility", label: "Mobility" },
+] as const;
 
 export default function AnalysisDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const [analysis, setAnalysis]     = useState<AnalysisRecord | null>(null);
-  const [tips, setTips]             = useState<TipRecord[]>([]);
-  const [risks, setRisks]           = useState<RiskRecord[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState(false);
-  const [expandedTip, setExpanded]  = useState<string | null>(null);
-  const [activeTab, setActiveTab]   = useState<"scores" | "tips" | "risks" | "ai">("scores");
-
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
+  const [analysis, setAnalysis] = useState<AnalysisRecord | null>(null);
+  const [tips, setTips] = useState<TipRecord[]>([]);
+  const [risks, setRisks] = useState<RiskRecord[]>([]);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const { analysis: a, tips: t, injuryRisks: r } = await analysesApi.get(id);
-      setAnalysis(a);
-      setTips(t);
-      setRisks(r);
-      setError(false);
+      const result = await analysesApi.get(id);
+      setAnalysis(result.analysis);
+      setTips(result.tips);
+      setRisks(result.injuryRisks);
+      setState("ready");
     } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
+      setState("error");
     }
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  // Poll while processing
+  // Poll while the write-up is still being generated.
   useEffect(() => {
     if (!analysis || analysis.status === "complete" || analysis.status === "failed") return;
-    const timer = setInterval(load, 4000);
+    const timer = setInterval(load, 3000);
     return () => clearInterval(timer);
   }, [analysis, load]);
 
-  function getScoreColor(score: number) {
-    if (score >= 80) return colors.success;
-    if (score >= 65) return colors.primary;
-    return colors.warning;
-  }
-
-  function getRiskColor(pct: number) {
-    if (pct >= 50) return colors.destructive;
-    if (pct >= 30) return colors.warning;
-    return colors.success;
-  }
-
-  if (loading) {
+  if (state === "loading") {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
+      <Screen style={s.centre}>
+        <ActivityIndicator color={color.cobalt} />
+      </Screen>
     );
   }
 
-  if (error || !analysis) {
+  if (state === "error" || !analysis) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", gap: 12 }}>
-        <Feather name="alert-circle" size={32} color={colors.destructive} />
-        <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Analysis not found</Text>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={{ color: colors.primary, fontFamily: "Inter_500Medium" }}>Go back</Text>
-        </TouchableOpacity>
-      </View>
+      <Screen style={s.centre}>
+        <Text style={T.cardTitle}>We couldn't load this session</Text>
+        <Pressable onPress={() => router.back()} style={{ marginTop: 12 }}>
+          <Text style={[T.buttonSmall, { color: color.cobalt }]}>Go back</Text>
+        </Pressable>
+      </Screen>
     );
   }
 
-  // Still processing — show a waiting screen
-  if (analysis.status === "processing" || analysis.status === "pending") {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", gap: 16, paddingHorizontal: 32 }}>
-        <ActivityIndicator color={colors.primary} size="large" />
-        <Text style={{ fontSize: 17, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>
-          Analyzing your video…
-        </Text>
-        <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
-          Our AI is reviewing your movement. This usually takes 10–30 seconds.
-        </Text>
-      </View>
-    );
-  }
+  const measured = analysis.analysisMethod === "pose-measured";
+  const legacy = analysis.analysisMethod === "legacy-unverified";
+  const processing = analysis.status === "processing" || analysis.status === "pending";
 
-  if (analysis.status === "failed") {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 32 }}>
-        <Feather name="x-circle" size={32} color={colors.destructive} />
-        <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>Analysis failed</Text>
-        <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
-          Something went wrong processing your video. Please try uploading again.
-        </Text>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={{ color: colors.primary, fontFamily: "Inter_500Medium" }}>Go back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const overallScore = analysis.overallScore;
-  /** Scores exist only when the clip was tracked well enough to measure. */
-  const isMeasured = analysis.analysisMethod === "pose-measured";
-  /** Created before measurement existed — its numbers were generated, not measured. */
-  const isLegacy = analysis.analysisMethod === "legacy-unverified";
-
-  const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
-    heroCard: {
-      margin: 20,
-      backgroundColor: colors.card,
-      borderRadius: colors.radius,
-      padding: 20,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    heroTitle: { fontSize: 22, fontFamily: "Archivo_800ExtraBold", color: colors.foreground, letterSpacing: -0.4 },
-    heroMeta:  { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 4, textTransform: "capitalize" },
-    scoreRow:  { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 16 },
-    summary: {
-      fontSize: 14,
-      lineHeight: 21,
-      color: colors.foreground,
-      fontFamily: "Inter_400Regular",
-      marginTop: 14,
-    },
-    provenanceNote: {
-      flexDirection: "row",
-      gap: 9,
-      alignItems: "flex-start",
-      backgroundColor: colors.warning + "18",
-      borderWidth: 1,
-      borderColor: colors.warning + "44",
-      borderRadius: 12,
-      padding: 12,
-      marginTop: 14,
-    },
-    provenanceText: {
-      flex: 1,
-      fontSize: 12,
-      lineHeight: 17,
-      color: colors.foreground,
-      fontFamily: "Inter_400Regular",
-    },
-    unscoredCard: {
-      flexDirection: "row",
-      gap: 11,
-      alignItems: "flex-start",
-      backgroundColor: colors.surface3,
-      borderRadius: 12,
-      padding: 14,
-      marginTop: 16,
-    },
-    unscoredText: {
-      flex: 1,
-      fontSize: 12.5,
-      lineHeight: 18,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-    },
-    overallCircle: {
-      width: 72, height: 72, borderRadius: 36,
-      borderWidth: 3, borderColor: colors.primary,
-      backgroundColor: colors.primary + "20",
-      alignItems: "center", justifyContent: "center",
-    },
-    overallNum:   { fontSize: 26, fontFamily: "Archivo_800ExtraBold", color: colors.primary, letterSpacing: -0.5 },
-    overallLabel: { fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
-    scoresMini:   { flex: 1, marginLeft: 16, gap: 6 },
-    scoreMiniRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    scoreMiniLabel: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", width: 78, textTransform: "capitalize" },
-    scoreMiniBarBg: { flex: 1, height: 5, backgroundColor: colors.border, borderRadius: 2.5 },
-    scoreMiniBarFill: { height: 5, borderRadius: 2.5 },
-    scoreMiniNum: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.foreground, width: 28, textAlign: "right" },
-    tabRow: {
-      flexDirection: "row", marginHorizontal: 20, marginBottom: 16,
-      backgroundColor: colors.card, borderRadius: 10, padding: 4,
-    },
-    tab:     { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 8 },
-    tabText: { fontSize: 13, fontFamily: "Inter_500Medium" },
-    section: { paddingHorizontal: 20, marginBottom: 16 },
-    listItem: { flexDirection: "row", gap: 10, marginBottom: 10, alignItems: "flex-start" },
-    dot:      { width: 6, height: 6, borderRadius: 3, marginTop: 7 },
-    listText: { fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular", flex: 1, lineHeight: 20 },
-    tipCard:   { backgroundColor: colors.card, borderRadius: colors.radius, marginBottom: 10, borderWidth: 1, overflow: "hidden" },
-    tipHeader: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14 },
-    tipTitle:  { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, flex: 1 },
-    tipBody:   { paddingHorizontal: 14, paddingBottom: 14 },
-    tipDesc:   { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 19 },
-    drillBox:  { marginTop: 10, backgroundColor: colors.muted, borderRadius: 8, padding: 10 },
-    drillLabel:{ fontSize: 11, color: colors.primary, fontFamily: "Inter_600SemiBold", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 },
-    drillText: { fontSize: 12, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 17 },
-    riskCard:  { backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.border },
-    riskRow:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
-    riskJoint: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    riskPct:   { fontSize: 16, fontFamily: "Inter_700Bold" },
-    riskBarBg: { height: 6, backgroundColor: colors.border, borderRadius: 3, marginBottom: 8 },
-    riskBarFill:{ height: 6, borderRadius: 3 },
-    riskDesc:  { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginBottom: 4 },
-    riskPrev:  { fontSize: 12, color: colors.foreground, fontFamily: "Inter_400Regular" },
-    prevLabel: { color: colors.primary, fontFamily: "Inter_500Medium" },
-  });
+  const prescription = tips[0] ?? null;
 
   return (
-    <View style={s.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: bottomPad }}>
-        <View style={s.heroCard}>
-          <Text style={s.heroTitle}>{analysis.title}</Text>
-          <Text style={s.heroMeta}>
-            {analysis.sport}
-            {analysis.duration ? ` · ${analysis.duration}s` : ""}
-            {" · "}{formatDate(analysis.uploadedAt)}
-          </Text>
+    <Screen>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Hero ── */}
+        <Pressable onPress={() => router.push(`/analysis/skeleton/${analysis.id}`)}>
+          <View style={s.hero}>
+            <FilmBackdrop />
+            <SkeletonMark flagged={risks.length > 0} />
 
-          {isLegacy && (
-            <View style={s.provenanceNote}>
-              <Feather name="alert-triangle" size={13} color={colors.warning} />
-              <Text style={s.provenanceText}>
-                This analysis predates pose measurement. Its scores were generated text, not
-                measurements from your video — treat them as indicative only. Re-upload the clip
-                for measured results.
-              </Text>
-            </View>
-          )}
+            <View style={s.heroScrim} />
 
-          {analysis.summary ? <Text style={s.summary}>{analysis.summary}</Text> : null}
-
-          {overallScore !== null && (
-            <View style={s.scoreRow}>
-              <View style={s.overallCircle}>
-                <Text style={s.overallNum}>{Math.round(overallScore)}</Text>
-                <Text style={s.overallLabel}>SCORE</Text>
-              </View>
-              <View style={s.scoresMini}>
-                {SCORE_KEYS.map((key) => {
-                  const score = scoreForKey(analysis, key);
-                  // Render unmeasured dimensions explicitly rather than as an
-                  // empty bar, so "we couldn't measure this" never reads as
-                  // "you scored badly here".
-                  if (score === null) {
-                    return (
-                      <View key={key} style={s.scoreMiniRow}>
-                        <Text style={s.scoreMiniLabel}>{key}</Text>
-                        <View style={s.scoreMiniBarBg} />
-                        <Text style={[s.scoreMiniNum, { color: colors.mutedForeground }]}>n/a</Text>
-                      </View>
-                    );
-                  }
-                  const clr = getScoreColor(score);
-                  return (
-                    <View key={key} style={s.scoreMiniRow}>
-                      <Text style={s.scoreMiniLabel}>{key}</Text>
-                      <View style={s.scoreMiniBarBg}>
-                        <View
-                          style={[
-                            s.scoreMiniBarFill,
-                            { width: `${score}%` as `${number}%`, backgroundColor: clr },
-                          ]}
-                        />
-                      </View>
-                      <Text style={s.scoreMiniNum}>{Math.round(score)}</Text>
-                    </View>
-                  );
-                })}
+            <View style={[s.heroTop, { top: insets.top + 6 }]}>
+              <Pressable onPress={() => router.back()} style={s.heroBtn} hitSlop={8}>
+                <Chevron direction="left" tone={color.onInk} size={16} />
+              </Pressable>
+              <View style={s.heroBtn}>
+                <PlayGlyph tone={color.onInk} size={13} />
               </View>
             </View>
-          )}
 
-          {overallScore === null && isMeasured === false && (
-            <View style={s.unscoredCard}>
-              <Feather name="camera-off" size={18} color={colors.mutedForeground} />
-              <Text style={s.unscoredText}>
-                We couldn&apos;t track your body reliably enough in this clip to measure joint
-                angles, so there are no scores. Film side-on with your whole body in frame, in good
-                light, with the camera steady.
+            <View style={s.heroFoot}>
+              <Label tone="rgba(237,236,231,0.6)">
+                {displaySport(analysis.sport).toUpperCase()}
+                {" · "}
+                {new Date(analysis.uploadedAt)
+                  .toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+                  .toUpperCase()}
+                {analysis.duration ? ` · ${analysis.duration.toFixed(1)}S` : ""}
+              </Label>
+              <Text style={[T.headlineSmall, { color: color.onInk, marginTop: 6 }]}>
+                {analysis.title}
               </Text>
-            </View>
-          )}
 
-          <TouchableOpacity
-            style={{
-              flexDirection: "row", alignItems: "center", justifyContent: "center",
-              gap: 8, marginTop: 16, backgroundColor: "rgba(255,255,255,0.06)",
-              borderRadius: 12, borderWidth: 1, borderColor: colors.primary + "55", paddingVertical: 12,
-            }}
-            activeOpacity={0.75}
-            onPress={() => router.push(`/analysis/skeleton/${id}`)}
-          >
-            <Feather name="user" size={16} color={colors.primary} />
-            <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.primary }}>
-              View Skeleton Overlay
-            </Text>
-            <Feather name="chevron-right" size={14} color={colors.primary} />
-          </TouchableOpacity>
-        </View>
+              {/* One band per tracked joint — real readings, not a fake timeline. */}
+              {risks.length > 0 && <JointStrip risks={risks} />}
 
-        <View style={s.tabRow}>
-          {(["scores", "tips", "risks", "ai"] as const).map((tab) => {
-            const active = activeTab === tab;
-            const label = tab === "scores" ? "Highlights" : tab === "risks" ? "Injury" : tab === "tips" ? "Tips" : "AI";
-            return (
-              <TouchableOpacity
-                key={tab}
-                style={[s.tab, active && { backgroundColor: colors.primary }]}
-                onPress={() => setActiveTab(tab)}
-                activeOpacity={0.7}
-              >
-                <Text style={[s.tabText, { color: active ? colors.primaryForeground : colors.mutedForeground }]}>
-                  {label}
+              <View style={s.heroCta}>
+                <Text style={[T.measuredSmall, { color: color.onInk }]}>
+                  TAP TO OPEN SKELETON OVERLAY
                 </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {activeTab === "scores" && (
-          <View style={s.section}>
-            <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.success, marginBottom: 10 }}>
-              Strengths
-            </Text>
-            {(analysis.strengths ?? []).map((str, i) => (
-              <View key={i} style={s.listItem}>
-                <View style={[s.dot, { backgroundColor: colors.success }]} />
-                <Text style={s.listText}>{str}</Text>
               </View>
-            ))}
-            <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.warning, marginBottom: 10, marginTop: 8 }}>
-              Areas to Improve
-            </Text>
-            {(analysis.improvements ?? []).map((imp, i) => (
-              <View key={i} style={s.listItem}>
-                <View style={[s.dot, { backgroundColor: colors.warning }]} />
-                <Text style={s.listText}>{imp}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {activeTab === "tips" && (
-          <View style={s.section}>
-            {tips.length === 0 ? (
-              <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", paddingVertical: 24 }}>
-                No coaching tips available
-              </Text>
-            ) : tips.map((tip) => {
-              const cfg = SEVERITY_CONFIG[tip.severity as keyof typeof SEVERITY_CONFIG] ?? SEVERITY_CONFIG.info;
-              const expanded = expandedTip === tip.id;
-              return (
-                <TouchableOpacity
-                  key={tip.id}
-                  style={[s.tipCard, { borderColor: cfg.color + "44" }]}
-                  activeOpacity={0.8}
-                  onPress={() => setExpanded(expanded ? null : tip.id)}
-                >
-                  <View style={s.tipHeader}>
-                    <Feather name={cfg.icon} size={16} color={cfg.color} />
-                    <Text style={s.tipTitle}>{tip.title}</Text>
-                    <Feather name={expanded ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
-                  </View>
-                  {expanded && (
-                    <View style={s.tipBody}>
-                      <Text style={s.tipDesc}>{tip.description}</Text>
-                      {tip.drill && (
-                        <View style={s.drillBox}>
-                          <Text style={s.drillLabel}>Drill</Text>
-                          <Text style={s.drillText}>{tip.drill}</Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        {activeTab === "ai" && (
-          <View style={s.section}>
-            {/* AI-generated performance narrative */}
-            <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 16, borderWidth: 1, borderColor: colors.border, marginBottom: 12 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primary + "22", alignItems: "center", justifyContent: "center" }}>
-                  <Feather name="cpu" size={14} color={colors.primary} />
-                </View>
-                <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>Atlas AI Analysis</Text>
-                <View style={{ marginLeft: "auto" as any, backgroundColor: colors.primary + "22", borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
-                  <Text style={{ fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.primary, textTransform: "uppercase", letterSpacing: 0.5 }}>Claude AI</Text>
-                </View>
-              </View>
-              {/*
-                The readout comes from the server, where it was written against
-                the actual measurements. It used to be assembled here from
-                score thresholds, which meant the "AI analysis" was really a
-                template the client filled in.
-              */}
-              <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 20, marginBottom: 10 }}>
-                {analysis.summary ??
-                  "No written analysis is available for this session."}
-              </Text>
-
-              {(() => {
-                // Rank only the dimensions that were actually measured — a null
-                // would otherwise always win "most improvement potential".
-                const measured = SCORE_KEYS
-                  .map((k) => ({ key: k, score: scoreForKey(analysis, k) }))
-                  .filter((e): e is { key: (typeof SCORE_KEYS)[number]; score: number } => e.score !== null);
-
-                if (measured.length < 2) return null;
-
-                const best = measured.reduce((a, b) => (b.score > a.score ? b : a));
-                const worst = measured.reduce((a, b) => (b.score < a.score ? b : a));
-
-                return (
-                  <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 20 }}>
-                    {`Strongest measured dimension: ${best.key} (${Math.round(best.score)}). `}
-                    {`Most room to improve: ${worst.key} (${Math.round(worst.score)}). `}
-                    {tips.length > 0 &&
-                      `${tips.length} coaching tip${tips.length > 1 ? "s" : ""} and ${risks.length} flagged joint${risks.length !== 1 ? "s" : ""} below.`}
-                  </Text>
-                );
-              })()}
             </View>
+          </View>
+        </Pressable>
 
-            {/* Key insight cards */}
-            {tips.slice(0, 2).map((tip) => {
-              const cfg = SEVERITY_CONFIG[tip.severity as keyof typeof SEVERITY_CONFIG] ?? SEVERITY_CONFIG.info;
-              return (
-                <View key={tip.id} style={[s.tipCard, { borderColor: cfg.color + "44" }]}>
-                  <View style={s.tipHeader}>
-                    <Feather name={cfg.icon} size={14} color={cfg.color} />
-                    <Text style={s.tipTitle}>{tip.title}</Text>
-                    <Text style={{ fontSize: 10, color: cfg.color, fontFamily: "Inter_600SemiBold", textTransform: "uppercase" }}>{cfg.label}</Text>
-                  </View>
-                  <View style={s.tipBody}>
-                    <Text style={s.tipDesc}>{tip.description}</Text>
-                    {tip.drill && (
-                      <View style={s.drillBox}>
-                        <Text style={s.drillLabel}>Drill</Text>
-                        <Text style={s.drillText}>{tip.drill}</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              );
-            })}
+        {/* ── Form Index ── */}
+        <Card style={s.indexCard}>
+          {legacy && (
+            <View style={s.legacyNote}>
+              <Text style={[T.bodySmall, { color: color.rust }]}>
+                This session predates pose measurement. Its numbers were generated text, not
+                measurements — re-upload the clip for a real reading.
+              </Text>
+            </View>
+          )}
 
-            <TouchableOpacity
-              style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 12, marginTop: 4 }}
-              activeOpacity={0.8}
-              onPress={() => setActiveTab("tips")}
-            >
-              <Feather name="list" size={14} color={colors.primaryForeground} />
-              <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.primaryForeground }}>See All {tips.length} Tips</Text>
-            </TouchableOpacity>
+          <View style={s.indexHead}>
+            <View>
+              <Label>FORM INDEX</Label>
+              <View style={s.indexRow}>
+                <Text
+                  style={[
+                    T.metricLarge,
+                    analysis.overallScore === null && { color: color.textGhost },
+                  ]}
+                >
+                  {analysis.overallScore === null ? "—" : Math.round(analysis.overallScore)}
+                </Text>
+              </View>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Label>MEASURED</Label>
+              <Text style={[T.measured, { fontSize: 11, marginTop: 3 }]}>
+                {measured ? `${frameCount(analysis)} FRAMES` : "NOT MEASURED"}
+              </Text>
+            </View>
+          </View>
+
+          {measured && (
+            <View style={s.bars}>
+              {DIMENSIONS.map((d) => (
+                <MetricBar
+                  key={d.key}
+                  name={d.label}
+                  value={
+                    (analysis as unknown as Record<string, number | null>)[`${d.key}Score`] ??
+                    null
+                  }
+                />
+              ))}
+            </View>
+          )}
+
+          {analysis.analysisMethod === "unscored" && (
+            <Text style={[T.body, { marginTop: 14 }]}>
+              We couldn't track your body reliably enough in this clip to measure joint
+              angles, so there are no scores. Film side-on, whole body in frame, in good
+              light, with the camera steady.
+            </Text>
+          )}
+        </Card>
+
+        {/* ── Summary ── */}
+        {analysis.summary && (
+          <View style={s.section}>
+            <Label style={{ marginBottom: 8 }}>READOUT</Label>
+            <Text style={T.body}>{analysis.summary}</Text>
           </View>
         )}
 
-        {activeTab === "risks" && (
+        {processing && (
           <View style={s.section}>
-            {risks.length === 0 ? (
-              <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", paddingVertical: 24 }}>
-                No injury risks detected
+            <View style={s.processingRow}>
+              <ActivityIndicator size="small" color={color.cobalt} />
+              <Text style={[T.bodySmall, { flex: 1 }]}>
+                Writing up your coaching notes. Your measurements are already saved.
               </Text>
-            ) : risks.map((risk) => {
-              const clr = getRiskColor(risk.riskPercent);
-              return (
-                <View key={risk.id} style={s.riskCard}>
-                  <View style={s.riskRow}>
-                    <Text style={s.riskJoint}>{risk.joint}</Text>
-                    <Text style={[s.riskPct, { color: clr }]}>{risk.riskPercent}%</Text>
+            </View>
+          </View>
+        )}
+
+        {/* ── Flags ── */}
+        {risks.length > 0 && (
+          <View style={s.section}>
+            <Label style={{ marginBottom: 6 }}>WHAT THE TAPE SHOWS</Label>
+            {risks.map((risk, i) => (
+              <FlagRow
+                key={risk.id}
+                first={i === 0}
+                stamp={flagStamp(risk)}
+                tone={risk.riskPercent >= 10 ? color.rust : color.textFaint}
+                text={risk.description}
+              />
+            ))}
+            <Text style={[T.bodySmall, { marginTop: 12, fontStyle: "italic" }]}>
+              These describe joint positions measured from your video. They are not a medical
+              assessment or an injury prediction.
+            </Text>
+          </View>
+        )}
+
+        {/* ── Strengths ── */}
+        {analysis.strengths?.length > 0 && (
+          <View style={s.section}>
+            <Label style={{ marginBottom: 6 }}>HOLDING UP WELL</Label>
+            {analysis.strengths.map((text, i) => (
+              <FlagRow key={i} first={i === 0} stamp="✓" tone={color.cobalt} text={text} />
+            ))}
+          </View>
+        )}
+
+        {/* ── Drills ── */}
+        {tips.length > 1 && (
+          <View style={s.section}>
+            <Label style={{ marginBottom: 10 }}>DRILLS</Label>
+            {tips.slice(1).map((tip) => (
+              <Card key={tip.id} style={s.tipCard}>
+                <Text style={T.rowTitle}>{tip.title}</Text>
+                <Text style={[T.bodySmall, { marginTop: 5 }]}>{tip.description}</Text>
+                {tip.drill && (
+                  <View style={s.drill}>
+                    <Label tone={color.textFaint}>DRILL</Label>
+                    <Text style={[T.bodySmall, { color: color.textPrimary, marginTop: 4 }]}>
+                      {tip.drill}
+                    </Text>
                   </View>
-                  <View style={s.riskBarBg}>
-                    <View style={[s.riskBarFill, { width: `${risk.riskPercent}%` as any, backgroundColor: clr }]} />
-                  </View>
-                  <Text style={s.riskDesc}>{risk.description}</Text>
-                  <Text style={s.riskPrev}><Text style={s.prevLabel}>Prevention: </Text>{risk.prevention}</Text>
-                </View>
-              );
-            })}
+                )}
+              </Card>
+            ))}
           </View>
         )}
       </ScrollView>
+
+      {/* ── The one next action ── */}
+      {prescription && (
+        <View style={[s.dock, { paddingBottom: insets.bottom + 12 }]}>
+          <Prescription
+            compact
+            text={prescription.drill || prescription.title}
+            onPress={() => router.push("/(tabs)/chat")}
+          />
+        </View>
+      )}
+    </Screen>
+  );
+}
+
+// ─── Hero pieces ─────────────────────────────────────────────────────────────
+
+/** Diagonal film-strip texture — the dark ground the reading sits on. */
+function FilmBackdrop() {
+  return (
+    <Svg width={SCREEN_W} height={HERO_H} style={StyleSheet.absoluteFill}>
+      <Defs>
+        <Pattern
+          id="film"
+          width={8}
+          height={8}
+          patternUnits="userSpaceOnUse"
+          patternTransform="rotate(35)"
+        >
+          <Rect width={8} height={8} fill="#16191A" />
+          <Rect width={4} height={8} fill="#1C1F21" />
+        </Pattern>
+      </Defs>
+      <Rect width={SCREEN_W} height={HERO_H} fill="url(#film)" />
+    </Svg>
+  );
+}
+
+/** A stylised figure. Marks a flagged limb in rust when the session has flags. */
+function SkeletonMark({ flagged }: { flagged: boolean }) {
+  const bone = { stroke: color.onInk, strokeOpacity: 0.55, strokeWidth: 2 };
+  const cx = SCREEN_W / 2 - 27;
+  return (
+    <Svg width={SCREEN_W} height={HERO_H} style={StyleSheet.absoluteFill}>
+      <Circle cx={cx} cy={104} r={14} {...bone} fill="none" />
+      <Line x1={cx} y1={118} x2={cx} y2={190} {...bone} />
+      <Line x1={cx} y1={136} x2={cx - 36} y2={172} {...bone} />
+      <Line
+        x1={cx}
+        y1={136}
+        x2={cx + 46}
+        y2={160}
+        stroke={flagged ? color.rust : color.onInk}
+        strokeOpacity={flagged ? 1 : 0.55}
+        strokeWidth={flagged ? 2.5 : 2}
+      />
+      <Line x1={cx} y1={190} x2={cx - 26} y2={252} {...bone} />
+      <Line x1={cx} y1={190} x2={cx + 34} y2={248} {...bone} />
+      {flagged && (
+        <Circle cx={cx + 46} cy={160} r={24} stroke={color.rust} strokeWidth={2} fill="none" />
+      )}
+    </Svg>
+  );
+}
+
+/**
+ * One bar per tracked joint, height and colour from that joint's reading.
+ *
+ * Replaces the mockup's timeline waveform, which we have no per-frame data to
+ * fill honestly.
+ */
+function JointStrip({ risks }: { risks: RiskRecord[] }) {
+  return (
+    <View style={s.strip}>
+      {risks.map((risk) => {
+        const severity = Math.min(1, risk.riskPercent / 40);
+        return (
+          <View
+            key={risk.id}
+            style={[
+              s.stripBar,
+              {
+                height: 6 + severity * 16,
+                backgroundColor: risk.riskPercent >= 10 ? color.rust : color.onInkMuted,
+              },
+            ]}
+          />
+        );
+      })}
     </View>
   );
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function frameCount(analysis: AnalysisRecord): number {
+  const metrics = (analysis as unknown as { poseMetrics?: { frameCount?: number } }).poseMetrics;
+  return metrics?.frameCount ?? 0;
+}
+
+/** The evidence for a flag: the extreme angle observed for that joint. */
+function flagStamp(risk: RiskRecord): string {
+  if (risk.observedMin != null && risk.observedMax != null) {
+    return `${Math.round(risk.observedMin)}–${Math.round(risk.observedMax)}°`;
+  }
+  return `${Math.round(risk.riskPercent)}%`;
+}
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  centre: { alignItems: "center", justifyContent: "center", padding: 32 },
+
+  hero: { height: HERO_H, backgroundColor: color.ink, overflow: "hidden" },
+  heroScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(16,19,18,0.35)" },
+  heroTop: {
+    position: "absolute",
+    left: GUTTER,
+    right: GUTTER,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  heroBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: color.inkWashOnDark,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroFoot: { position: "absolute", left: GUTTER, right: GUTTER, bottom: 26 },
+  heroCta: { marginTop: 12, opacity: 0.6 },
+
+  strip: { flexDirection: "row", alignItems: "flex-end", gap: 3, height: 22, marginTop: 14 },
+  stripBar: { flex: 1, borderRadius: 1, maxWidth: 26 },
+
+  indexCard: { marginHorizontal: GUTTER, marginTop: -16 },
+  indexHead: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
+  indexRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 2 },
+  bars: { marginTop: 18, gap: 11 },
+  legacyNote: {
+    backgroundColor: "rgba(194,84,46,0.08)",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+
+  section: { paddingHorizontal: GUTTER, paddingTop: 24 },
+  processingRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+
+  tipCard: { marginBottom: 10, padding: 16, borderRadius: radius.cardSmall },
+  drill: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: color.rule,
+  },
+
+  dock: {
+    position: "absolute",
+    left: GUTTER,
+    right: GUTTER,
+    bottom: 0,
+    paddingTop: 8,
+  },
+});

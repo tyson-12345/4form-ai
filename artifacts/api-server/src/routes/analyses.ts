@@ -19,7 +19,7 @@ import {
 } from "@workspace/db";
 import { eq, and, desc, count, gte } from "drizzle-orm";
 import { authenticate, type AuthRequest } from "../middlewares/authenticate.js";
-import { generateNarrative } from "../lib/claude.js";
+import { generateNarrative, CoachUnavailableError, type Narrative } from "../lib/claude.js";
 import {
   computeScores,
   deriveRiskFindings,
@@ -269,17 +269,12 @@ async function runAnalysis(
   const scores = computeScores(metrics);
   const riskFindings = deriveRiskFindings(metrics);
 
-  const narrative = await generateNarrative({
-    sport: input.sport,
-    title: input.title,
-    level: profile?.level ?? "intermediate",
-    metrics,
-    scores,
-    riskFindings,
-    goals: profile?.goals,
-    injuryConcerns: profile?.injuryConcerns,
-  });
-
+  // ── Persist the measurements first ──
+  // Scores come from lib/scoring.ts and involve no model call. Writing them
+  // before asking Claude for prose means an API outage, a rate limit, or a
+  // missing key costs the user their write-up but never their measurements —
+  // previously any of those marked the whole analysis "failed" and threw away
+  // work that was already complete and correct.
   await db
     .update(analysesTable)
     .set({
@@ -293,6 +288,81 @@ async function runAnalysis(
       // Explicitly null: not derivable from 2D pose. See lib/scoring.ts.
       powerScore: null,
       speedScore: null,
+    })
+    .where(eq(analysesTable.id, analysisId));
+
+  // Risk rows are measurements too, so they are written regardless of whether
+  // Claude is reachable. Prose is filled in below when it is.
+  if (riskFindings.length > 0) {
+    await db.insert(injuryRisksTable).values(
+      riskFindings.map((f) => ({
+        analysisId,
+        joint: JOINT_LABELS[f.joint],
+        riskPercent: f.riskPercent,
+        cautionPercent: f.cautionPercent,
+        observedMin: f.observedMin,
+        observedMax: f.observedMax,
+        description: `Your ${JOINT_LABELS[f.joint]} spent ${f.riskPercent}% of the clip outside its typical safe range (observed ${f.observedMin}–${f.observedMax}°).`,
+        prevention:
+          "Reduce the depth or load of this movement until you can hold the position with control.",
+      })),
+    );
+  }
+
+  if (scores.overall !== null) {
+    await db.insert(progressEntriesTable).values({
+      userId,
+      date: new Date().toISOString().split("T")[0]!,
+      overallScore: scores.overall,
+      techniqueScore: scores.technique,
+      balanceScore: scores.balance,
+      consistencyScore: scores.consistency,
+      mobilityScore: scores.mobility,
+      powerScore: null,
+      speedScore: null,
+    });
+  }
+
+  // ── Then attempt the write-up ──
+  let narrative: Narrative;
+  try {
+    narrative = await generateNarrative({
+      sport: input.sport,
+      title: input.title,
+      level: profile?.level ?? "intermediate",
+      metrics,
+      scores,
+      riskFindings,
+      goals: profile?.goals,
+      injuryConcerns: profile?.injuryConcerns,
+    });
+  } catch (err) {
+    const unavailable = err instanceof CoachUnavailableError;
+    logger[unavailable ? "warn" : "error"](
+      { analysisId, err: unavailable ? undefined : err, event: "narrative_unavailable" },
+      "Scores stored; coaching write-up could not be generated",
+    );
+
+    await db
+      .update(analysesTable)
+      .set({
+        summary:
+          "Your movement was measured and scored. The written coaching notes " +
+          "couldn't be generated this time — pull to refresh in a moment, or open " +
+          "the skeleton overlay to review your joint angles directly.",
+      })
+      .where(eq(analysesTable.id, analysisId));
+
+    logger.info(
+      { analysisId, overall: scores.overall, frames: metrics.frameCount, event: "analysis_complete_no_narrative" },
+      "Analysis complete without narrative",
+    );
+    return;
+  }
+
+  await db
+    .update(analysesTable)
+    .set({
       strengths: narrative.strengths,
       improvements: narrative.improvements,
       summary: narrative.summary,
@@ -312,49 +382,28 @@ async function runAnalysis(
     );
   }
 
-  // Risk rows are built from the *measured* findings; Claude only supplies the
-  // prose for joints we actually flagged. A joint it invents has no measurement
-  // to attach to and is dropped.
-  if (riskFindings.length > 0) {
+  // The risk rows already exist with their measured values and a factual
+  // fallback description. Upgrade the *prose only* where Claude supplied an
+  // explanation for a joint we actually flagged — a joint it invents has no
+  // measurement to attach to and is ignored.
+  if (riskFindings.length > 0 && narrative.riskExplanations.length > 0) {
     const explanationFor = new Map(
       narrative.riskExplanations.map((e) => [e.joint.toLowerCase().trim(), e]),
     );
 
-    await db.insert(injuryRisksTable).values(
-      riskFindings.map((f) => {
-        const label = JOINT_LABELS[f.joint];
-        const explanation =
-          explanationFor.get(label) ?? explanationFor.get(f.joint.toLowerCase());
-        return {
-          analysisId,
-          joint: label,
-          riskPercent: f.riskPercent,
-          cautionPercent: f.cautionPercent,
-          observedMin: f.observedMin,
-          observedMax: f.observedMax,
-          description:
-            explanation?.description ??
-            `Your ${label} spent ${f.riskPercent}% of the clip outside its typical safe range (observed ${f.observedMin}–${f.observedMax}°).`,
-          prevention:
-            explanation?.prevention ??
-            "Reduce the depth or load of this movement until you can hold the position with control.",
-        };
-      }),
-    );
-  }
+    for (const finding of riskFindings) {
+      const label = JOINT_LABELS[finding.joint];
+      const explanation =
+        explanationFor.get(label) ?? explanationFor.get(finding.joint.toLowerCase());
+      if (!explanation) continue;
 
-  if (scores.overall !== null) {
-    await db.insert(progressEntriesTable).values({
-      userId,
-      date: new Date().toISOString().split("T")[0]!,
-      overallScore: scores.overall,
-      techniqueScore: scores.technique,
-      balanceScore: scores.balance,
-      consistencyScore: scores.consistency,
-      mobilityScore: scores.mobility,
-      powerScore: null,
-      speedScore: null,
-    });
+      await db
+        .update(injuryRisksTable)
+        .set({ description: explanation.description, prevention: explanation.prevention })
+        .where(
+          and(eq(injuryRisksTable.analysisId, analysisId), eq(injuryRisksTable.joint, label)),
+        );
+    }
   }
 
   logger.info(

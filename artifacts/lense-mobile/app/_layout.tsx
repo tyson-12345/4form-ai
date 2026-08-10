@@ -1,20 +1,21 @@
 import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
+  BricolageGrotesque_500Medium,
+  BricolageGrotesque_600SemiBold,
+  BricolageGrotesque_800ExtraBold,
   useFonts,
-} from "@expo-google-fonts/inter";
+} from "@expo-google-fonts/bricolage-grotesque";
 import {
-  Archivo_700Bold,
-  Archivo_800ExtraBold,
-  Archivo_900Black,
-} from "@expo-google-fonts/archivo";
+  InstrumentSans_400Regular,
+  InstrumentSans_500Medium,
+  InstrumentSans_600SemiBold,
+} from "@expo-google-fonts/instrument-sans";
 import {
-  SpaceMono_700Bold,
-} from "@expo-google-fonts/space-mono";
+  JetBrainsMono_500Medium,
+  JetBrainsMono_700Bold,
+} from "@expo-google-fonts/jetbrains-mono";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -24,8 +25,7 @@ import { ActivityIndicator, View } from "react-native";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/lib/authContext";
-import { ThemeProvider, useTheme } from "@/lib/themeContext";
-import colors from "@/constants/colors";
+import { color } from "@/constants/caliper";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -33,13 +33,11 @@ const queryClient = new QueryClient();
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isLoading } = useAuth();
-  const { theme } = useTheme();
-  const bg = theme === "dark" ? colors.dark.background : colors.light.background;
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: bg, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator color="#C6FF3A" size="large" />
+      <View style={{ flex: 1, backgroundColor: color.paper, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color={color.cobalt} size="large" />
       </View>
     );
   }
@@ -48,29 +46,28 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 function RootLayoutNav() {
-  const { theme } = useTheme();
-  const C = theme === "dark" ? colors.dark : colors.light;
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: color.paper },
+      }}
+    >
       <Stack.Screen name="index" />
       <Stack.Screen name="onboarding" />
       <Stack.Screen name="auth/login" />
       <Stack.Screen name="auth/signup" />
+      <Stack.Screen name="auth/forgot-password" options={{ presentation: "modal" }} />
+      <Stack.Screen name="auth/reset-password" options={{ presentation: "modal" }} />
       <Stack.Screen name="pricing" options={{ presentation: "modal" }} />
       <Stack.Screen name="(tabs)" />
-      <Stack.Screen
-        name="analysis/[id]"
-        options={{
-          headerShown: true,
-          headerStyle: { backgroundColor: C.background },
-          headerTintColor: C.textPrimary,
-          headerTitle: "Analysis",
-          headerBackTitle: "Back",
-        }}
-      />
+      {/* Analysis screens carry their own headers so the hero can bleed to the
+          top edge — a stack header would cut the film strip in half. */}
+      <Stack.Screen name="analysis/[id]" />
+      <Stack.Screen name="analysis/measure" options={{ gestureEnabled: false }} />
       <Stack.Screen
         name="analysis/skeleton/[id]"
-        options={{ headerShown: false, presentation: "fullScreenModal" }}
+        options={{ presentation: "fullScreenModal" }}
       />
     </Stack>
   );
@@ -78,14 +75,14 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-    Archivo_700Bold,
-    Archivo_800ExtraBold,
-    Archivo_900Black,
-    SpaceMono_700Bold,
+    BricolageGrotesque_500Medium,
+    BricolageGrotesque_600SemiBold,
+    BricolageGrotesque_800ExtraBold,
+    InstrumentSans_400Regular,
+    InstrumentSans_500Medium,
+    InstrumentSans_600SemiBold,
+    JetBrainsMono_500Medium,
+    JetBrainsMono_700Bold,
   });
 
   useEffect(() => {
@@ -99,19 +96,20 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
-        <ThemeProvider>
-          <AuthProvider>
-            <QueryClientProvider client={queryClient}>
-              <GestureHandlerRootView style={{ flex: 1 }}>
-                <KeyboardProvider>
-                  <AuthGate>
-                    <RootLayoutNav />
-                  </AuthGate>
-                </KeyboardProvider>
-              </GestureHandlerRootView>
-            </QueryClientProvider>
-          </AuthProvider>
-        </ThemeProvider>
+        <AuthProvider>
+          <QueryClientProvider client={queryClient}>
+            <GestureHandlerRootView style={{ flex: 1, backgroundColor: color.paper }}>
+              <KeyboardProvider>
+                {/* Caliper is a single light system — paper is load-bearing, so
+                    the status bar is always dark-on-light. */}
+                <StatusBar style="dark" />
+                <AuthGate>
+                  <RootLayoutNav />
+                </AuthGate>
+              </KeyboardProvider>
+            </GestureHandlerRootView>
+          </QueryClientProvider>
+        </AuthProvider>
       </ErrorBoundary>
     </SafeAreaProvider>
   );
