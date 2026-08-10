@@ -1,438 +1,323 @@
-import React, { useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Platform,
-} from "react-native";
+/**
+ * Onboarding — five questions, each of which changes what we measure or how we
+ * frame it. Nothing here is collected "for personalisation" in the abstract.
+ *
+ * Multi-select on sport, because most athletes cross-train and the previous
+ * single-pick forced a lie. The first pick is stored as the primary sport
+ * (that's what the profile column holds); the rest go in `goals` context.
+ */
+
+import React, { useMemo, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Feather } from "@expo/vector-icons";
 
-import { useColors } from "@/hooks/useColors";
+import { Screen, Label, Chip, PrimaryButton, Chevron } from "@/components/caliper";
+import { color, type as T, GUTTER } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
-import * as Haptics from "expo-haptics";
-
-const SPORTS = [
-  "Powerlifting", "Olympic Weightlifting", "Running", "Swimming",
-  "Basketball", "Soccer", "Tennis", "Golf", "CrossFit",
-  "Gymnastics", "Boxing", "Cycling", "Football", "Baseball",
-  "Volleyball", "Martial Arts", "Other",
-];
+import { SPORTS } from "@/constants/sports";
 
 const LEVELS = [
-  { label: "Beginner", sub: "Just starting out" },
-  { label: "Intermediate", sub: "1–3 years experience" },
-  { label: "Advanced", sub: "3+ years, competing" },
-  { label: "Elite", sub: "Professional / competitive athlete" },
-];
+  { key: "beginner", label: "Beginner", note: "New to structured training" },
+  { key: "intermediate", label: "Intermediate", note: "Training consistently for a while" },
+  { key: "advanced", label: "Advanced", note: "Competing or training seriously" },
+  { key: "elite", label: "Elite", note: "Competing at a high level" },
+] as const;
 
 const GOALS = [
-  "Improve technique", "Prevent injuries", "Increase performance",
-  "Learn new movements", "Recovery & rehab", "Competition prep",
+  "Move better",
+  "Lift heavier",
+  "Get faster",
+  "Stay injury-free",
+  "Return from injury",
+  "Compete",
+  "Build consistency",
+  "Improve mobility",
 ];
 
-const INJURIES = [
-  "No current injuries", "Lower back", "Knee", "Shoulder",
-  "Hip", "Ankle", "Elbow", "Neck",
+const CONCERNS = [
+  "Knees",
+  "Hips",
+  "Lower back",
+  "Shoulders",
+  "Elbows",
+  "Ankles",
+  "None right now",
 ];
 
-const TOTAL_STEPS = 5;
-
-interface OnboardingState {
-  sport: string;
-  level: string;
-  goals: string[];
-  injuries: string[];
-}
+const STEPS = [
+  { label: "WHAT ARE WE MEASURING", title: "Pick the movements you train most." },
+  { label: "HOW WE FRAME IT", title: "Where are you at?" },
+  { label: "WHAT YOU'RE AFTER", title: "What are you training for?" },
+  { label: "WHAT TO WATCH", title: "Anything giving you trouble?" },
+  { label: "HOW OFTEN", title: "How many sessions a week?" },
+] as const;
 
 export default function OnboardingScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { updateProfile } = useAuth();
-  const [step, setStep] = useState(1);
-  const [state, setState] = useState<OnboardingState>({
-    sport: "",
-    level: "",
-    goals: [],
-    injuries: [],
-  });
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const [step, setStep] = useState(0);
+  const [sports, setSports] = useState<string[]>([]);
+  const [level, setLevel] = useState<string>("");
+  const [goals, setGoals] = useState<string[]>([]);
+  const [concerns, setConcerns] = useState<string[]>([]);
+  const [weekly, setWeekly] = useState(3);
+  const [saving, setSaving] = useState(false);
 
-  function canContinue() {
-    if (step === 1) return !!state.sport;
-    if (step === 2) return !!state.level;
-    if (step === 3) return state.goals.length > 0;
-    if (step === 4) return state.injuries.length > 0;
+  const canContinue = useMemo(() => {
+    if (step === 0) return sports.length > 0;
+    if (step === 1) return !!level;
+    if (step === 2) return goals.length > 0;
+    if (step === 3) return concerns.length > 0;
     return true;
+  }, [step, sports, level, goals, concerns]);
+
+  function toggle(list: string[], setList: (v: string[]) => void, item: string, exclusive?: string) {
+    if (exclusive && item === exclusive) {
+      setList(list.includes(item) ? [] : [item]);
+      return;
+    }
+    const next = list.includes(item)
+      ? list.filter((x) => x !== item)
+      : [...list.filter((x) => x !== exclusive), item];
+    setList(next);
   }
 
-  async function handleContinue() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (step < TOTAL_STEPS) {
-      setStep((s) => s + 1);
-    } else {
-      try {
-        await updateProfile({
-          sport: state.sport.toLowerCase(),
-          level: (state.level.toLowerCase() as any) || "beginner",
-          goals: state.goals,
-          injuryConcerns: state.injuries,
-        });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch {
-        // non-critical — continue anyway
-      }
-      router.replace("/(tabs)" as any);
+  async function next() {
+    if (step < STEPS.length - 1) {
+      setStep(step + 1);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await updateProfile({
+        // The profile holds one primary sport; the rest ride along as context
+        // so Atlas knows the athlete cross-trains.
+        sport: sports[0]!.toLowerCase(),
+        level: level as "beginner",
+        goals: sports.length > 1 ? [...goals, `Also trains: ${sports.slice(1).join(", ")}`] : goals,
+        injuryConcerns: concerns.includes("None right now") ? [] : concerns,
+        weeklyGoal: weekly,
+      });
+      router.replace("/(tabs)");
+    } catch {
+      Alert.alert("Couldn't save", "Check your connection and try again.");
+    } finally {
+      setSaving(false);
     }
   }
 
-  function toggleMulti(key: "goals" | "injuries", val: string) {
-    setState((prev) => ({
-      ...prev,
-      [key]: prev[key].includes(val)
-        ? prev[key].filter((v) => v !== val)
-        : [...prev[key], val],
-    }));
-  }
-
-  const progressPct = (step / TOTAL_STEPS) * 100;
-
-  const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
-    topBar: {
-      paddingTop: topPad + 12,
-      paddingHorizontal: 20,
-      paddingBottom: 12,
-    },
-    backRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-      marginBottom: 12,
-    },
-    backBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 10,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    stepLabel: {
-      fontSize: 13,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-    },
-    progressBg: {
-      height: 3,
-      backgroundColor: colors.border,
-      borderRadius: 2,
-    },
-    progressFill: {
-      height: 3,
-      borderRadius: 2,
-      backgroundColor: colors.primary,
-    },
-    scrollContent: {
-      paddingHorizontal: 20,
-      paddingTop: 8,
-      paddingBottom: 120,
-    },
-    stepTitle: {
-      fontSize: 28,
-      fontFamily: "Archivo_800ExtraBold",
-      color: colors.foreground,
-      letterSpacing: -0.5,
-      marginBottom: 6,
-    },
-    stepSub: {
-      fontSize: 14,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-      marginBottom: 24,
-    },
-    chipRow: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 10,
-    },
-    chip: {
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      borderRadius: 24,
-      borderWidth: 1.5,
-    },
-    chipText: {
-      fontSize: 14,
-      fontFamily: "Inter_500Medium",
-    },
-    levelCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      padding: 16,
-      borderRadius: 14,
-      borderWidth: 1.5,
-      marginBottom: 10,
-    },
-    levelLabel: {
-      fontSize: 16,
-      fontFamily: "Inter_600SemiBold",
-    },
-    levelSub: {
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
-      marginTop: 2,
-    },
-    checkCircle: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    summaryRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "flex-start",
-      paddingVertical: 14,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    summaryKey: {
-      fontSize: 14,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-    },
-    summaryVal: {
-      fontSize: 14,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.foreground,
-      textAlign: "right",
-      flex: 1,
-      marginLeft: 16,
-    },
-    bottomBar: {
-      position: "absolute",
-      bottom: 0,
-      left: 0,
-      right: 0,
-      paddingHorizontal: 20,
-      paddingTop: 14,
-      paddingBottom: bottomPad + 20,
-      backgroundColor: colors.background,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-    },
-    continueBtn: {
-      borderRadius: 16,
-      paddingVertical: 16,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    continueBtnText: {
-      fontSize: 16,
-      fontFamily: "Inter_700Bold",
-    },
-  });
+  const current = STEPS[step]!;
 
   return (
-    <View style={s.container}>
-      <View style={s.topBar}>
-        <View style={s.backRow}>
-          {step > 1 ? (
-            <TouchableOpacity style={s.backBtn} onPress={() => setStep((s) => s - 1)} activeOpacity={0.7}>
-              <Feather name="chevron-left" size={18} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-              <Feather name="x" size={16} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          )}
-          <Text style={s.stepLabel}>{step} of {TOTAL_STEPS}</Text>
-          {step < TOTAL_STEPS && (
-            <TouchableOpacity onPress={() => router.replace("/(tabs)" as any)} activeOpacity={0.7}>
-              <Text style={{ color: colors.mutedForeground, fontSize: 13, fontFamily: "Inter_400Regular" }}>Skip</Text>
-            </TouchableOpacity>
-          )}
+    <Screen>
+      {/* ── Progress ── */}
+      <View style={[s.head, { paddingTop: insets.top + 14 }]}>
+        <Pressable
+          onPress={() => (step === 0 ? router.back() : setStep(step - 1))}
+          style={s.backBtn}
+          hitSlop={8}
+        >
+          <Chevron direction="left" tone={color.textPrimary} size={16} />
+        </Pressable>
+
+        <View style={s.segments}>
+          {STEPS.map((_, i) => (
+            <View
+              key={i}
+              style={[
+                s.segment,
+                { backgroundColor: i <= step ? color.ink : color.ruleStrong },
+              ]}
+            />
+          ))}
         </View>
-        <View style={s.progressBg}>
-          <View style={[s.progressFill, { width: `${progressPct}%` as any }]} />
-        </View>
+
+        <Text style={[T.label, { letterSpacing: 1 }]}>
+          {String(step + 1).padStart(2, "0")}/{String(STEPS.length).padStart(2, "0")}
+        </Text>
       </View>
 
       <ScrollView
-        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: 200 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.scrollContent}
       >
-        {step === 1 && (
-          <>
-            <Text style={s.stepTitle}>What's your sport?</Text>
-            <Text style={s.stepSub}>We'll tailor feedback to your discipline.</Text>
-            <View style={s.chipRow}>
-              {SPORTS.map((sport) => {
-                const active = state.sport === sport;
-                return (
-                  <TouchableOpacity
-                    key={sport}
-                    style={[
-                      s.chip,
-                      {
-                        backgroundColor: active ? colors.primary + "20" : colors.card,
-                        borderColor: active ? colors.primary : colors.border,
-                      },
-                    ]}
-                    onPress={() => setState((p) => ({ ...p, sport }))}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[s.chipText, { color: active ? colors.primary : colors.mutedForeground }]}>
-                      {sport}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </>
-        )}
+        <View style={{ paddingTop: 40 }}>
+          <Label>{current.label}</Label>
+          <Text style={[T.headline, { marginTop: 10 }]}>{current.title}</Text>
+          <Text style={[T.body, s.sub]}>{subtitleFor(step)}</Text>
+        </View>
 
-        {step === 2 && (
-          <>
-            <Text style={s.stepTitle}>What's your level?</Text>
-            <Text style={s.stepSub}>This helps calibrate how we frame your feedback.</Text>
-            {LEVELS.map((level) => {
-              const active = state.level === level.label;
-              return (
-                <TouchableOpacity
-                  key={level.label}
-                  style={[
-                    s.levelCard,
-                    {
-                      backgroundColor: active ? colors.primary + "12" : colors.card,
-                      borderColor: active ? colors.primary : colors.border,
-                    },
-                  ]}
-                  onPress={() => setState((p) => ({ ...p, level: level.label }))}
-                  activeOpacity={0.75}
-                >
-                  <View>
-                    <Text style={[s.levelLabel, { color: colors.foreground }]}>{level.label}</Text>
-                    <Text style={[s.levelSub, { color: colors.mutedForeground }]}>{level.sub}</Text>
-                  </View>
-                  {active && (
-                    <View style={[s.checkCircle, { backgroundColor: colors.primary }]}>
-                      <Feather name="check" size={14} color={colors.primaryForeground} />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </>
-        )}
-
-        {step === 3 && (
-          <>
-            <Text style={s.stepTitle}>What are your goals?</Text>
-            <Text style={s.stepSub}>Select all that apply.</Text>
-            <View style={s.chipRow}>
-              {GOALS.map((goal) => {
-                const active = state.goals.includes(goal);
-                return (
-                  <TouchableOpacity
-                    key={goal}
-                    style={[
-                      s.chip,
-                      {
-                        backgroundColor: active ? colors.primary + "20" : colors.card,
-                        borderColor: active ? colors.primary : colors.border,
-                      },
-                    ]}
-                    onPress={() => toggleMulti("goals", goal)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[s.chipText, { color: active ? colors.primary : colors.mutedForeground }]}>
-                      {goal}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </>
-        )}
-
-        {step === 4 && (
-          <>
-            <Text style={s.stepTitle}>Any injury concerns?</Text>
-            <Text style={s.stepSub}>We'll factor these into feedback and drill recommendations.</Text>
-            {INJURIES.map((inj) => {
-              const active = state.injuries.includes(inj);
-              return (
-                <TouchableOpacity
-                  key={inj}
-                  style={[
-                    s.levelCard,
-                    {
-                      backgroundColor: active ? colors.primary + "12" : colors.card,
-                      borderColor: active ? colors.primary : colors.border,
-                    },
-                  ]}
-                  onPress={() => toggleMulti("injuries", inj)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[s.levelLabel, { color: colors.foreground }]}>{inj}</Text>
-                  {active && (
-                    <View style={[s.checkCircle, { backgroundColor: colors.primary }]}>
-                      <Feather name="check" size={14} color={colors.primaryForeground} />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </>
-        )}
-
-        {step === 5 && (
-          <>
-            <Text style={s.stepTitle}>You're all set!</Text>
-            <Text style={s.stepSub}>Your personalized coaching profile is ready.</Text>
-            {[
-              { label: "Sport", value: state.sport || "—" },
-              { label: "Level", value: state.level || "—" },
-              { label: "Goals", value: state.goals.join(", ") || "—" },
-              { label: "Injury concerns", value: state.injuries.join(", ") || "—" },
-            ].map((row) => (
-              <View key={row.label} style={s.summaryRow}>
-                <Text style={s.summaryKey}>{row.label}</Text>
-                <Text style={s.summaryVal}>{row.value}</Text>
-              </View>
+        <View style={s.chips}>
+          {step === 0 &&
+            SPORTS.map((sport) => (
+              <Chip
+                key={sport}
+                label={sport}
+                selected={sports.includes(sport)}
+                onPress={() => toggle(sports, setSports, sport)}
+              />
             ))}
-          </>
-        )}
+
+          {step === 1 &&
+            LEVELS.map((l) => (
+              <Pressable
+                key={l.key}
+                onPress={() => setLevel(l.key)}
+                style={({ pressed }) => [
+                  s.levelCard,
+                  level === l.key && s.levelCardOn,
+                  pressed && { opacity: 0.85 },
+                ]}
+              >
+                <Text
+                  style={[
+                    T.cardTitle,
+                    level === l.key && { color: color.onInk },
+                  ]}
+                >
+                  {l.label}
+                </Text>
+                <Text
+                  style={[
+                    T.bodySmall,
+                    { marginTop: 3 },
+                    level === l.key && { color: color.onInkFaint },
+                  ]}
+                >
+                  {l.note}
+                </Text>
+              </Pressable>
+            ))}
+
+          {step === 2 &&
+            GOALS.map((goal) => (
+              <Chip
+                key={goal}
+                label={goal}
+                selected={goals.includes(goal)}
+                onPress={() => toggle(goals, setGoals, goal)}
+              />
+            ))}
+
+          {step === 3 &&
+            CONCERNS.map((concern) => (
+              <Chip
+                key={concern}
+                label={concern}
+                selected={concerns.includes(concern)}
+                onPress={() => toggle(concerns, setConcerns, concern, "None right now")}
+              />
+            ))}
+
+          {step === 4 &&
+            [2, 3, 4, 5, 6, 7].map((n) => (
+              <Chip
+                key={n}
+                label={`${n} a week`}
+                selected={weekly === n}
+                onPress={() => setWeekly(n)}
+              />
+            ))}
+        </View>
       </ScrollView>
 
-      <View style={s.bottomBar}>
-        <TouchableOpacity
-          style={[
-            s.continueBtn,
-            { backgroundColor: canContinue() ? colors.primary : colors.muted },
-          ]}
-          onPress={handleContinue}
-          disabled={!canContinue()}
-          activeOpacity={0.85}
-        >
-          <Text style={[s.continueBtnText, { color: canContinue() ? colors.primaryForeground : colors.mutedForeground }]}>
-            {step === TOTAL_STEPS ? "Go to Dashboard →" : "Continue"}
-          </Text>
-        </TouchableOpacity>
+      {/* ── Footer ── */}
+      <View style={[s.footer, { paddingBottom: insets.bottom + 24 }]}>
+        <PrimaryButton
+          label={
+            saving ? "Saving…" : step === STEPS.length - 1 ? "Start measuring" : "Continue"
+          }
+          onPress={next}
+          disabled={!canContinue || saving}
+          trailingArrow
+        />
+        <Text style={s.summary}>{summaryFor(step, { sports, level, goals, concerns, weekly })}</Text>
       </View>
-    </View>
+    </Screen>
   );
 }
+
+function subtitleFor(step: number): string {
+  switch (step) {
+    case 0:
+      return "Each sport has its own joint model. Pick as many as you train — you can change this later.";
+    case 1:
+      return "This only changes how we phrase feedback. The measurements are the same either way.";
+    case 2:
+      return "Atlas uses this to decide which measurement matters most to you.";
+    case 3:
+      return "We'll watch these joints more closely and flag them earlier.";
+    default:
+      return "Used for your weekly target. Nothing is locked — measure whenever you train.";
+  }
+}
+
+function summaryFor(
+  step: number,
+  state: { sports: string[]; level: string; goals: string[]; concerns: string[]; weekly: number },
+): string {
+  if (step === 0) {
+    if (state.sports.length === 0) return "Pick at least one";
+    return `${state.sports.length} picked · ${state.sports.join(", ")}`;
+  }
+  if (step === 1) return state.level ? cap(state.level) : "Pick your level";
+  if (step === 2) {
+    return state.goals.length ? `${state.goals.length} picked` : "Pick at least one";
+  }
+  if (step === 3) {
+    return state.concerns.length ? state.concerns.join(", ") : "Pick at least one";
+  }
+  return `${state.weekly} sessions a week`;
+}
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+const s = StyleSheet.create({
+  head: {
+    paddingHorizontal: GUTTER,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  backBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: color.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  segments: { flex: 1, flexDirection: "row", gap: 4 },
+  segment: { flex: 1, height: 3, borderRadius: 2 },
+
+  sub: { marginTop: 12, maxWidth: 310 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 30 },
+
+  levelCard: {
+    width: "100%",
+    backgroundColor: color.card,
+    borderRadius: 20,
+    padding: 16,
+  },
+  levelCardOn: { backgroundColor: color.ink },
+
+  footer: {
+    position: "absolute",
+    left: GUTTER,
+    right: GUTTER,
+    bottom: 0,
+    paddingTop: 14,
+    backgroundColor: color.paper,
+  },
+  summary: {
+    textAlign: "center",
+    marginTop: 14,
+    fontFamily: "InstrumentSans_400Regular",
+    fontSize: 13,
+    color: color.textFaint,
+  },
+});

@@ -77,7 +77,7 @@ pnpm --filter @workspace/api-server dev
 pnpm --filter @workspace/lense-mobile dev
 ```
 
-Health check: `curl http://localhost:3001/api/health`
+Health check: `curl http://localhost:3001/api/healthz`
 
 ---
 
@@ -170,11 +170,12 @@ on a successful sign-in.
 - [ ] Set `TRUST_PROXY` to match your deployment topology
 - [ ] Set `ALLOWED_ORIGINS` to real origins; ensure `CORS_ALLOW_ALL` is unset
 - [ ] Ensure `ALLOW_DEV_TIER_OVERRIDE` is **unset** in production
-- [ ] Configure a mail provider — without it, password reset does not work
-      end-to-end and lockout notifications are never delivered
-- [ ] Build the password-reset screens in the mobile app
-- [ ] Add an **account deletion** endpoint and UI (App Store and Play Store both
-      require it)
+- [ ] **Set a real `ANTHROPIC_API_KEY`** — the key is currently blank, so clips
+      are measured and scored but no coaching write-ups or chat are produced.
+      The server refuses to boot without it when `NODE_ENV=production`.
+- [ ] Configure a mail provider — the reset flow is built and tested end to end,
+      but without `RESEND_API_KEY` + `MAIL_FROM` the link is generated and never
+      delivered, so password reset cannot actually complete
 - [ ] Run `pnpm --filter @workspace/scripts run migrate-passwords` and force a
       reset for any plaintext rows
 - [ ] Add a privacy policy and terms; both stores require URLs

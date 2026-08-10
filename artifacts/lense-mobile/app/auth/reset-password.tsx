@@ -1,4 +1,12 @@
-import React, { useRef, useState } from "react";
+/**
+ * Reset password — redeem a token and set a new password.
+ *
+ * Reachable two ways: from the emailed link (`/reset-password?token=…`, handled
+ * by expo-router's deep linking) or by pasting the code manually, which is the
+ * fallback when the link opens in a browser instead of the app.
+ */
+
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -10,56 +18,68 @@ import {
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
-import { Screen, Label, PrimaryButton, Chevron } from "@/components/caliper";
+import { Screen, Label, PrimaryButton, Chevron, Check } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
-import { useAuth } from "@/lib/authContext";
-import { ApiError, NetworkError } from "@/lib/api";
+import { auth, ApiError, NetworkError } from "@/lib/api";
 
-/**
- * Kept in step with `safePassword` in the API's lib/validate.ts. Length is the
- * single biggest factor in real-world resistance, so we ask for length rather
- * than character-class rules people work around with "Password1!".
- */
+/** Must match `safePassword` on the server. */
 const MIN_PASSWORD_LENGTH = 12;
 
-export default function SignupScreen() {
+export default function ResetPasswordScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { signup } = useAuth();
+  const params = useLocalSearchParams<{ token?: string }>();
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [token, setToken] = useState(params.token ?? "");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const emailRef = useRef<TextInput>(null);
-  const passwordRef = useRef<TextInput>(null);
-
   const longEnough = password.length >= MIN_PASSWORD_LENGTH;
-  const canSubmit = name.trim().length > 0 && email.trim().length > 0 && longEnough && !busy;
+  const canSubmit = token.trim().length >= 20 && longEnough && !busy;
 
   async function submit() {
     if (!canSubmit) return;
     setBusy(true);
     setError(null);
     try {
-      await signup(email.trim(), password, name.trim());
-      router.replace("/onboarding");
+      await auth.resetPassword(token.trim(), password);
+      setDone(true);
     } catch (err) {
       setError(
         err instanceof NetworkError
           ? err.message
           : err instanceof ApiError
             ? err.message
-            : "Something went wrong. Please try again.",
+            : "We couldn't reset your password. Please try again.",
       );
     } finally {
       setBusy(false);
     }
+  }
+
+  if (done) {
+    return (
+      <Screen>
+        <ScrollView contentContainerStyle={{ padding: GUTTER, paddingTop: insets.top + 60 }}>
+          <View style={s.doneGlyph}>
+            <Check tone={color.cobalt} size={22} />
+          </View>
+          <Text style={[T.headline, { marginTop: 20 }]}>Password reset.</Text>
+          <Text style={[T.body, { marginTop: 14 }]}>
+            Your password has been changed and any sign-in lock has been cleared. You can sign
+            in now.
+          </Text>
+          <View style={{ marginTop: 30 }}>
+            <PrimaryButton label="Sign in" onPress={() => router.replace("/auth/login")} />
+          </View>
+        </ScrollView>
+      </Screen>
+    );
   }
 
   return (
@@ -77,51 +97,31 @@ export default function SignupScreen() {
         <ScrollView
           contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
         >
-          <Label>GET STARTED</Label>
-          <Text style={[T.headline, { marginTop: 10 }]}>Create your{"\n"}account.</Text>
+          <Label>RESET</Label>
+          <Text style={[T.headline, { marginTop: 10 }]}>Set a new password.</Text>
 
-          <Label style={{ marginTop: 30, marginBottom: 8 }}>NAME</Label>
-          <TextInput
-            style={s.input}
-            value={name}
-            onChangeText={(v) => {
-              setName(v);
-              setError(null);
-            }}
-            placeholder="Your name"
-            placeholderTextColor={color.textGhost}
-            autoCapitalize="words"
-            autoComplete="name"
-            maxLength={80}
-            returnKeyType="next"
-            onSubmitEditing={() => emailRef.current?.focus()}
-          />
+          {!params.token && (
+            <>
+              <Label style={{ marginTop: 30, marginBottom: 8 }}>RESET CODE</Label>
+              <TextInput
+                style={s.input}
+                value={token}
+                onChangeText={(v) => {
+                  setToken(v);
+                  setError(null);
+                }}
+                placeholder="Paste the code from your email"
+                placeholderTextColor={color.textGhost}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </>
+          )}
 
-          <Label style={{ marginTop: 18, marginBottom: 8 }}>EMAIL</Label>
-          <TextInput
-            ref={emailRef}
-            style={s.input}
-            value={email}
-            onChangeText={(v) => {
-              setEmail(v);
-              setError(null);
-            }}
-            placeholder="you@example.com"
-            placeholderTextColor={color.textGhost}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="email"
-            returnKeyType="next"
-            onSubmitEditing={() => passwordRef.current?.focus()}
-          />
-
-          <Label style={{ marginTop: 18, marginBottom: 8 }}>PASSWORD</Label>
+          <Label style={{ marginTop: 20, marginBottom: 8 }}>NEW PASSWORD</Label>
           <View style={s.passwordWrap}>
             <TextInput
-              ref={passwordRef}
               style={[s.input, { paddingRight: 60 }]}
               value={password}
               onChangeText={(v) => {
@@ -150,18 +150,14 @@ export default function SignupScreen() {
                   style={[
                     s.strengthFill,
                     {
-                      width: `${Math.min(100, (password.length / 16) * 100)}%` as `${number}%`,
+                      width: `${Math.min(100, (password.length / 16) * 100)}%`,
                       backgroundColor: longEnough ? color.cobalt : color.rust,
                     },
                   ]}
                 />
               </View>
               <Text style={[T.measuredSmall, { color: longEnough ? color.cobalt : color.rust }]}>
-                {longEnough
-                  ? password.length >= 16
-                    ? "STRONG"
-                    : "GOOD"
-                  : `${MIN_PASSWORD_LENGTH - password.length} MORE`}
+                {longEnough ? "GOOD" : `${MIN_PASSWORD_LENGTH - password.length} MORE`}
               </Text>
             </View>
           )}
@@ -170,23 +166,15 @@ export default function SignupScreen() {
 
           <View style={{ marginTop: 28 }}>
             <PrimaryButton
-              label={busy ? "Creating…" : "Create account"}
+              label={busy ? "Resetting…" : "Reset password"}
               onPress={submit}
               disabled={!canSubmit}
-              trailingArrow
             />
           </View>
 
-          <Pressable
-            onPress={() => router.replace("/auth/login")}
-            style={{ marginTop: 24, alignItems: "center" }}
-            hitSlop={8}
-          >
-            <Text style={[T.bodySmall, { textAlign: "center" }]}>
-              Already have an account?{" "}
-              <Text style={{ color: color.textPrimary }}>Sign in</Text>
-            </Text>
-          </Pressable>
+          <Text style={[T.bodySmall, { marginTop: 18, textAlign: "center" }]}>
+            Reset links expire 30 minutes after they're sent and work once.
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
@@ -217,6 +205,14 @@ const s = StyleSheet.create({
   strength: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 },
   strengthTrack: { flex: 1, height: 3, borderRadius: 2, backgroundColor: color.rule },
   strengthFill: { height: 3, borderRadius: 2 },
+  doneGlyph: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: color.cobaltWash,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   error: {
     marginTop: 14,
     fontFamily: font.body,

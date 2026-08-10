@@ -211,7 +211,7 @@ export default function ProgressScreen() {
           </View>
           <View style={s.weekRow}>
             {week.map((d) => (
-              <View key={d.label} style={{ alignItems: "center", gap: 8 }}>
+              <View key={d.key} style={{ alignItems: "center", gap: 8 }}>
                 <View
                   style={[
                     s.weekTick,
@@ -261,6 +261,8 @@ export default function ProgressScreen() {
 // ─── Derivations ─────────────────────────────────────────────────────────────
 
 interface WeekDay {
+  /** Stable unique key — the narrow weekday labels repeat (M T W T F S S). */
+  key: string;
   label: string;
   measured: boolean;
   isToday: boolean;
@@ -284,6 +286,7 @@ function buildWeek(sessions: AnalysisRecord[]): WeekDay[] {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return {
+      key: d.toISOString().slice(0, 10),
       label: d.toLocaleDateString("en-GB", { weekday: "narrow" }).toUpperCase(),
       measured: measuredDays.has(d.toDateString()),
       isToday: d.toDateString() === today.toDateString(),

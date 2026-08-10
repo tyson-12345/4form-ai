@@ -1,378 +1,568 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+/**
+ * Coach — Atlas.
+ *
+ * Two things distinguish this from a generic chat:
+ *
+ *  1. **Evidence cards.** When Atlas cites a session, that session appears as a
+ *     tappable card under the message. A claim about your movement always shows
+ *     what it was drawn from.
+ *
+ *  2. **Prescriptions are cobalt.** A message that ends in a concrete next
+ *     action is rendered as the cobalt card, not as prose — same treatment as
+ *     the prescription on Home, so "the thing to do next" looks the same
+ *     everywhere in the app.
+ */
+
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  ScrollView,
   TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  Platform,
-  KeyboardAvoidingView,
+  Pressable,
   ActivityIndicator,
   Alert,
-  Animated,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
-import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import { useRouter, useFocusEffect } from "expo-router";
+import * as Clipboard from "expo-clipboard";
+import Svg, { Path, Polyline } from "react-native-svg";
 
-import { chat as chatApi, type ChatRecord, ApiError } from "@/lib/api";
-import { useCanAccessFeature } from "@/lib/authContext";
-import { useColors } from "@/hooks/useColors";
+import { Screen, Label, Card, Chevron, PlayGlyph } from "@/components/caliper";
+import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
+import {
+  chat as chatApi,
+  analyses as analysesApi,
+  type ChatRecord,
+  type AnalysisRecord,
+  ApiError,
+  NetworkError,
+} from "@/lib/api";
+import { useAuth } from "@/lib/authContext";
+import { displaySport } from "@/constants/sports";
 
-const QUICK_PROMPTS = [
-  "How do I improve my technique?",
-  "What's my biggest weakness?",
-  "Give me a drill for today",
-  "How do I prevent injury?",
-  "Explain my latest scores",
+const STARTERS = [
+  "What should I film next?",
+  "Where am I losing most?",
+  "Compare my last two sessions",
 ];
 
-export default function ChatScreen() {
+export default function CoachScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const canChat = useCanAccessFeature("aiChat");
-  const C = useColors();
+  const { subscription } = useAuth();
 
   const [messages, setMessages] = useState<ChatRecord[]>([]);
+  const [sessions, setSessions] = useState<AnalysisRecord[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const flatListRef = useRef<FlatList>(null);
-  const inputRef = useRef<TextInput>(null);
+  const [locked, setLocked] = useState(false);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomInset = Platform.OS === "web" ? 34 + 84 : insets.bottom + 84 + 4;
+  const scrollRef = useRef<ScrollView>(null);
 
-  const loadHistory = useCallback(async () => {
-    if (!canChat) { setLoading(false); return; }
+  const load = useCallback(async () => {
     try {
-      const { messages: msgs } = await chatApi.history();
-      setMessages(msgs);
-    } catch {
-      // ignore network errors — show empty state
+      const [history, list] = await Promise.allSettled([
+        chatApi.history(),
+        analysesApi.list(),
+      ]);
+      if (history.status === "fulfilled") setMessages(history.value.messages);
+      else if (history.reason instanceof ApiError && history.reason.code === "UPGRADE_REQUIRED") {
+        setLocked(true);
+      }
+      if (list.status === "fulfilled") setSessions(list.value.analyses);
     } finally {
       setLoading(false);
     }
-  }, [canChat]);
+  }, []);
 
-  useEffect(() => { loadHistory(); }, [loadHistory]);
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
-  async function sendMessage(text?: string) {
+  useEffect(() => {
+    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+    return () => clearTimeout(timer);
+  }, [messages.length, sending]);
+
+  async function send(text?: string) {
     const content = (text ?? input).trim();
     if (!content || sending) return;
-    setInput("");
 
-    const optimistic: ChatRecord = {
-      id: `tmp-${Date.now()}`,
+    setInput("");
+    setSending(true);
+
+    // Optimistic echo so the athlete's own message appears instantly.
+    const pending: ChatRecord = {
+      id: `pending-${Date.now()}`,
       role: "user",
       content,
       createdAt: new Date().toISOString(),
     };
-    setMessages((prev) => [...prev, optimistic]);
-    setSending(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setMessages((prev) => [...prev, pending]);
 
     try {
       const { userMessage, assistantMessage } = await chatApi.send(content);
-      setMessages((prev) => [
-        ...prev.filter((m) => m.id !== optimistic.id),
-        userMessage,
-        assistantMessage,
-      ]);
-    } catch (e) {
-      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
-      if (e instanceof ApiError && e.code === "UPGRADE_REQUIRED") {
-        router.push("/pricing");
-      } else {
-        Alert.alert("Couldn't send message", "Please check your connection and try again.");
+      setMessages((prev) => [...prev.filter((m) => m.id !== pending.id), userMessage, assistantMessage]);
+    } catch (err) {
+      setMessages((prev) => prev.filter((m) => m.id !== pending.id));
+      setInput(content);
+
+      if (err instanceof ApiError && err.code === "UPGRADE_REQUIRED") {
+        setLocked(true);
+        return;
       }
+      if (err instanceof NetworkError) {
+        Alert.alert("Can't reach Atlas", err.message);
+        return;
+      }
+      Alert.alert(
+        "Atlas is unavailable",
+        err instanceof ApiError
+          ? err.message
+          : "Something went wrong. Your message wasn't sent — try again in a moment.",
+      );
     } finally {
       setSending(false);
     }
   }
 
-  async function handleLongPress(msg: ChatRecord) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await Clipboard.setStringAsync(msg.content);
-    setCopiedId(msg.id);
-    setTimeout(() => setCopiedId(null), 2000);
-  }
+  const measuredCount = sessions.filter(
+    (a) => a.status === "complete" && a.analysisMethod === "pose-measured",
+  ).length;
 
-  function handleClear() {
-    Alert.alert(
-      "Clear conversation",
-      "This will delete your entire chat history with Atlas. This can't be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: async () => {
-            await chatApi.clear();
-            setMessages([]);
-          },
-        },
-      ]
-    );
-  }
-
-  const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: C.background },
-    header: {
-      paddingHorizontal: 20, paddingBottom: 14,
-      borderBottomWidth: 1, borderBottomColor: C.border,
-      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    },
-    headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-    coachAvatar: {
-      width: 40, height: 40, borderRadius: 20,
-      backgroundColor: C.volt + "26",
-      alignItems: "center", justifyContent: "center",
-    },
-    headerTitle: { fontSize: 16, fontFamily: "Inter_700Bold", color: C.textPrimary },
-    headerSub: { fontSize: 12, color: C.success, fontFamily: "Inter_400Regular" },
-    clearBtn: { padding: 8 },
-    paywall: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
-    paywallIcon: {
-      width: 72, height: 72, borderRadius: 36,
-      backgroundColor: C.volt + "1F",
-      alignItems: "center", justifyContent: "center", marginBottom: 20,
-    },
-    paywallTitle: { fontSize: 22, fontFamily: "Archivo_800ExtraBold", color: C.textPrimary, textAlign: "center", marginBottom: 10 },
-    paywallSub: { fontSize: 14, color: C.textSecondary, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20, marginBottom: 28 },
-    upgradeBtn: {
-      backgroundColor: C.volt, borderRadius: 14,
-      paddingVertical: 14, paddingHorizontal: 32,
-      flexDirection: "row", alignItems: "center", gap: 8,
-    },
-    upgradeBtnText: { color: C.ink, fontSize: 15, fontFamily: "Inter_700Bold" },
-    coachDot: {
-      width: 26, height: 26, borderRadius: 13,
-      backgroundColor: C.volt + "1F",
-      alignItems: "center", justifyContent: "center",
-      alignSelf: "flex-end", marginRight: 8,
-    },
-    msgRow: { paddingHorizontal: 16, paddingVertical: 4, flexDirection: "row", alignItems: "flex-end" },
-    bubble: { maxWidth: "78%", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
-    userBubble: { alignSelf: "flex-end", backgroundColor: C.volt, borderBottomRightRadius: 4, marginLeft: "auto" as any },
-    assistantBubble: {
-      alignSelf: "flex-start", backgroundColor: C.surface2,
-      borderBottomLeftRadius: 4, borderWidth: 1, borderColor: C.border,
-    },
-    userText: { color: C.ink, fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
-    assistantText: { color: C.textPrimary, fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
-    copiedLabel: { fontSize: 10, color: C.textTertiary, fontFamily: "Inter_500Medium", marginTop: 4, textAlign: "right" },
-    typingBubble: {
-      backgroundColor: C.surface2, borderRadius: 18, borderBottomLeftRadius: 4,
-      borderWidth: 1, borderColor: C.border,
-      paddingHorizontal: 16, paddingVertical: 14,
-      flexDirection: "row", alignItems: "center", gap: 5,
-    },
-    typingDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: C.textSecondary },
-    quickPromptsRow: { paddingBottom: 10, paddingTop: 4 },
-    quickChip: {
-      backgroundColor: C.surface2, borderRadius: 20,
-      paddingHorizontal: 14, paddingVertical: 8,
-      borderWidth: 1, borderColor: C.border,
-    },
-    quickChipText: { fontSize: 13, color: C.textPrimary, fontFamily: "Inter_400Regular" },
-    inputRow: {
-      flexDirection: "row", alignItems: "flex-end", gap: 10,
-      paddingHorizontal: 16, paddingTop: 10,
-      borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.background,
-    },
-    textInput: {
-      flex: 1, backgroundColor: C.surface2, borderRadius: 22,
-      paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10,
-      color: C.textPrimary, fontSize: 14, fontFamily: "Inter_400Regular",
-      borderWidth: 1, borderColor: C.border, maxHeight: 100,
-    },
-    sendBtn: {
-      width: 42, height: 42, borderRadius: 21,
-      backgroundColor: C.volt, alignItems: "center", justifyContent: "center",
-    },
-    sendBtnDisabled: { backgroundColor: C.surface3 },
-  });
-
-  if (!canChat) {
+  // ── Paywalled ──
+  if (locked) {
     return (
-      <View style={s.container}>
-        <View style={[s.header, { paddingTop: topPad + 16 }]}>
-          <View style={s.headerLeft}>
-            <View style={s.coachAvatar}>
-              <Feather name="cpu" size={20} color={C.volt} />
-            </View>
-            <View>
-              <Text style={s.headerTitle}>Atlas AI Coach</Text>
-              <Text style={[s.headerSub, { color: C.textSecondary }]}>Pro feature</Text>
-            </View>
+      <Screen>
+        <View style={[s.head, { paddingTop: insets.top + 14 }]}>
+          <View>
+            <Text style={T.screenTitle}>Atlas</Text>
+            <Label style={{ marginTop: 2 }}>YOUR AI COACH</Label>
           </View>
         </View>
-        <View style={s.paywall}>
-          <View style={s.paywallIcon}>
-            <Feather name="lock" size={32} color={C.volt} />
-          </View>
-          <Text style={s.paywallTitle}>Unlock Your AI Coach</Text>
-          <Text style={s.paywallSub}>
-            Get personalized coaching powered by Claude AI. Discuss your form, get drill recommendations, and improve faster.
-          </Text>
-          <TouchableOpacity style={s.upgradeBtn} onPress={() => router.push("/pricing")} activeOpacity={0.85}>
-            <Feather name="zap" size={16} color={C.ink} />
-            <Text style={s.upgradeBtnText}>Upgrade to Pro</Text>
-          </TouchableOpacity>
+
+        <View style={s.lockWrap}>
+          <Card>
+            <Label>PRO</Label>
+            <Text style={[T.cardTitle, { marginTop: 8, fontSize: 20 }]}>
+              Atlas reads your whole history
+            </Text>
+            <Text style={[T.body, { marginTop: 10 }]}>
+              Ask about any session and Atlas answers from your measurements — which joint,
+              which angle, which clip. Included with Pro.
+            </Text>
+            <Pressable
+              onPress={() => router.push("/pricing")}
+              style={({ pressed }) => [s.lockCta, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={[T.button, { color: color.onCobalt }]}>See plans</Text>
+            </Pressable>
+          </Card>
         </View>
-      </View>
+      </Screen>
     );
   }
-
-  const canSend = input.trim().length > 0 && !sending;
-  const showQuickPrompts = messages.length === 0 && !sending;
 
   return (
-    <KeyboardAvoidingView
-      style={s.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-    >
-      {/* Header */}
-      <View style={[s.header, { paddingTop: topPad + 16 }]}>
-        <View style={s.headerLeft}>
-          <View style={s.coachAvatar}>
-            <Feather name="cpu" size={20} color={C.volt} />
+    <Screen>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={0}
+      >
+        <View style={[s.head, { paddingTop: insets.top + 14 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={T.screenTitle}>Atlas</Text>
+            <Label style={{ marginTop: 2 }}>
+              {measuredCount > 0
+                ? `READS ALL ${measuredCount} OF YOUR SESSIONS`
+                : "YOUR AI COACH"}
+            </Label>
           </View>
-          <View>
-            <Text style={s.headerTitle}>Atlas AI Coach</Text>
-            <Text style={s.headerSub}>● Online</Text>
-          </View>
+          {messages.length > 0 && (
+            <Pressable
+              onPress={() =>
+                Alert.alert("Clear conversation", "This deletes your chat history with Atlas.", [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Clear",
+                    style: "destructive",
+                    onPress: async () => {
+                      await chatApi.clear().catch(() => {});
+                      setMessages([]);
+                    },
+                  },
+                ])
+              }
+              hitSlop={10}
+              style={s.headBtn}
+            >
+              <TrashGlyph />
+            </Pressable>
+          )}
         </View>
-        {messages.length > 0 && (
-          <TouchableOpacity style={s.clearBtn} onPress={handleClear}>
-            <Feather name="trash-2" size={18} color={C.textSecondary} />
-          </TouchableOpacity>
-        )}
-      </View>
 
-      {loading ? (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <ActivityIndicator color={C.volt} />
-        </View>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
-            const isUser = item.role === "user";
-            const isCopied = copiedId === item.id;
-            return (
-              <TouchableWithoutFeedback onLongPress={() => handleLongPress(item)}>
-                <View style={s.msgRow}>
-                  {!isUser && (
-                    <View style={s.coachDot}>
-                      <Feather name="cpu" size={12} color={C.volt} />
-                    </View>
-                  )}
-                  <View style={[s.bubble, isUser ? s.userBubble : s.assistantBubble]}>
-                    <Text style={isUser ? s.userText : s.assistantText}>{item.content}</Text>
-                    {isCopied && (
-                      <Text style={s.copiedLabel}>Copied!</Text>
-                    )}
-                  </View>
-                </View>
-              </TouchableWithoutFeedback>
-            );
-          }}
-          ListEmptyComponent={
-            <View style={{ padding: 32, alignItems: "center", gap: 12 }}>
-              <View style={{ width: 72, height: 72, borderRadius: 22, backgroundColor: C.volt + "1A", alignItems: "center", justifyContent: "center" }}>
-                <Feather name="message-circle" size={32} color={C.volt} />
-              </View>
-              <Text style={{ fontFamily: "Archivo_800ExtraBold", fontSize: 22, color: C.textPrimary, textAlign: "center", letterSpacing: -0.5 }}>
-                Ask Atlas anything
+        <ScrollView
+          ref={scrollRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: 16 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {loading ? (
+            <ActivityIndicator style={{ marginTop: 40 }} color={color.textFaint} />
+          ) : messages.length === 0 ? (
+            <View style={s.empty}>
+              <Text style={[T.headlineSmall, { textAlign: "center" }]}>
+                Ask about any session.
               </Text>
-              <Text style={{ color: C.textSecondary, fontFamily: "Inter_400Regular", fontSize: 14, textAlign: "center", lineHeight: 20 }}>
-                Form feedback, drill recommendations, recovery tips — your AI coach is here.
+              <Text style={[T.body, { textAlign: "center", marginTop: 10 }]}>
+                {measuredCount > 0
+                  ? "Atlas has your measurements — joint angles, bands, and every flag."
+                  : "Measure a clip first and Atlas will have something to work from."}
               </Text>
             </View>
-          }
-          ListFooterComponent={
-            <>
-              {sending && (
-                <View style={[s.msgRow, { paddingBottom: 4 }]}>
-                  <View style={s.coachDot}>
-                    <Feather name="cpu" size={12} color={C.volt} />
-                  </View>
-                  <View style={s.typingBubble}>
-                    <View style={s.typingDot} />
-                    <View style={[s.typingDot, { opacity: 0.6 }]} />
-                    <View style={[s.typingDot, { opacity: 0.3 }]} />
-                  </View>
-                </View>
-              )}
-              <View style={{ height: 12 }} />
-            </>
-          }
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 8, flexGrow: 1 }}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        />
-      )}
+          ) : (
+            messages.map((msg) => (
+              <Message
+                key={msg.id}
+                message={msg}
+                sessions={sessions}
+                onOpenSession={(id) => router.push(`/analysis/${id}`)}
+              />
+            ))
+          )}
 
-      {/* Quick prompts */}
-      {showQuickPrompts && (
-        <View style={s.quickPromptsRow}>
-          <FlatList
-            data={QUICK_PROMPTS}
+          {sending && (
+            <View style={s.typing}>
+              <ActivityIndicator size="small" color={color.textFaint} />
+              <Text style={[T.bodySmall, { marginLeft: 8 }]}>Atlas is reading your sessions…</Text>
+            </View>
+          )}
+        </ScrollView>
+
+        {messages.length === 0 && !loading && (
+          <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            keyExtractor={(item) => item}
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={s.quickChip}
-                onPress={() => sendMessage(item)}
-                activeOpacity={0.75}
+            // A horizontal ScrollView stretches its children to the container's
+            // height by default, which turned these pills into full-height
+            // capsules. `alignItems: center` sizes them to their content.
+            contentContainerStyle={{
+              paddingHorizontal: GUTTER,
+              gap: 8,
+              paddingBottom: 12,
+              alignItems: "center",
+            }}
+            style={{ flexGrow: 0 }}
+          >
+            {STARTERS.map((starter) => (
+              <Pressable
+                key={starter}
+                onPress={() => send(starter)}
+                style={({ pressed }) => [s.starter, pressed && { opacity: 0.8 }]}
               >
-                <Text style={s.quickChipText}>{item}</Text>
-              </TouchableOpacity>
-            )}
-          />
-        </View>
-      )}
+                <Text style={[T.message, { fontSize: 13 }]}>{starter}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
 
-      {/* Input row */}
-      <View style={[s.inputRow, { paddingBottom: 10 + bottomInset }]}>
-        <TextInput
-          ref={inputRef}
-          style={s.textInput}
-          value={input}
-          onChangeText={setInput}
-          placeholder="Ask your AI coach..."
-          placeholderTextColor={C.textTertiary}
-          multiline
-          returnKeyType="send"
-          onSubmitEditing={() => sendMessage()}
-          blurOnSubmit={false}
-          editable={!sending}
-        />
-        <TouchableOpacity
-          style={[s.sendBtn, !canSend && s.sendBtnDisabled]}
-          onPress={() => sendMessage()}
-          disabled={!canSend}
-          activeOpacity={0.8}
+        {/* The tab bar floats at a fixed offset from the screen bottom, so the
+            composer clears its top edge rather than the safe-area inset. */}
+        <View
+          style={[
+            s.composer,
+            { paddingBottom: TAB_BAR.bottomInset + TAB_BAR.height + 14 },
+          ]}
         >
-          {sending ? (
-            <ActivityIndicator color={C.ink} size="small" />
-          ) : (
-            <Feather name="send" size={16} color={canSend ? C.ink : C.textTertiary} />
-          )}
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+          <TextInput
+            style={s.input}
+            value={input}
+            onChangeText={setInput}
+            placeholder="Ask about any session…"
+            placeholderTextColor={color.textGhost}
+            multiline
+            maxLength={2000}
+            editable={!sending}
+          />
+          <Pressable
+            onPress={() => send()}
+            disabled={!input.trim() || sending}
+            style={({ pressed }) => [
+              s.sendBtn,
+              { opacity: !input.trim() || sending ? 0.35 : pressed ? 0.85 : 1 },
+            ]}
+          >
+            <SendGlyph />
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+    </Screen>
   );
 }
+
+// ─── Message ─────────────────────────────────────────────────────────────────
+
+function Message({
+  message,
+  sessions,
+  onOpenSession,
+}: {
+  message: ChatRecord;
+  sessions: AnalysisRecord[];
+  onOpenSession: (id: string) => void;
+}) {
+  const isUser = message.role === "user";
+
+  if (isUser) {
+    return (
+      <Pressable
+        onLongPress={() => void Clipboard.setStringAsync(message.content)}
+        style={s.userBubble}
+      >
+        <Text style={[T.message, { color: color.onInk }]}>{message.content}</Text>
+      </Pressable>
+    );
+  }
+
+  // Split a trailing prescription off the body so it can wear cobalt.
+  const { body, prescription } = splitPrescription(message.content);
+  const cited = findCitedSession(message.content, sessions);
+
+  return (
+    <View style={{ marginBottom: 14 }}>
+      <Pressable
+        onLongPress={() => void Clipboard.setStringAsync(message.content)}
+        style={s.coachBubble}
+      >
+        <Text style={T.message}>{body}</Text>
+
+        {cited && (
+          <Pressable
+            onPress={() => onOpenSession(cited.id)}
+            style={({ pressed }) => [s.evidence, pressed && { opacity: 0.8 }]}
+          >
+            <View style={s.evidenceGlyph}>
+              <PlayGlyph size={13} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={T.rowTitle} numberOfLines={1}>
+                {cited.title}
+              </Text>
+              <Text style={[T.measuredSmall, { marginTop: 2 }]}>
+                {displaySport(cited.sport).toUpperCase()}
+                {cited.overallScore !== null ? ` · ${Math.round(cited.overallScore)}` : ""}
+                {" · THE EVIDENCE"}
+              </Text>
+            </View>
+            <Chevron />
+          </Pressable>
+        )}
+      </Pressable>
+
+      {prescription && (
+        <View style={s.prescriptionBubble}>
+          <Label tone={color.onCobaltMuted}>PRESCRIPTION</Label>
+          <Text style={[T.prescriptionSmall, { marginTop: 6 }]}>{prescription}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Peel a closing instruction off the end of a coach reply.
+ *
+ * Atlas is prompted to end with one concrete action; rendering that as the
+ * cobalt card makes "the next thing to do" look identical across the app.
+ * Falls back to leaving the message whole when the shape isn't there — never
+ * invents a prescription.
+ */
+function splitPrescription(text: string): { body: string; prescription: string | null } {
+  const paragraphs = text.trim().split(/\n{2,}/);
+  if (paragraphs.length < 2) return { body: text.trim(), prescription: null };
+
+  const last = paragraphs[paragraphs.length - 1]!.trim();
+  const looksActionable =
+    last.length <= 220 &&
+    /\b(\d+\s*[×x]\s*\d+|sets?|reps?|before|after|today|this week|try|start|add|hold|drill)\b/i.test(
+      last,
+    );
+
+  if (!looksActionable) return { body: text.trim(), prescription: null };
+  return { body: paragraphs.slice(0, -1).join("\n\n").trim(), prescription: last };
+}
+
+/** Find a session the reply names, so we can attach it as evidence. */
+function findCitedSession(
+  text: string,
+  sessions: AnalysisRecord[],
+): AnalysisRecord | undefined {
+  const haystack = text.toLowerCase();
+  return sessions
+    .filter((sn) => sn.status === "complete" && sn.title.length >= 4)
+    .find((sn) => haystack.includes(sn.title.toLowerCase()));
+}
+
+// ─── Glyphs ──────────────────────────────────────────────────────────────────
+
+function SendGlyph() {
+  return (
+    <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 19V5" stroke={color.onInk} strokeWidth={2} strokeLinecap="round" />
+      <Polyline
+        points="5 12 12 5 19 12"
+        stroke={color.onInk}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </Svg>
+  );
+}
+
+function TrashGlyph() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 6h18" stroke={color.textMuted} strokeWidth={2} strokeLinecap="round" />
+      <Path
+        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"
+        stroke={color.textMuted}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+      <Path
+        d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+        stroke={color.textMuted}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  head: {
+    paddingHorizontal: GUTTER,
+    paddingBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  headBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: color.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  empty: { paddingTop: 60, paddingHorizontal: 12 },
+
+  userBubble: {
+    alignSelf: "flex-end",
+    maxWidth: "78%",
+    backgroundColor: color.ink,
+    borderRadius: 22,
+    borderBottomRightRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 14,
+  },
+  coachBubble: {
+    alignSelf: "flex-start",
+    maxWidth: "92%",
+    backgroundColor: color.card,
+    borderRadius: 22,
+    borderBottomLeftRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  prescriptionBubble: {
+    alignSelf: "flex-start",
+    maxWidth: "92%",
+    backgroundColor: color.cobalt,
+    borderRadius: 22,
+    borderBottomLeftRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginTop: 8,
+  },
+
+  evidence: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: color.rule,
+  },
+  evidenceGlyph: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: color.paper,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  typing: { flexDirection: "row", alignItems: "center", paddingVertical: 10 },
+
+  starter: {
+    backgroundColor: color.card,
+    borderRadius: radius.pill,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
+  },
+
+  composer: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 10,
+    paddingHorizontal: GUTTER,
+    paddingTop: 8,
+  },
+  input: {
+    flex: 1,
+    backgroundColor: color.card,
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 14,
+    maxHeight: 120,
+    fontFamily: font.body,
+    fontSize: 14,
+    color: color.textPrimary,
+  },
+  sendBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: color.ink,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  lockWrap: { paddingHorizontal: GUTTER, paddingTop: 20 },
+  lockCta: {
+    marginTop: 20,
+    backgroundColor: color.cobalt,
+    borderRadius: radius.pill,
+    height: 52,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

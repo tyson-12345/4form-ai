@@ -36,11 +36,14 @@ import * as ScreenOrientation from "expo-screen-orientation";
 import * as FileSystem from "expo-file-system/legacy";
 
 import { useColors } from "@/hooks/useColors";
+import { bandColor } from "@/constants/caliper";
 import { analyses as analysesApi } from "@/lib/api";
 import { buildPoseHtml, type JointKey, type PoseMessage } from "@/lib/poseTracker";
 import { resolveVideo, stageForWebView } from "@/lib/videoStore";
 
-const RISK_COLORS = ["#C6FF3A", "#FFC53D", "#FF5A4D"];
+// Band colours come from the design system so the overlay, the angle cards
+// and the analysis screen cannot disagree about what "flagged" looks like.
+const RISK_COLORS = bandColor;
 
 type JointAngles = Record<JointKey, number>;
 type RiskMap = Record<JointKey, number>;
@@ -440,11 +443,11 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
     },
     headerTitle: {
       fontSize: 14,
-      fontFamily: "Inter_600SemiBold",
+      fontFamily: "InstrumentSans_600SemiBold",
       color: colors.foreground,
       textTransform: "capitalize",
     },
-    headerSub: { fontSize: 10, color: colors.success, fontFamily: "Inter_400Regular" },
+    headerSub: { fontSize: 10, color: colors.success, fontFamily: "InstrumentSans_400Regular" },
     rotateBtn: {
       flexDirection: "row",
       alignItems: "center",
@@ -454,7 +457,7 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
       paddingHorizontal: 12,
       paddingVertical: 6,
     },
-    rotateBtnText: { fontSize: 12, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    rotateBtnText: { fontSize: 12, color: colors.foreground, fontFamily: "InstrumentSans_600SemiBold" },
     portraitBtn: {
       position: "absolute",
       top: 14,
@@ -476,14 +479,14 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
     },
     slotTitle: {
       fontSize: 15,
-      fontFamily: "Inter_600SemiBold",
+      fontFamily: "InstrumentSans_600SemiBold",
       color: colors.foreground,
       textAlign: "center",
     },
     slotText: {
       fontSize: 13,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "InstrumentSans_400Regular",
       textAlign: "center",
       lineHeight: 19,
     },
@@ -497,7 +500,7 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
     slotBtnText: {
       color: colors.primaryForeground,
       fontSize: 14,
-      fontFamily: "Inter_700Bold",
+      fontFamily: "InstrumentSans_600SemiBold",
     },
     section: { paddingHorizontal: 18, paddingTop: 20, gap: 10 },
     sectionHeader: {
@@ -509,7 +512,7 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
     sectionLabel: {
       fontSize: 10,
       color: colors.mutedForeground,
-      fontFamily: "SpaceMono_700Bold",
+      fontFamily: "JetBrainsMono_700Bold",
       letterSpacing: 1.5,
     },
     pill: {
@@ -521,7 +524,7 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
       borderRadius: 20,
       borderWidth: 1,
     },
-    pillText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+    pillText: { fontSize: 11, fontFamily: "InstrumentSans_600SemiBold" },
     grid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     angleCard: {
       width: "30%",
@@ -532,11 +535,11 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
       alignItems: "center",
       borderWidth: 1,
     },
-    angleDeg: { fontSize: 22, fontFamily: "Archivo_800ExtraBold", letterSpacing: -0.5 },
+    angleDeg: { fontSize: 22, fontFamily: "BricolageGrotesque_800ExtraBold", letterSpacing: -0.5 },
     angleLabel: {
       fontSize: 10,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "InstrumentSans_400Regular",
       marginTop: 3,
     },
     okCard: {
@@ -549,11 +552,11 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
       borderRadius: 16,
       padding: 14,
     },
-    okTitle: { fontSize: 13, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    okTitle: { fontSize: 13, color: colors.foreground, fontFamily: "InstrumentSans_600SemiBold" },
     okBody: {
       fontSize: 12,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "InstrumentSans_400Regular",
       marginTop: 3,
       lineHeight: 17,
     },
@@ -565,17 +568,17 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
       gap: 7,
     },
     insightHead: { flexDirection: "row", alignItems: "center", gap: 7 },
-    insightTitle: { flex: 1, fontSize: 13, fontFamily: "Inter_600SemiBold" },
+    insightTitle: { flex: 1, fontSize: 13, fontFamily: "InstrumentSans_600SemiBold" },
     insightBody: {
       fontSize: 12,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "InstrumentSans_400Regular",
       lineHeight: 18,
     },
     disclaimer: {
       fontSize: 10,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "InstrumentSans_400Regular",
       lineHeight: 14,
       marginTop: 4,
       fontStyle: "italic",

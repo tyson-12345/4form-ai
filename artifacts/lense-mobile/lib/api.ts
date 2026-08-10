@@ -145,6 +145,18 @@ export const profile = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+
+  /**
+   * Permanently delete the account and all server-side data.
+   *
+   * Requires the current password — a stolen unlocked phone must not be able to
+   * erase someone's history. Irreversible.
+   */
+  deleteAccount: (password: string) =>
+    request<{ deleted: boolean }>("/profile/account", {
+      method: "DELETE",
+      body: JSON.stringify({ password }),
+    }),
 };
 
 // ─── Analyses ────────────────────────────────────────────────────────────────

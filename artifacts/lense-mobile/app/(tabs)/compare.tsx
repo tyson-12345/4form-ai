@@ -50,8 +50,8 @@ export default function CompareScreen() {
       paddingHorizontal: 20,
       paddingBottom: 20,
     },
-    title: { fontSize: 28, fontFamily: "Inter_700Bold", color: colors.foreground },
-    subtitle: { fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 4 },
+    title: { fontSize: 28, fontFamily: "InstrumentSans_600SemiBold", color: colors.foreground },
+    subtitle: { fontSize: 14, color: colors.mutedForeground, fontFamily: "InstrumentSans_400Regular", marginTop: 4 },
     proCard: {
       backgroundColor: colors.card,
       borderRadius: colors.radius,
@@ -72,11 +72,11 @@ export default function CompareScreen() {
     },
     avatarText: {
       fontSize: 20,
-      fontFamily: "Inter_700Bold",
+      fontFamily: "InstrumentSans_600SemiBold",
       color: "#fff",
     },
-    proName: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    proSpecialty: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 },
+    proName: { fontSize: 16, fontFamily: "InstrumentSans_600SemiBold", color: colors.foreground },
+    proSpecialty: { fontSize: 12, color: colors.mutedForeground, fontFamily: "InstrumentSans_400Regular", marginTop: 2 },
     sportBadge: {
       alignSelf: "flex-start",
       borderRadius: 20,
@@ -84,7 +84,7 @@ export default function CompareScreen() {
       paddingVertical: 2,
       marginTop: 4,
     },
-    sportBadgeText: { fontSize: 10, fontFamily: "Inter_500Medium", textTransform: "capitalize" },
+    sportBadgeText: { fontSize: 10, fontFamily: "InstrumentSans_500Medium", textTransform: "capitalize" },
     similarityBadge: {
       borderRadius: 20,
       paddingHorizontal: 10,
@@ -92,8 +92,8 @@ export default function CompareScreen() {
       backgroundColor: colors.primary + "22",
       alignItems: "center",
     },
-    similarityNum: { fontSize: 16, fontFamily: "Inter_700Bold", color: colors.primary },
-    similarityLabel: { fontSize: 9, color: colors.primary, fontFamily: "Inter_400Regular" },
+    similarityNum: { fontSize: 16, fontFamily: "InstrumentSans_600SemiBold", color: colors.primary },
+    similarityLabel: { fontSize: 9, color: colors.primary, fontFamily: "InstrumentSans_400Regular" },
     comparePanel: {
       marginHorizontal: 20,
       marginBottom: 24,
@@ -103,16 +103,16 @@ export default function CompareScreen() {
       borderWidth: 1,
       borderColor: colors.primary + "44",
     },
-    panelTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 4 },
-    panelSubtitle: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginBottom: 16 },
+    panelTitle: { fontSize: 18, fontFamily: "InstrumentSans_600SemiBold", color: colors.foreground, marginBottom: 4 },
+    panelSubtitle: { fontSize: 13, color: colors.mutedForeground, fontFamily: "InstrumentSans_400Regular", marginBottom: 16 },
     simBar: { marginBottom: 16 },
     simBarLabel: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-    simBarLabelText: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
-    simBarValue: { fontSize: 14, fontFamily: "Inter_700Bold", color: colors.primary },
+    simBarLabelText: { fontSize: 12, color: colors.mutedForeground, fontFamily: "InstrumentSans_400Regular" },
+    simBarValue: { fontSize: 14, fontFamily: "InstrumentSans_600SemiBold", color: colors.primary },
     simBarBg: { height: 8, backgroundColor: colors.border, borderRadius: 4 },
     simBarFill: { height: 8, borderRadius: 4, backgroundColor: colors.primary },
     keyAttrSection: { marginTop: 8 },
-    keyAttrTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground, marginBottom: 8 },
+    keyAttrTitle: { fontSize: 13, fontFamily: "InstrumentSans_600SemiBold", color: colors.foreground, marginBottom: 8 },
     attrPill: {
       borderRadius: 20,
       paddingHorizontal: 12,
@@ -121,7 +121,7 @@ export default function CompareScreen() {
       marginRight: 8,
       marginBottom: 8,
     },
-    attrText: { fontSize: 12, color: colors.foreground, fontFamily: "Inter_400Regular" },
+    attrText: { fontSize: 12, color: colors.foreground, fontFamily: "InstrumentSans_400Regular" },
     closeBtn: {
       flexDirection: "row",
       alignItems: "center",
@@ -133,7 +133,7 @@ export default function CompareScreen() {
       borderWidth: 1,
       borderColor: colors.border,
     },
-    closeBtnText: { color: colors.mutedForeground, fontSize: 13, fontFamily: "Inter_400Regular" },
+    closeBtnText: { color: colors.mutedForeground, fontSize: 13, fontFamily: "InstrumentSans_400Regular" },
   });
 
   return (
@@ -160,7 +160,7 @@ export default function CompareScreen() {
                 </View>
               )}
               {getSimilarityForAthlete(selected.id) === null && (
-                <Text style={{ color: colors.mutedForeground, fontSize: 12, fontFamily: "Inter_400Regular" }}>
+                <Text style={{ color: colors.mutedForeground, fontSize: 12, fontFamily: "InstrumentSans_400Regular" }}>
                   Upload a {selected.sport} video to generate a comparison score
                 </Text>
               )}

@@ -284,31 +284,38 @@ Things a reader should not assume are covered.
 
 2. **Email is not configured.** `RESEND_API_KEY` and `MAIL_FROM` are unset, so
    `sendEmail` logs and returns without delivering. Lockout notifications and
-   password reset links **are generated but not sent**. Password reset is
-   therefore not usable end-to-end until a provider is wired up.
+   password reset links **are generated but not sent**. The reset flow is built
+   and tested end to end — screens included — but cannot complete until a
+   provider is wired up.
 
-3. **No password-reset UI in the mobile app.** The endpoints exist and are
-   tested; the screens do not.
+3. **Rate-limit state is in-process.** Horizontal scaling needs Redis.
 
-4. **Rate-limit state is in-process.** Horizontal scaling needs Redis.
-
-5. **No email verification on signup.** Anyone can register with an address they
+4. **No email verification on signup.** Anyone can register with an address they
    don't control.
 
-6. **No 2FA.**
+5. **No 2FA.**
 
-7. **Videos are unencrypted on the device.** They never leave it, but they sit in
+6. **Videos are unencrypted on the device.** They never leave it, but they sit in
    the app's document directory in the clear.
 
-8. **No account deletion endpoint.** Required by both App Store and Play Store
-   policy before you can ship.
-
-9. **The Claude API key is a shared org key.** Per-user cost attribution and
+7. **The Claude API key is a shared org key.** Per-user cost attribution and
    spend caps don't exist; the per-IP rate limits on `/api/chat` and
    `/api/analyses` are the only spend control.
 
-10. **No automated dependency scanning.** Run `pnpm audit` and wire up
-    Dependabot before launch.
+8. **No automated dependency scanning.** Run `pnpm audit` and wire up
+   Dependabot before launch.
+
+### Account deletion
+
+`DELETE /api/profile/account` permanently removes the user row; every child
+table cascades from it (profile, subscription, analyses, tips, injury risks,
+progress entries, chat, achievements, reset tokens). Clips live on the device
+and are removed by the client.
+
+Deletion requires the current password. A stolen unlocked phone must not be able
+to erase someone's history, and the UI adds a typed `DELETE` confirmation on top
+of that. A wrong password returns the same `Incorrect email or password` string
+as a failed sign-in, since it is the same credential check.
 
 ---
 

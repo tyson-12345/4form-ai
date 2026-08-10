@@ -1,43 +1,38 @@
+/**
+ * Plans.
+ *
+ * Two constraints this screen has to satisfy at once:
+ *
+ *  - The design gives Pro the cobalt card, which is correct: on this screen the
+ *    upgrade *is* the next action.
+ *  - Purchases don't work yet. The previous build showed real prices, claimed
+ *    payments were "processed by Apple App Store or Google Play", and then
+ *    granted the tier with no payment. So the buy state is driven by the
+ *    server's `billingEnabled`, and every claim about billing is written in the
+ *    future tense until it's true.
+ */
+
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Platform,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Feather } from "@expo/vector-icons";
-import { useColors } from "@/hooks/useColors";
-import { useAuth, useTier } from "@/lib/authContext";
+
+import { Screen, Label, Check, Chevron } from "@/components/caliper";
+import { color, type as T, radius, GUTTER } from "@/constants/caliper";
+import { useAuth } from "@/lib/authContext";
 import { subscriptions, type Plan } from "@/lib/api";
 
 export default function PricingScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { refreshProfile } = useAuth();
-  const currentTier = useTier();
+  const { subscription, refreshProfile } = useAuth();
 
   const [plans, setPlans] = useState<Plan[]>([]);
-  /**
-   * Whether purchases actually work. Reported by the server, not assumed here.
-   *
-   * This screen used to show real prices, claim payments were "processed by
-   * Apple App Store or Google Play", and then grant the tier without charging
-   * anything — a paywall anyone could walk through, and a false statement about
-   * billing. Until a payment provider is wired up, the buttons say so.
-   */
   const [billingEnabled, setBillingEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [working, setWorking] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const currentTier = subscription?.tier ?? "free";
 
   useEffect(() => {
     subscriptions
@@ -47,338 +42,250 @@ export default function PricingScreen() {
         setBillingEnabled(r.billingEnabled);
       })
       .catch(() => {})
-      .finally(() => {
-        setLoading(false);
-      });
+      .finally(() => setLoading(false));
   }, []);
 
-  async function handleSelectPlan(plan: Plan) {
-    if (plan.id === currentTier) return;
+  const pro = plans.find((p) => p.id === "pro");
+  const free = plans.find((p) => p.id === "free");
+  const elite = plans.find((p) => p.id === "elite");
 
-    // Downgrading is free and instant — it only ever removes entitlements.
-    if (plan.id === "free") {
-      setWorking("free");
-      try {
-        await subscriptions.cancel();
-        await refreshProfile();
-        router.back();
-      } catch {
-        Alert.alert("Couldn't switch plans", "Please try again in a moment.");
-      } finally {
-        setWorking(null);
-      }
-      return;
+  async function downgrade() {
+    setWorking(true);
+    try {
+      await subscriptions.cancel();
+      await refreshProfile();
+      router.back();
+    } catch {
+      Alert.alert("Couldn't switch plans", "Please try again in a moment.");
+    } finally {
+      setWorking(false);
     }
+  }
 
-    if (!billingEnabled) {
-      Alert.alert(
-        "Not available yet",
-        `${plan.name} isn't available to buy yet — we're still setting up payments. ` +
-          "Nothing has been charged and your plan hasn't changed.",
-        [{ text: "Got it" }],
-      );
-      return;
-    }
-
-    // With billing configured this launches the native purchase sheet and
-    // submits the resulting receipt to /subscriptions/verify-purchase, which
-    // sets the tier from the *verified* product. See docs/BILLING.md.
+  function attemptBuy(plan: Plan) {
+    // Never grant a tier client-side. When billing ships this launches the
+    // native purchase sheet and posts the receipt to /subscriptions/verify-purchase.
     Alert.alert(
-      "Purchases coming soon",
-      "In-app purchases are being finalised. Nothing has been charged.",
-      [{ text: "OK" }],
+      "Not available yet",
+      `${plan.name} isn't available to buy yet — we're still setting up payments. Nothing has been charged and your plan hasn't changed.`,
+      [{ text: "Got it" }],
     );
   }
 
-  const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
-    header: {
-      paddingTop: topPad + 16,
-      paddingHorizontal: 20,
-      paddingBottom: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-    },
-    closeBtn: { padding: 4 },
-    headerTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    scroll: { flex: 1 },
-    scrollContent: { padding: 20, paddingBottom: bottomPad + 24 },
-    heroText: {
-      fontSize: 26,
-      fontFamily: "Inter_700Bold",
-      color: colors.foreground,
-      textAlign: "center",
-      marginBottom: 8,
-    },
-    heroSub: {
-      fontSize: 14,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-      textAlign: "center",
-      marginBottom: 28,
-    },
-    planCard: {
-      borderRadius: 16,
-      borderWidth: 1.5,
-      borderColor: colors.border,
-      backgroundColor: colors.card,
-      padding: 20,
-      marginBottom: 16,
-      position: "relative",
-      overflow: "hidden",
-    },
-    planCardPopular: {
-      borderColor: colors.primary,
-    },
-    popularBadge: {
-      position: "absolute",
-      top: 12,
-      right: 12,
-      backgroundColor: colors.primary,
-      borderRadius: 20,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-    },
-    popularBadgeText: {
-      color: colors.primaryForeground,
-      fontSize: 10,
-      fontFamily: "Inter_700Bold",
-      letterSpacing: 0.5,
-    },
-    currentBadge: {
-      position: "absolute",
-      top: 12,
-      right: 12,
-      backgroundColor: colors.success + "22",
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: colors.success,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-    },
-    currentBadgeText: {
-      color: colors.success,
-      fontSize: 10,
-      fontFamily: "Inter_700Bold",
-    },
-    planName: { fontSize: 18, fontFamily: "Inter_700Bold", color: colors.foreground },
-    planDesc: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 },
-    priceRow: { flexDirection: "row", alignItems: "flex-end", marginTop: 14, marginBottom: 16, gap: 2 },
-    priceDollar: { fontSize: 18, fontFamily: "Inter_600SemiBold", color: colors.foreground, marginBottom: 4 },
-    priceAmount: { fontSize: 36, fontFamily: "Inter_700Bold", color: colors.foreground },
-    pricePeriod: { fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginBottom: 6 },
-    featureRow: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      gap: 10,
-      marginBottom: 8,
-    },
-    featureText: { fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular", flex: 1, lineHeight: 18 },
-    divider: { height: 1, backgroundColor: colors.border, marginVertical: 14 },
-    selectBtn: {
-      borderRadius: 12,
-      paddingVertical: 14,
-      alignItems: "center",
-      justifyContent: "center",
-      flexDirection: "row",
-      gap: 6,
-      marginTop: 4,
-    },
-    selectBtnPrimary: { backgroundColor: colors.primary },
-    selectBtnOutline: { borderWidth: 1.5, borderColor: colors.border },
-    selectBtnCurrent: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.success },
-    selectBtnDisabled: { backgroundColor: colors.surface3, borderWidth: 1, borderColor: colors.border },
-    selectBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-    selectBtnTextPrimary: { color: colors.primaryForeground },
-    selectBtnTextOutline: { color: colors.foreground },
-    selectBtnTextCurrent: { color: colors.success },
-    selectBtnTextDisabled: { color: colors.mutedForeground },
-    notice: {
-      flexDirection: "row",
-      gap: 10,
-      alignItems: "flex-start",
-      backgroundColor: colors.warning + "18",
-      borderWidth: 1,
-      borderColor: colors.warning + "44",
-      borderRadius: 12,
-      padding: 14,
-      marginBottom: 20,
-    },
-    noticeText: {
-      flex: 1,
-      fontSize: 12.5,
-      lineHeight: 18,
-      color: colors.foreground,
-      fontFamily: "Inter_400Regular",
-    },
-    faq: {
-      marginTop: 8,
-      padding: 16,
-      backgroundColor: colors.card,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    faqTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, marginBottom: 12 },
-    faqItem: { marginBottom: 10 },
-    faqQ: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.foreground, marginBottom: 2 },
-    faqA: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 17 },
-  });
-
   if (loading) {
     return (
-      <View style={[s.container, { alignItems: "center", justifyContent: "center" }]}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
+      <Screen style={{ alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color={color.cobalt} />
+      </Screen>
     );
   }
 
   return (
-    <View style={s.container}>
-      <View style={s.header}>
-        <TouchableOpacity style={s.closeBtn} onPress={() => router.back()}>
-          <Feather name="x" size={22} color={colors.foreground} />
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>Choose Your Plan</Text>
-        <View style={{ width: 30 }} />
+    <Screen>
+      <View style={[s.head, { paddingTop: insets.top + 14 }]}>
+        <Pressable onPress={() => router.back()} style={s.closeBtn} hitSlop={10}>
+          <Text style={s.closeGlyph}>✕</Text>
+        </Pressable>
       </View>
 
-      <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
-        <Text style={s.heroText}>Unlock Your{"\n"}Full Potential</Text>
-        <Text style={s.heroSub}>Elite AI coaching, unlimited analyses,{"\n"}and injury prevention — all in one app.</Text>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: insets.bottom + 40 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={T.headline}>
+          {free ? `${free.limits.analysesPerMonth} clips a month is a warm-up.` : "Measure more."}
+        </Text>
+        <Text style={[T.body, { marginTop: 12, maxWidth: 310 }]}>
+          Pro measures every session you film and lets Atlas read your whole history, not just
+          the last clip.
+        </Text>
 
         {!billingEnabled && (
           <View style={s.notice}>
-            <Feather name="info" size={16} color={colors.warning} style={{ marginTop: 1 }} />
-            <Text style={s.noticeText}>
-              Paid plans aren&apos;t available to buy yet — we&apos;re still setting up payments.
-              You can browse what&apos;s coming, but nothing can be purchased or charged right now.
+            <Text style={[T.bodySmall, { color: color.textPrimary }]}>
+              Paid plans aren&apos;t on sale yet. You can see what&apos;s coming, but nothing
+              can be purchased or charged right now.
             </Text>
           </View>
         )}
 
-        {plans.map((plan) => {
-          const isCurrent = plan.id === currentTier;
-          const isPopular = !!plan.popular;
-          const isWorking = working === plan.id;
-          const isPaidAndUnavailable = plan.price > 0 && !billingEnabled;
-
-          return (
-            <View key={plan.id} style={[s.planCard, isPopular && s.planCardPopular]}>
-              {isPopular && !isCurrent && (
-                <View style={s.popularBadge}>
-                  <Text style={s.popularBadgeText}>MOST POPULAR</Text>
+        {/* ── Pro: the next action, so it wears cobalt ── */}
+        {pro && (
+          <View style={s.proCard}>
+            <View style={s.proHead}>
+              <View>
+                <Label tone={color.onCobaltMuted}>PRO</Label>
+                <View style={s.priceRow}>
+                  <Text style={s.price}>${pro.price.toFixed(2)}</Text>
+                  <Text style={[T.measured, { color: color.onCobaltMuted, fontSize: 11 }]}>
+                    /MO
+                  </Text>
                 </View>
-              )}
-              {isCurrent && (
-                <View style={s.currentBadge}>
-                  <Text style={s.currentBadgeText}>CURRENT</Text>
-                </View>
-              )}
-
-              <Text style={s.planName}>{plan.name}</Text>
-              <Text style={s.planDesc}>{plan.description}</Text>
-
-              <View style={s.priceRow}>
-                {plan.price > 0 && <Text style={s.priceDollar}>$</Text>}
-                <Text style={s.priceAmount}>{plan.price === 0 ? "Free" : plan.price.toFixed(2)}</Text>
-                {plan.period && <Text style={s.pricePeriod}>/{plan.period}</Text>}
               </View>
+              {currentTier === "pro" && (
+                <View style={s.badge}>
+                  <Text style={[T.label, { color: color.onCobalt, letterSpacing: 1 }]}>
+                    CURRENT
+                  </Text>
+                </View>
+              )}
+            </View>
 
-              <View style={s.divider} />
-
-              {plan.features.map((f) => (
-                <View key={f} style={s.featureRow}>
-                  <Feather name="check-circle" size={15} color={colors.success} style={{ marginTop: 1 }} />
-                  <Text style={s.featureText}>{f}</Text>
+            <View style={{ gap: 10, marginTop: 20 }}>
+              {pro.features.map((feature) => (
+                <View key={feature} style={s.featureRow}>
+                  <Check tone={color.onCobalt} />
+                  <Text style={[T.message, { color: color.onCobalt, flex: 1 }]}>{feature}</Text>
                 </View>
               ))}
+            </View>
 
-              <TouchableOpacity
-                style={[
-                  s.selectBtn,
-                  isCurrent
-                    ? s.selectBtnCurrent
-                    : isPaidAndUnavailable
-                      ? s.selectBtnDisabled
-                      : isPopular
-                        ? s.selectBtnPrimary
-                        : s.selectBtnOutline,
+            {currentTier !== "pro" && (
+              <Pressable
+                onPress={() => attemptBuy(pro)}
+                style={({ pressed }) => [
+                  s.proCta,
+                  { opacity: billingEnabled ? (pressed ? 0.9 : 1) : 0.55 },
                 ]}
-                onPress={() => handleSelectPlan(plan)}
-                disabled={isCurrent || !!working}
-                activeOpacity={0.85}
               >
-                {isWorking ? (
-                  <ActivityIndicator
-                    color={isPopular ? colors.primaryForeground : colors.primary}
-                    size="small"
-                  />
-                ) : (
-                  <>
-                    {isCurrent && <Feather name="check" size={16} color={colors.success} />}
-                    <Text
-                      style={[
-                        s.selectBtnText,
-                        isCurrent
-                          ? s.selectBtnTextCurrent
-                          : isPaidAndUnavailable
-                            ? s.selectBtnTextDisabled
-                            : isPopular
-                              ? s.selectBtnTextPrimary
-                              : s.selectBtnTextOutline,
-                      ]}
-                    >
-                      {isCurrent
-                        ? "Current plan"
-                        : plan.price === 0
-                          ? "Switch to Free"
-                          : isPaidAndUnavailable
-                            ? "Coming soon"
-                            : `Get ${plan.name}`}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          );
-        })}
+                <Text style={[T.button, { color: color.cobalt }]}>
+                  {billingEnabled ? "Start free week" : "Coming soon"}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        )}
 
-        <View style={s.faq}>
-          <Text style={s.faqTitle}>Frequently Asked Questions</Text>
-          {[
-            // These answers describe how billing will work once it ships. They
-            // previously stated as fact that payments were already being
-            // processed through the App Store, while no payment path existed.
-            {
-              q: "Can I buy a plan right now?",
-              a: billingEnabled
-                ? "Yes. Purchases go through the App Store or Google Play, and you can cancel anytime from your store account."
-                : "Not yet. Paid plans are still being set up, so nothing can be purchased or charged today. Everything on the Free plan works normally.",
-            },
-            {
-              q: "How will payments be handled?",
-              a: "When paid plans launch, purchases will be handled entirely by the App Store or Google Play. AthleteAI will never see or store your card details.",
-            },
-            {
-              q: "What happens to my analyses if I switch to Free?",
-              a: "Your existing analyses stay accessible. You just won't be able to create new ones beyond the Free plan's monthly limit.",
-            },
-            {
-              q: "How is my technique actually scored?",
-              a: "We track your joints frame by frame in the video and measure real angles — range of motion, left/right symmetry, and time spent in high-strain positions. Scores are calculated from those measurements, so the same clip always scores the same.",
-            },
-          ].map(({ q, a }) => (
-            <View key={q} style={s.faqItem}>
-              <Text style={s.faqQ}>{q}</Text>
-              <Text style={s.faqA}>{a}</Text>
+        {/* ── Elite ── */}
+        {elite && (
+          <Pressable
+            onPress={() => (currentTier === "elite" ? undefined : attemptBuy(elite))}
+            style={({ pressed }) => [s.plainCard, pressed && { opacity: 0.9 }]}
+          >
+            <View style={s.plainHead}>
+              <Label>
+                ELITE{currentTier === "elite" ? " · CURRENT" : ""}
+              </Label>
+              <Text style={[T.measured, { fontSize: 11 }]}>
+                ${elite.price.toFixed(2)}/MO
+              </Text>
             </View>
-          ))}
-        </View>
+            <Text style={[T.body, { marginTop: 10 }]}>
+              Everything in Pro, plus side-by-side comparison against reference technique and
+              an advanced biomechanics report.
+            </Text>
+          </Pressable>
+        )}
+
+        {/* ── Free ── */}
+        {free && (
+          <View style={s.plainCard}>
+            <View style={s.plainHead}>
+              <Label>
+                FREE{currentTier === "free" ? " · CURRENT" : ""}
+              </Label>
+              <Text style={[T.measured, { fontSize: 11 }]}>
+                {free.limits.analysesPerMonth} CLIPS / MO
+              </Text>
+            </View>
+            <Text style={[T.body, { marginTop: 10 }]}>
+              Measurement, flags and history stay yours. Everything you&apos;ve already measured
+              keeps working.
+            </Text>
+
+            {currentTier !== "free" && (
+              <Pressable onPress={downgrade} disabled={working} style={s.downgrade}>
+                <Text style={[T.buttonSmall, { color: color.textMuted }]}>
+                  {working ? "Switching…" : "Switch to Free"}
+                </Text>
+                <Chevron />
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        <Text style={s.footnote}>
+          {billingEnabled
+            ? "Cancel any time in Settings. Your measured sessions stay readable on the free plan."
+            : "When plans go on sale, purchases will be handled entirely by the App Store or Google Play — AthleteAI will never see or store your card details."}
+        </Text>
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
+
+const s = StyleSheet.create({
+  head: { paddingHorizontal: GUTTER, paddingBottom: 14, alignItems: "flex-end" },
+  closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: color.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closeGlyph: { fontSize: 15, color: color.textPrimary, lineHeight: 18 },
+
+  notice: {
+    backgroundColor: color.card,
+    borderRadius: radius.cardSmall,
+    padding: 14,
+    marginTop: 20,
+    borderLeftWidth: 3,
+    borderLeftColor: color.rust,
+  },
+
+  proCard: {
+    backgroundColor: color.cobalt,
+    borderRadius: 28,
+    padding: 22,
+    marginTop: 24,
+  },
+  proHead: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
+  priceRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 6 },
+  price: {
+    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontSize: 40,
+    lineHeight: 42,
+    letterSpacing: -1.8,
+    color: color.onCobalt,
+  },
+  badge: {
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: radius.pill,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+  },
+  featureRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  proCta: {
+    backgroundColor: color.card,
+    borderRadius: radius.pill,
+    height: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 22,
+  },
+
+  plainCard: {
+    backgroundColor: color.card,
+    borderRadius: 28,
+    padding: 20,
+    marginTop: 14,
+  },
+  plainHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" },
+  downgrade: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 14,
+  },
+
+  footnote: {
+    textAlign: "center",
+    marginTop: 26,
+    fontFamily: "InstrumentSans_400Regular",
+    fontSize: 12,
+    lineHeight: 18,
+    color: color.textFaint,
+  },
+});

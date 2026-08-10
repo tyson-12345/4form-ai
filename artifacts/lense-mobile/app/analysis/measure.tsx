@@ -163,17 +163,17 @@ export default function MeasureScreen() {
       alignItems: "center",
       justifyContent: "center",
     },
-    headerTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    headerTitle: { fontSize: 15, fontFamily: "InstrumentSans_600SemiBold", color: colors.foreground },
     body: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 20 },
     title: {
       fontSize: 20,
-      fontFamily: "Inter_700Bold",
+      fontFamily: "InstrumentSans_600SemiBold",
       color: colors.foreground,
       textAlign: "center",
     },
     sub: {
       fontSize: 14,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "InstrumentSans_400Regular",
       color: colors.mutedForeground,
       textAlign: "center",
       lineHeight: 21,
@@ -188,7 +188,7 @@ export default function MeasureScreen() {
     barFill: { height: "100%", borderRadius: 3, backgroundColor: colors.primary },
     pct: {
       fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
+      fontFamily: "InstrumentSans_600SemiBold",
       color: colors.primary,
       fontVariant: ["tabular-nums"],
     },
@@ -199,12 +199,12 @@ export default function MeasureScreen() {
       paddingHorizontal: 28,
       marginTop: 8,
     },
-    btnText: { color: colors.primaryForeground, fontSize: 15, fontFamily: "Inter_700Bold" },
+    btnText: { color: colors.primaryForeground, fontSize: 15, fontFamily: "InstrumentSans_600SemiBold" },
     secondaryBtn: { paddingVertical: 12, paddingHorizontal: 20 },
     secondaryText: {
       color: colors.mutedForeground,
       fontSize: 14,
-      fontFamily: "Inter_500Medium",
+      fontFamily: "InstrumentSans_500Medium",
     },
     // The tracker must render to produce frames, but the user watches the
     // progress UI instead — so keep it on-screen but visually out of the way.

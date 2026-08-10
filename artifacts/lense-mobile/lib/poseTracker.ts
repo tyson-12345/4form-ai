@@ -73,48 +73,48 @@ export function buildPoseHtml(options: { videoUri?: string; mode: PoseMode }): s
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{width:100%;height:100%;overflow:hidden;background:#07090B;font-family:-apple-system,sans-serif;color:#EAEFF5}
+html,body{width:100%;height:100%;overflow:hidden;background:#101312;font-family:-apple-system,sans-serif;color:#EDECE7}
 #wrap{position:relative;width:100%;background:#000}
 video,canvas{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain}
 canvas{pointer-events:none}
 #badge{position:absolute;top:10px;left:10px;display:flex;align-items:center;gap:6px;
-  background:rgba(7,9,11,.88);border:1px solid rgba(198,255,58,.30);
-  border-radius:20px;padding:5px 12px;font-size:11px;font-weight:700;color:#C6FF3A}
-#dot{width:7px;height:7px;border-radius:50%;background:#C6FF3A;box-shadow:0 0 6px #C6FF3A;flex-shrink:0}
+  background:rgba(16,19,18,.88);border:1px solid rgba(36,54,232,.30);
+  border-radius:20px;padding:5px 12px;font-size:11px;font-weight:700;color:#2436E8}
+#dot{width:7px;height:7px;border-radius:50%;background:#2436E8;box-shadow:0 0 6px #2436E8;flex-shrink:0}
 #empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:10px;color:#3a3a5c;font-size:13px}
-#loading{position:fixed;inset:0;z-index:99;background:rgba(7,9,11,.92);
+#loading{position:fixed;inset:0;z-index:99;background:rgba(16,19,18,.92);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center}
 #loading.hide{display:none}
-.spin{width:38px;height:38px;border:3px solid rgba(198,255,58,0.2);border-top-color:#C6FF3A;
+.spin{width:38px;height:38px;border:3px solid rgba(36,54,232,0.2);border-top-color:#2436E8;
   border-radius:50%;animation:sp .75s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 .load-text{font-size:14px;font-weight:600}
-.load-sub{font-size:11px;color:#8a94a6;line-height:1.5}
-.retry{margin-top:14px;background:#C6FF3A;border:none;color:#07090B;padding:9px 20px;
+.load-sub{font-size:11px;color:#75787A;line-height:1.5}
+.retry{margin-top:14px;background:#2436E8;border:none;color:#101312;padding:9px 20px;
   border-radius:10px;font-size:13px;font-weight:700;cursor:pointer}
-#ctrl{position:fixed;bottom:0;left:0;right:0;background:rgba(7,9,11,.96);
+#ctrl{position:fixed;bottom:0;left:0;right:0;background:rgba(16,19,18,.96);
   padding:10px 14px 14px;display:flex;flex-direction:column;gap:9px}
 .row{display:flex;align-items:center;gap:8px}
-#timeL,#timeR{font-size:11px;color:#8a94a6;font-variant-numeric:tabular-nums;min-width:32px}
+#timeL,#timeR{font-size:11px;color:#75787A;font-variant-numeric:tabular-nums;min-width:32px}
 #timeR{text-align:right}
-#scrub{flex:1;height:4px;accent-color:#C6FF3A;cursor:pointer}
-.tbtn{background:#121519;border:none;border-radius:10px;color:#EAEFF5;
+#scrub{flex:1;height:4px;accent-color:#2436E8;cursor:pointer}
+.tbtn{background:#1C1F21;border:none;border-radius:10px;color:#EDECE7;
   display:flex;align-items:center;justify-content:center;cursor:pointer}
-#playBtn{width:42px;height:42px;background:#C6FF3A;border-radius:13px;color:#07090B;
-  box-shadow:0 0 18px rgba(198,255,58,.5)}
+#playBtn{width:42px;height:42px;background:#2436E8;border-radius:13px;color:#101312;
+  box-shadow:0 0 18px rgba(36,54,232,.5)}
 .step{width:34px;height:34px;font-size:16px}
-#speeds{display:flex;gap:2px;background:#121519;padding:4px;border-radius:10px}
-.spd{border:none;background:transparent;color:#8a94a6;font-size:11px;font-weight:700;
+#speeds{display:flex;gap:2px;background:#1C1F21;padding:4px;border-radius:10px}
+.spd{border:none;background:transparent;color:#75787A;font-size:11px;font-weight:700;
   padding:4px 9px;border-radius:7px;cursor:pointer;transition:all .15s}
-.spd.on{background:#C6FF3A;color:#07090B}
+.spd.on{background:#2436E8;color:#101312}
 #skelBtn{padding:6px 11px;font-size:11px;font-weight:700;border-radius:9px;cursor:pointer;
   border:1px solid transparent;transition:all .15s}
-#skelBtn.on{background:rgba(198,255,58,.12);color:#C6FF3A;border-color:rgba(198,255,58,.28)}
-#skelBtn.off{background:#121519;color:#8a94a6}
+#skelBtn.on{background:rgba(36,54,232,.12);color:#2436E8;border-color:rgba(36,54,232,.28)}
+#skelBtn.off{background:#1C1F21;color:#75787A}
 #legend{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:5px;
-  background:rgba(7,9,11,.82);border:1px solid rgba(255,255,255,.08);border-radius:11px;padding:8px 11px}
-.lg{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;color:#EAEFF5;letter-spacing:.3px}
+  background:rgba(16,19,18,.82);border:1px solid rgba(255,255,255,.08);border-radius:11px;padding:8px 11px}
+.lg{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;color:#EDECE7;letter-spacing:.3px}
 .ld{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 </style>
 </head>
@@ -129,9 +129,9 @@ canvas{pointer-events:none}
            ? ""
            : `<div id="badge"><div id="dot"></div><span id="btxt">Loading AI…</span></div>
        <div id="legend">
-         <div class="lg"><span class="ld" style="background:#C6FF3A"></span>SAFE</div>
-         <div class="lg"><span class="ld" style="background:#FFC53D"></span>CAUTION</div>
-         <div class="lg"><span class="ld" style="background:#FF5A4D"></span>RISK</div>
+         <div class="lg"><span class="ld" style="background:#EDECE7"></span>IN RANGE</div>
+         <div class="lg"><span class="ld" style="background:#8A8D89"></span>CAUTION</div>
+         <div class="lg"><span class="ld" style="background:#C2542E"></span>FLAGGED</div>
        </div>`
        }`
       : `<div id="empty"><p>No video available</p></div>`
@@ -213,7 +213,7 @@ ${
   // ── Skeleton topology ──
   var CONN=[[11,12],[11,23],[12,24],[23,24],[11,13],[13,15],[15,17],[15,19],[17,19],[12,14],[14,16],[16,18],[16,20],[18,20],[23,25],[25,27],[27,29],[27,31],[29,31],[24,26],[26,28],[28,30],[28,32],[30,32]];
   var KJ=[0,11,12,13,14,15,16,23,24,25,26,27,28];
-  var RL=["#C6FF3A","#FFC53D","#FF5A4D"];
+  var RL=["#EDECE7","#8A8D89","#C2542E"];
 
   function ang(a,b,c){
     var ab={x:a.x-b.x,y:a.y-b.y}, cb={x:c.x-b.x,y:c.y-b.y};
@@ -308,7 +308,7 @@ ${
       if (!vis(a) || !vis(b)) return;
       var pA = pt(a), pB = pt(b);
       var rm = Math.max(jr[a] ? jr[a].lvl : -1, jr[b] ? jr[b].lvl : -1);
-      var col = rm >= 1 ? RL[rm] : "rgba(198,255,58,0.6)";
+      var col = rm >= 1 ? RL[rm] : "rgba(237,236,231,0.55)";
       ctx.save();
       ctx.strokeStyle = col; ctx.lineWidth = rm >= 1 ? 4.5 : 3.5; ctx.lineCap = "round";
       ctx.shadowBlur = rm >= 2 ? 17 : 10; ctx.shadowColor = col; ctx.globalAlpha = .92;
@@ -321,12 +321,12 @@ ${
       if (!vis(i)) return;
       seen++;
       var p = pt(i), risk = jr[i];
-      var col = risk ? RL[risk.lvl] : "#C6FF3A";
+      var col = risk ? RL[risk.lvl] : "#EDECE7";
       var r = risk && risk.lvl === 2 ? 9 : risk && risk.lvl === 1 ? 7.5 : 6.5;
       ctx.save();
       ctx.shadowBlur = 14; ctx.shadowColor = col;
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = "#07090B"; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = "#101312"; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill();
       ctx.restore();
     });
     if (btxt) btxt.textContent = seen > 0 ? seen + " joints tracked" : "No pose detected";

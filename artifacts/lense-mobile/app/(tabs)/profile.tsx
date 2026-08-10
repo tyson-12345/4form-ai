@@ -1,346 +1,534 @@
-import React, { useState } from "react";
+/**
+ * Profile — who you are, what you've measured, and the controls.
+ *
+ * Includes in-app account deletion, which both app stores require of any app
+ * that lets you create an account in-app. It is deliberately friction-heavy:
+ * typed confirmation plus password re-entry, because it cannot be undone.
+ */
+
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
-  ScrollView,
-  Platform,
   StyleSheet,
-  Alert,
+  ScrollView,
+  Pressable,
   Modal,
   TextInput,
-  Switch,
+  Alert,
+  ActivityIndicator,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
+import { useRouter, useFocusEffect } from "expo-router";
 
-import { useAuth, useTier } from "@/lib/authContext";
-import { useColors } from "@/hooks/useColors";
-import { useTheme } from "@/lib/themeContext";
+import { Screen, Card, Label, Chip, Chevron, Avatar, PrimaryButton } from "@/components/caliper";
+import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
+import { useAuth } from "@/lib/authContext";
+import {
+  analyses as analysesApi,
+  profile as profileApi,
+  type AnalysisRecord,
+  type UsageRecord,
+  ApiError,
+} from "@/lib/api";
+import { SPORTS, displaySport } from "@/constants/sports";
 
-const SPORTS = [
-  "Powerlifting", "Olympic Weightlifting", "Running", "Swimming",
-  "Basketball", "Soccer", "Tennis", "Golf", "CrossFit",
-  "Gymnastics", "Boxing", "Cycling", "Football", "Baseball",
-  "Volleyball", "Martial Arts", "Other",
-];
+const LEVELS = ["Beginner", "Intermediate", "Advanced", "Elite"] as const;
 
-const LEVELS = ["Beginner", "Intermediate", "Advanced", "Elite"];
+type EditField = "name" | "sport" | "level" | "weeklyGoal" | null;
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, profile, logout, updateProfile } = useAuth();
-  const tier = useTier();
-  const C = useColors();
-  const { isDark, toggleTheme } = useTheme();
+  const { user, profile, subscription, logout, updateProfile } = useAuth();
 
-  const [editModal, setEditModal] = useState<"name" | "sport" | "level" | "goal" | null>(null);
-  const [editValue, setEditValue] = useState("");
+  const [sessions, setSessions] = useState<AnalysisRecord[]>([]);
+  const [usage, setUsage] = useState<UsageRecord | null>(null);
+  const [edit, setEdit] = useState<EditField>(null);
+  const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const topPad = Platform.OS === "web" ? 24 : insets.top + 8;
-  const bottomPad = Platform.OS === "web" ? 34 + 84 : insets.bottom + 84 + 16;
+  const load = useCallback(async () => {
+    const [list, u] = await Promise.allSettled([analysesApi.list(), analysesApi.usage()]);
+    if (list.status === "fulfilled") setSessions(list.value.analyses);
+    if (u.status === "fulfilled") setUsage(u.value);
+  }, []);
 
-  const displayName = profile?.name ?? user?.name ?? "Athlete";
-  const initials = displayName.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
-  function openEdit(field: typeof editModal, current: string) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setEditValue(current);
-    setEditModal(field);
+  const measured = sessions.filter(
+    (a) => a.status === "complete" && a.analysisMethod === "pose-measured",
+  );
+
+  // Flags closed = sessions where an earlier improvement no longer appears.
+  const flagsClosed = Math.max(
+    0,
+    new Set(
+      sessions.flatMap((a) => (a.improvements ?? []).slice(0, 1)),
+    ).size - (measured[0]?.improvements?.length ?? 0),
+  );
+
+  const displayName = profile?.name || user?.name || "Athlete";
+  const tier = subscription?.tier ?? "free";
+
+  function openEdit(field: Exclude<EditField, null>) {
+    setEdit(field);
+    setValue(
+      field === "name"
+        ? (profile?.name ?? "")
+        : field === "sport"
+          ? displaySport(profile?.sport)
+          : field === "level"
+            ? (profile?.level ?? "beginner")
+            : String(profile?.weeklyGoal ?? 3),
+    );
   }
 
-  async function saveEdit(overrideValue?: string) {
-    const val = overrideValue ?? editValue.trim();
-    if (!val) return;
+  async function save(override?: string) {
+    const next = (override ?? value).trim();
+    if (!next || !edit) return;
+
     setSaving(true);
     try {
-      if (editModal === "name") await updateProfile({ name: val });
-      else if (editModal === "sport") await updateProfile({ sport: val.toLowerCase() });
-      else if (editModal === "level") await updateProfile({ level: val.toLowerCase() as any });
-      else if (editModal === "goal") await updateProfile({ weeklyGoal: Number(val) });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (edit === "name") await updateProfile({ name: next });
+      else if (edit === "sport") await updateProfile({ sport: next.toLowerCase() });
+      else if (edit === "level")
+        await updateProfile({ level: next.toLowerCase() as "beginner" });
+      else if (edit === "weeklyGoal") await updateProfile({ weeklyGoal: Number(next) });
+      setEdit(null);
     } catch {
       Alert.alert("Couldn't save", "Please try again.");
     } finally {
       setSaving(false);
-      setEditModal(null);
     }
   }
 
-  const SPORT_DISPLAY = (profile?.sport ?? "Not set").replace(/\b\w/g, (c) => c.toUpperCase());
-  const LEVEL_DISPLAY = (profile?.level ?? "Not set").replace(/\b\w/g, (c) => c.toUpperCase());
-
-  const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: C.background },
-    header: { paddingHorizontal: 20, paddingBottom: 16 },
-    pageTitle: { fontFamily: "Archivo_800ExtraBold", fontSize: 28, color: C.textPrimary, letterSpacing: -0.5 },
-    identityCard: { flexDirection: "row", alignItems: "center", gap: 16, marginHorizontal: 20, marginBottom: 16, backgroundColor: C.surface2, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: C.border },
-    avatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: C.volt + "26", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: C.volt },
-    avatarText: { fontFamily: "Archivo_800ExtraBold", fontSize: 22, color: C.volt },
-    avatarEditBadge: { position: "absolute", bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9, backgroundColor: C.volt, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: C.surface2 },
-    nameText: { fontFamily: "Inter_700Bold", fontSize: 18, color: C.textPrimary },
-    emailText: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textSecondary, marginTop: 2 },
-    tierBadge: { alignSelf: "flex-start", backgroundColor: C.volt + "22", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginTop: 6 },
-    tierText: { fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1, color: C.volt },
-    statsRow: { flexDirection: "row", gap: 10, paddingHorizontal: 20, marginBottom: 16 },
-    statCard: { flex: 1, backgroundColor: C.surface2, borderRadius: 16, padding: 14, alignItems: "center", borderWidth: 1, borderColor: C.border },
-    statValue: { fontFamily: "Archivo_800ExtraBold", fontSize: 20, color: C.textPrimary, letterSpacing: -0.5 },
-    statLabel: { fontFamily: "SpaceMono_700Bold", fontSize: 9, letterSpacing: 1, color: C.textSecondary, marginTop: 4, textAlign: "center" },
-    section: { paddingHorizontal: 20, marginBottom: 16 },
-    sectionLabel: { fontFamily: "SpaceMono_700Bold", fontSize: 10, letterSpacing: 1.5, color: C.textTertiary, marginBottom: 10 },
-    settingsCard: { backgroundColor: C.surface2, borderRadius: 18, borderWidth: 1, borderColor: C.border, overflow: "hidden" },
-    settingsRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
-    settingsRowBorder: { borderBottomWidth: 1, borderBottomColor: C.border },
-    settingsIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: C.surface3, alignItems: "center", justifyContent: "center" },
-    settingsLabel: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 15, color: C.textPrimary },
-    settingsValue: { fontSize: 12, fontFamily: "Inter_400Regular", color: C.textSecondary, marginTop: 1 },
-    upgradeCard: { marginHorizontal: 20, marginBottom: 16, backgroundColor: C.volt, borderRadius: 18, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 },
-    upgradeTitle: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.ink },
-    upgradeSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "rgba(7,9,11,0.7)", marginTop: 1 },
-    signOutBtn: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.surface2, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: C.border },
-    signOutText: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.destructive },
-    modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
-    modalCard: { backgroundColor: C.surface2, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: "80%" },
-    modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
-    modalTitle: { fontFamily: "Inter_700Bold", fontSize: 17, color: C.textPrimary },
-    modalInput: {
-      backgroundColor: C.surface3, borderRadius: 12, borderWidth: 1,
-      borderColor: C.border, paddingHorizontal: 16, paddingVertical: 14,
-      color: C.textPrimary, fontSize: 15, fontFamily: "Inter_400Regular", marginBottom: 16,
-    },
-    modalSaveBtn: { backgroundColor: C.volt, borderRadius: 14, paddingVertical: 15, alignItems: "center" },
-    modalSaveBtnText: { color: C.ink, fontSize: 15, fontFamily: "Inter_700Bold" },
-    optionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: C.border },
-    optionText: { fontFamily: "Inter_500Medium", fontSize: 16, color: C.textSecondary },
-    optionTextActive: { color: C.textPrimary, fontFamily: "Inter_600SemiBold" },
-  });
-
   return (
-    <View style={s.container}>
-      {/* Edit modal */}
-      <Modal visible={!!editModal} animationType="slide" transparent>
-        <View style={s.modalOverlay}>
-          <View style={[s.modalCard, { paddingBottom: insets.bottom + 24 }]}>
-            <View style={s.modalHeader}>
-              <Text style={s.modalTitle}>
-                {editModal === "name" ? "Edit Name"
-                  : editModal === "sport" ? "Change Sport"
-                  : editModal === "level" ? "Change Level"
-                  : "Weekly Goal"}
-              </Text>
-              <TouchableOpacity onPress={() => setEditModal(null)}>
-                <Feather name="x" size={20} color={C.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {(editModal === "name" || editModal === "goal") && (
-              <>
-                <TextInput
-                  style={s.modalInput}
-                  value={editValue}
-                  onChangeText={setEditValue}
-                  placeholder={editModal === "name" ? "Your name" : "e.g. 4"}
-                  placeholderTextColor={C.textTertiary}
-                  keyboardType={editModal === "goal" ? "number-pad" : "default"}
-                  autoCapitalize={editModal === "name" ? "words" : "none"}
-                  autoFocus
-                  onSubmitEditing={() => saveEdit()}
-                />
-                <TouchableOpacity
-                  style={[s.modalSaveBtn, saving && { opacity: 0.6 }]}
-                  onPress={() => saveEdit()}
-                  disabled={saving}
-                  activeOpacity={0.85}
-                >
-                  <Text style={s.modalSaveBtnText}>{saving ? "Saving..." : "Save"}</Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            {editModal === "sport" && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {SPORTS.map((sport) => {
-                  const active = sport.toLowerCase() === profile?.sport;
-                  return (
-                    <TouchableOpacity
-                      key={sport}
-                      style={s.optionRow}
-                      onPress={() => saveEdit(sport)}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={[s.optionText, active && s.optionTextActive]}>{sport}</Text>
-                      {active && <Feather name="check" size={16} color={C.volt} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-
-            {editModal === "level" && (
-              <View>
-                {LEVELS.map((level) => {
-                  const active = level.toLowerCase() === profile?.level;
-                  return (
-                    <TouchableOpacity
-                      key={level}
-                      style={s.optionRow}
-                      onPress={() => saveEdit(level)}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={[s.optionText, active && s.optionTextActive]}>{level}</Text>
-                      {active && <Feather name="check" size={16} color={C.volt} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: bottomPad }}>
-        {/* Header */}
-        <View style={[s.header, { paddingTop: topPad }]}>
-          <Text style={s.pageTitle}>Profile</Text>
-        </View>
-
-        {/* Identity card */}
-        <View style={s.identityCard}>
-          <TouchableOpacity
-            style={s.avatar}
-            onPress={() => openEdit("name", displayName)}
-            activeOpacity={0.85}
-          >
-            <Text style={s.avatarText}>{initials}</Text>
-            <View style={s.avatarEditBadge}>
-              <Feather name="edit-2" size={9} color={C.ink} />
-            </View>
-          </TouchableOpacity>
+    <Screen>
+      <ScrollView
+        contentContainerStyle={{
+          paddingTop: insets.top + 14,
+          paddingBottom: TAB_BAR.clearance + insets.bottom,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Identity ── */}
+        <View style={s.identity}>
+          <Avatar name={displayName} size={62} />
           <View style={{ flex: 1 }}>
-            <TouchableOpacity onPress={() => openEdit("name", displayName)} activeOpacity={0.7}>
-              <Text style={s.nameText}>{displayName}</Text>
-            </TouchableOpacity>
-            <Text style={s.emailText}>{user?.email ?? ""}</Text>
-            <View style={s.tierBadge}>
-              <Text style={s.tierText}>{tier === "pro" ? "⚡ Pro" : tier === "elite" ? "👑 Elite" : "Free"}</Text>
-            </View>
+            <Text style={[T.metricMedium, { fontSize: 24 }]} numberOfLines={1}>
+              {displayName}
+            </Text>
+            <Text style={[T.bodySmall, { marginTop: 2 }]} numberOfLines={1}>
+              {user?.email}
+            </Text>
           </View>
         </View>
 
-        {/* Stats */}
-        <View style={s.statsRow}>
-          <View style={s.statCard}>
-            <Text style={s.statValue}>{profile?.streakDays ?? 0}</Text>
-            <Text style={s.statLabel}>DAY STREAK</Text>
-          </View>
-          <View style={s.statCard}>
-            <Text style={s.statValue}>{profile?.weeklyProgress ?? 0}/{profile?.weeklyGoal ?? 3}</Text>
-            <Text style={s.statLabel}>THIS WEEK</Text>
-          </View>
-          <TouchableOpacity style={s.statCard} onPress={() => openEdit("goal", String(profile?.weeklyGoal ?? 3))} activeOpacity={0.75}>
-            <Text style={s.statValue}>{profile?.weeklyGoal ?? 3}</Text>
-            <Text style={s.statLabel}>WEEKLY GOAL</Text>
-            <Feather name="edit-2" size={9} color={C.textTertiary} style={{ marginTop: 3 }} />
-          </TouchableOpacity>
+        {/* ── Counts ── */}
+        <View style={s.stats}>
+          <Stat value={measured.length} label="MEASURED" />
+          <Stat value={profile?.streakDays ?? 0} label="DAY STREAK" />
+          <Stat value={flagsClosed} label="FLAGS CLOSED" tone={color.cobalt} />
         </View>
 
-        {/* Training profile */}
+        {/* ── Training ── */}
         <View style={s.section}>
-          <Text style={s.sectionLabel}>TRAINING PROFILE</Text>
-          <View style={s.settingsCard}>
-            <TouchableOpacity style={[s.settingsRow, s.settingsRowBorder]} onPress={() => openEdit("sport", profile?.sport ?? "")} activeOpacity={0.7}>
-              <View style={s.settingsIcon}><Feather name="target" size={17} color={C.textSecondary} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.settingsLabel}>Sport</Text>
-                <Text style={s.settingsValue}>{SPORT_DISPLAY}</Text>
-              </View>
-              <Feather name="chevron-right" size={16} color={C.textTertiary} />
-            </TouchableOpacity>
-            <TouchableOpacity style={s.settingsRow} onPress={() => openEdit("level", profile?.level ?? "")} activeOpacity={0.7}>
-              <View style={s.settingsIcon}><Feather name="bar-chart-2" size={17} color={C.textSecondary} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.settingsLabel}>Level</Text>
-                <Text style={s.settingsValue}>{LEVEL_DISPLAY}</Text>
-              </View>
-              <Feather name="chevron-right" size={16} color={C.textTertiary} />
-            </TouchableOpacity>
-          </View>
+          <Label style={{ marginBottom: 10 }}>TRAINING</Label>
+          <Card padded={false} style={{ paddingHorizontal: 18 }}>
+            <Row label="Name" value={displayName} onPress={() => openEdit("name")} />
+            <Row
+              label="Sport"
+              value={displaySport(profile?.sport) || "Not set"}
+              onPress={() => openEdit("sport")}
+            />
+            <Row
+              label="Level"
+              value={cap(profile?.level ?? "beginner")}
+              onPress={() => openEdit("level")}
+            />
+            <Row
+              label="Weekly goal"
+              value={`${profile?.weeklyGoal ?? 3} sessions`}
+              onPress={() => openEdit("weeklyGoal")}
+              last
+            />
+          </Card>
         </View>
 
-        {/* Upgrade banner */}
-        {tier === "free" && (
-          <TouchableOpacity style={s.upgradeCard} onPress={() => router.push("/pricing")} activeOpacity={0.88}>
-            <Feather name="zap" size={22} color={C.ink} />
-            <View style={{ flex: 1 }}>
-              <Text style={s.upgradeTitle}>Upgrade to Pro</Text>
-              <Text style={s.upgradeSub}>AI Coach · Unlimited analyses · Priority support</Text>
-            </View>
-            <Feather name="chevron-right" size={18} color={C.ink} />
-          </TouchableOpacity>
-        )}
-
-        {/* App settings */}
-        <View style={s.section}>
-          <Text style={s.sectionLabel}>APP</Text>
-          <View style={s.settingsCard}>
-            {/* Theme toggle */}
-            <View style={[s.settingsRow, s.settingsRowBorder]}>
-              <View style={s.settingsIcon}>
-                <Feather name={isDark ? "moon" : "sun"} size={17} color={C.textSecondary} />
-              </View>
-              <Text style={s.settingsLabel}>{isDark ? "Dark Mode" : "Light Mode"}</Text>
-              <Switch
-                value={isDark}
-                onValueChange={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  toggleTheme();
-                }}
-                trackColor={{ false: C.surface3, true: C.volt }}
-                thumbColor={isDark ? C.ink : C.surface4}
-                ios_backgroundColor={C.surface3}
-              />
-            </View>
-            {[
-              { icon: "bell" as const, label: "Notifications", onPress: () => Alert.alert("Notifications", "Notification settings coming soon.") },
-              { icon: "shield" as const, label: "Privacy Policy", onPress: () => Alert.alert("Privacy", "Visit athleteai.app/privacy") },
-              { icon: "help-circle" as const, label: "Help & Support", onPress: () => Alert.alert("Support", "Email us at support@athleteai.app") },
-              { icon: "info" as const, label: "About AthleteAI", onPress: () => Alert.alert("AthleteAI", "Version 1.0.0\nBuilt with ❤️ for athletes.") },
-            ].map((row, i, arr) => (
-              <TouchableOpacity
-                key={row.label}
-                style={[s.settingsRow, i < arr.length - 1 && s.settingsRowBorder]}
-                onPress={row.onPress}
-                activeOpacity={0.7}
-              >
-                <View style={s.settingsIcon}>
-                  <Feather name={row.icon} size={17} color={C.textSecondary} />
-                </View>
-                <Text style={s.settingsLabel}>{row.label}</Text>
-                <Feather name="chevron-right" size={16} color={C.textTertiary} />
-              </TouchableOpacity>
-            ))}
+        {/* ── Plan ── */}
+        <Pressable
+          onPress={() => router.push("/pricing")}
+          style={({ pressed }) => [s.plan, pressed && { opacity: 0.9 }]}
+        >
+          <View style={{ flex: 1 }}>
+            <Label tone={color.onInkFaint}>
+              {tier.toUpperCase()} PLAN
+              {usage && usage.limit !== -1 ? ` · ${usage.remaining} CLIPS LEFT` : ""}
+            </Label>
+            <Text style={[T.cardTitle, { color: color.onInk, marginTop: 6, fontSize: 18 }]}>
+              Measure everything you train
+            </Text>
           </View>
+          <View style={s.planCta}>
+            <Text style={[T.buttonSmall, { color: color.onCobalt }]}>Plans</Text>
+          </View>
+        </Pressable>
+
+        {/* ── App ── */}
+        <View style={s.section}>
+          <Label style={{ marginBottom: 10 }}>APP</Label>
+          <Card padded={false} style={{ paddingHorizontal: 18 }}>
+            <Row
+              label="How measurement works"
+              onPress={() =>
+                Alert.alert(
+                  "How measurement works",
+                  "We track 33 body landmarks in your clip using on-device pose detection, then measure the angle at each joint across evenly-spaced frames.\n\nScores are calculated from those angles — the same clip always produces the same numbers.\n\nPower and speed are shown as 'not measured' because they can't be derived from 2D video without knowing your mass and the camera's distance.",
+                )
+              }
+            />
+            <Row
+              label="Privacy"
+              onPress={() =>
+                Alert.alert(
+                  "Privacy",
+                  "Your videos never leave your device — only the measured joint angles are sent to our server.\n\nDeleting a session removes its clip from your phone. Deleting your account removes everything.",
+                )
+              }
+            />
+            <Row
+              label="Support"
+              onPress={() => void Linking.openURL("mailto:support@athleteai.app")}
+            />
+            <Row label="Version" value="1.0.0" last />
+          </Card>
         </View>
 
-        {/* Sign out */}
+        {/* ── Account ── */}
         <View style={s.section}>
-          <TouchableOpacity
-            style={s.signOutBtn}
-            onPress={() => Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-              { text: "Cancel", style: "cancel" },
-              { text: "Sign Out", style: "destructive", onPress: logout },
-            ])}
-            activeOpacity={0.8}
-          >
-            <Feather name="log-out" size={18} color={C.destructive} />
-            <Text style={s.signOutText}>Sign Out</Text>
-          </TouchableOpacity>
+          <Label style={{ marginBottom: 10 }}>ACCOUNT</Label>
+          <Card padded={false} style={{ paddingHorizontal: 18 }}>
+            <Row
+              label="Sign out"
+              onPress={() =>
+                Alert.alert("Sign out", "You can sign back in any time.", [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Sign out",
+                    style: "destructive",
+                    onPress: async () => {
+                      await logout();
+                      router.replace("/");
+                    },
+                  },
+                ])
+              }
+            />
+            <Row
+              label="Delete account"
+              tone={color.rust}
+              onPress={() => setDeleteOpen(true)}
+              last
+            />
+          </Card>
         </View>
       </ScrollView>
+
+      {/* ── Edit sheet ── */}
+      <Modal visible={edit !== null} animationType="slide" presentationStyle="pageSheet">
+        <Screen>
+          <View style={s.sheetHead}>
+            <Pressable onPress={() => setEdit(null)} hitSlop={12}>
+              <Text style={[T.buttonSmall, { color: color.textMuted }]}>Cancel</Text>
+            </Pressable>
+            <Label>{(edit ?? "").toUpperCase()}</Label>
+            <View style={{ width: 48 }} />
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: GUTTER }} keyboardShouldPersistTaps="handled">
+            {edit === "sport" && (
+              <View style={s.chipWrap}>
+                {SPORTS.map((sport) => (
+                  <Chip
+                    key={sport}
+                    label={sport}
+                    selected={value.toLowerCase() === sport.toLowerCase()}
+                    onPress={() => {
+                      setValue(sport);
+                      void save(sport);
+                    }}
+                  />
+                ))}
+              </View>
+            )}
+
+            {edit === "level" && (
+              <View style={s.chipWrap}>
+                {LEVELS.map((level) => (
+                  <Chip
+                    key={level}
+                    label={level}
+                    selected={value.toLowerCase() === level.toLowerCase()}
+                    onPress={() => {
+                      setValue(level);
+                      void save(level);
+                    }}
+                  />
+                ))}
+              </View>
+            )}
+
+            {edit === "weeklyGoal" && (
+              <View style={s.chipWrap}>
+                {[2, 3, 4, 5, 6, 7].map((n) => (
+                  <Chip
+                    key={n}
+                    label={`${n} a week`}
+                    selected={value === String(n)}
+                    onPress={() => {
+                      setValue(String(n));
+                      void save(String(n));
+                    }}
+                  />
+                ))}
+              </View>
+            )}
+
+            {edit === "name" && (
+              <>
+                <TextInput
+                  style={s.input}
+                  value={value}
+                  onChangeText={setValue}
+                  placeholder="Your name"
+                  placeholderTextColor={color.textGhost}
+                  autoFocus
+                  maxLength={80}
+                  returnKeyType="done"
+                  onSubmitEditing={() => save()}
+                />
+                <View style={{ marginTop: 24 }}>
+                  <PrimaryButton
+                    label={saving ? "Saving…" : "Save"}
+                    onPress={() => save()}
+                    disabled={saving || !value.trim()}
+                  />
+                </View>
+              </>
+            )}
+          </ScrollView>
+        </Screen>
+      </Modal>
+
+      <DeleteAccountSheet
+        visible={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={async () => {
+          await logout();
+          router.replace("/");
+        }}
+      />
+    </Screen>
+  );
+}
+
+// ─── Delete account ──────────────────────────────────────────────────────────
+
+function DeleteAccountSheet({
+  visible,
+  onClose,
+  onDeleted,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const armed = confirm.trim().toUpperCase() === "DELETE" && password.length > 0;
+
+  async function run() {
+    setWorking(true);
+    setError(null);
+    try {
+      await profileApi.deleteAccount(password);
+      onDeleted();
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.status === 401
+          ? "That password doesn't match."
+          : "We couldn't delete your account. Please try again.",
+      );
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+      <Screen>
+        <View style={s.sheetHead}>
+          <Pressable onPress={onClose} hitSlop={12}>
+            <Text style={[T.buttonSmall, { color: color.textMuted }]}>Cancel</Text>
+          </Pressable>
+          <Label>DELETE ACCOUNT</Label>
+          <View style={{ width: 48 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={{ padding: GUTTER }} keyboardShouldPersistTaps="handled">
+          <Text style={T.headlineSmall}>This can't be undone.</Text>
+
+          <Text style={[T.body, { marginTop: 14 }]}>
+            Deleting your account permanently removes your measurements, sessions, coaching
+            notes, progress history, and chat with Atlas. Clips stored on this phone are
+            removed too.
+          </Text>
+
+          <Label style={{ marginTop: 28, marginBottom: 8 }}>TYPE DELETE TO CONFIRM</Label>
+          <TextInput
+            style={s.input}
+            value={confirm}
+            onChangeText={setConfirm}
+            placeholder="DELETE"
+            placeholderTextColor={color.textGhost}
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
+
+          <Label style={{ marginTop: 20, marginBottom: 8 }}>YOUR PASSWORD</Label>
+          <TextInput
+            style={s.input}
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Password"
+            placeholderTextColor={color.textGhost}
+            secureTextEntry
+            autoCapitalize="none"
+            autoComplete="current-password"
+          />
+
+          {error && (
+            <Text style={[T.bodySmall, { color: color.rust, marginTop: 12 }]}>{error}</Text>
+          )}
+
+          <View style={{ marginTop: 28 }}>
+            <PrimaryButton
+              label={working ? "Deleting…" : "Delete my account"}
+              onPress={run}
+              disabled={!armed || working}
+              tone={color.rust}
+              labelTone={color.onCobalt}
+            />
+          </View>
+
+          {working && <ActivityIndicator style={{ marginTop: 16 }} color={color.rust} />}
+        </ScrollView>
+      </Screen>
+    </Modal>
+  );
+}
+
+// ─── Pieces ──────────────────────────────────────────────────────────────────
+
+function Stat({ value, label, tone }: { value: number; label: string; tone?: string }) {
+  return (
+    <View style={s.stat}>
+      <Text style={[T.metricMedium, tone ? { color: tone } : null]}>{value}</Text>
+      <Text style={[T.measuredSmall, { marginTop: 3, letterSpacing: 1.2 }]}>{label}</Text>
     </View>
   );
 }
+
+function Row({
+  label,
+  value,
+  onPress,
+  last = false,
+  tone,
+}: {
+  label: string;
+  value?: string;
+  onPress?: () => void;
+  last?: boolean;
+  tone?: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      style={({ pressed }) => [s.row, last && { borderBottomWidth: 0 }, pressed && { opacity: 0.6 }]}
+    >
+      <Text style={[T.rowTitle, { flex: 1, fontSize: 15 }, tone ? { color: tone } : null]}>
+        {label}
+      </Text>
+      {value && <Text style={[T.measured, { fontSize: 11, color: color.textMuted }]}>{value}</Text>}
+      {onPress && <Chevron />}
+    </Pressable>
+  );
+}
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  identity: { paddingHorizontal: GUTTER, flexDirection: "row", alignItems: "center", gap: 16 },
+  stats: { flexDirection: "row", gap: 10, paddingHorizontal: GUTTER, paddingTop: 20 },
+  stat: { flex: 1, backgroundColor: color.card, borderRadius: radius.tile, padding: 14 },
+
+  section: { paddingHorizontal: GUTTER, paddingTop: 22 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: color.ruleFaint,
+  },
+
+  plan: {
+    marginHorizontal: GUTTER,
+    marginTop: 18,
+    backgroundColor: color.ink,
+    borderRadius: radius.card,
+    padding: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  planCta: {
+    backgroundColor: color.cobalt,
+    borderRadius: radius.pill,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
+  },
+
+  sheetHead: {
+    paddingHorizontal: GUTTER,
+    paddingTop: 20,
+    paddingBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  input: {
+    backgroundColor: color.card,
+    borderRadius: radius.cardSmall,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    fontFamily: font.body,
+    fontSize: 15,
+    color: color.textPrimary,
+  },
+});
