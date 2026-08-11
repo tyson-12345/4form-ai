@@ -19,7 +19,6 @@ import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ActivityIndicator, View } from "react-native";
 
@@ -99,14 +98,12 @@ export default function RootLayout() {
         <AuthProvider>
           <QueryClientProvider client={queryClient}>
             <GestureHandlerRootView style={{ flex: 1, backgroundColor: color.paper }}>
-              <KeyboardProvider>
-                {/* Caliper is a single light system — paper is load-bearing, so
-                    the status bar is always dark-on-light. */}
-                <StatusBar style="dark" />
-                <AuthGate>
-                  <RootLayoutNav />
-                </AuthGate>
-              </KeyboardProvider>
+              {/* Caliper is a single light system — paper is load-bearing, so
+                  the status bar is always dark-on-light. */}
+              <StatusBar style="dark" />
+              <AuthGate>
+                <RootLayoutNav />
+              </AuthGate>
             </GestureHandlerRootView>
           </QueryClientProvider>
         </AuthProvider>
