@@ -18,6 +18,8 @@
 
 import type { Request, Response, NextFunction } from "express";
 import { logger } from "./logger.js";
+import { redisAvailable, incrementWindow } from "./redis.js";
+import { recordAlert } from "./alerting.js";
 
 interface Bucket {
   count: number;
@@ -60,44 +62,91 @@ export interface RateLimitOptions {
   name: string;
 }
 
+/** Reject a request that exceeded its window. */
+function reject(
+  req: Request,
+  res: Response,
+  name: string,
+  max: number,
+  resetInMs: number,
+): void {
+  const retryAfterSec = Math.max(1, Math.ceil(resetInMs / 1000));
+  res.setHeader("Retry-After", retryAfterSec);
+  res.setHeader("RateLimit-Limit", max);
+  res.setHeader("RateLimit-Remaining", 0);
+  logger.warn({ limiter: name, ip: clientIp(req), path: req.path }, "Rate limit exceeded");
+  res.status(429).json({ error: "Too many requests. Please slow down." });
+}
+
 /**
  * Fixed-window rate limiter.
  *
  * Emits `Retry-After` and `RateLimit-*` headers so clients can back off
  * intelligently rather than retrying blindly.
+ *
+ * ── Backing store ───────────────────────────────────────────────────────────
+ * Counters live in Redis when REDIS_URL is configured, so limits hold across
+ * instances; otherwise they are per-process, which is correct for a single
+ * instance. The in-memory path stays fully synchronous — `redisAvailable()` is
+ * a sync check, so the common configuration adds no latency and no microtask.
+ *
+ * ── Failure policy: closed ──────────────────────────────────────────────────
+ * If Redis was configured but the call fails, the request is **rejected**, not
+ * waved through. A rate limiter that fails open converts a cache outage into an
+ * unlimited credential-stuffing window on the login endpoint — which is exactly
+ * when you least want the limiter gone. Oscar's fork returns `true` (allow) on
+ * a Redis error; that is the one part of his design not adopted here.
  */
 export function rateLimit({ max, windowMs = 60_000, name }: RateLimitOptions) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const key = `${name}:${clientIp(req)}`;
-    const now = Date.now();
-    const bucket = buckets.get(key);
 
-    if (!bucket || now > bucket.resetAt) {
-      buckets.set(key, { count: 1, resetAt: now + windowMs });
+    if (!redisAvailable()) {
+      const now = Date.now();
+      const bucket = buckets.get(key);
+
+      if (!bucket || now > bucket.resetAt) {
+        buckets.set(key, { count: 1, resetAt: now + windowMs });
+        res.setHeader("RateLimit-Limit", max);
+        res.setHeader("RateLimit-Remaining", max - 1);
+        next();
+        return;
+      }
+
+      bucket.count++;
+
+      if (bucket.count > max) {
+        reject(req, res, name, max, bucket.resetAt - now);
+        return;
+      }
+
       res.setHeader("RateLimit-Limit", max);
-      res.setHeader("RateLimit-Remaining", max - 1);
+      res.setHeader("RateLimit-Remaining", Math.max(0, max - bucket.count));
       next();
       return;
     }
 
-    bucket.count++;
-
-    if (bucket.count > max) {
-      const retryAfterSec = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
-      res.setHeader("Retry-After", retryAfterSec);
-      res.setHeader("RateLimit-Limit", max);
-      res.setHeader("RateLimit-Remaining", 0);
-      logger.warn(
-        { limiter: name, ip: clientIp(req), path: req.path },
-        "Rate limit exceeded",
-      );
-      res.status(429).json({ error: "Too many requests. Please slow down." });
-      return;
-    }
-
-    res.setHeader("RateLimit-Limit", max);
-    res.setHeader("RateLimit-Remaining", Math.max(0, max - bucket.count));
-    next();
+    incrementWindow(`rl:${key}`, windowMs)
+      .then(({ count, resetInMs }) => {
+        if (count > max) {
+          reject(req, res, name, max, resetInMs);
+          return;
+        }
+        res.setHeader("RateLimit-Limit", max);
+        res.setHeader("RateLimit-Remaining", Math.max(0, max - count));
+        next();
+      })
+      .catch((err: unknown) => {
+        recordAlert("rate_limit_backend_failed");
+        logger.error(
+          { err, limiter: name, path: req.path, event: "rate_limit_backend_failed" },
+          "Rate limit backend unavailable — failing closed",
+        );
+        res.setHeader("Retry-After", 5);
+        res.status(503).json({
+          error: "Service temporarily unavailable. Please try again in a moment.",
+        });
+      });
   };
 }
 

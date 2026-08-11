@@ -27,6 +27,12 @@ import {
   type RiskFinding,
   type Scores,
 } from "./scoring.js";
+import {
+  SECURITY_PREAMBLE,
+  wrapUntrusted,
+  wrapUntrustedList,
+} from "./promptSafety.js";
+import { researchForSport } from "./sportResearch.js";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -108,7 +114,8 @@ Hard rules:
 - Write for a motivated teenager or adult amateur: direct, concrete, no jargon without a plain-language gloss.
 - Every tip must name a real drill with sets, reps, and one coaching cue.
 
-If the measurements are limited (few joints tracked, short clip), say so plainly in the summary rather than padding with generic advice.`;
+If the measurements are limited (few joints tracked, short clip), say so plainly in the summary rather than padding with generic advice.
+${SECURITY_PREAMBLE}`;
 
 export async function generateNarrative(input: {
   sport: string;
@@ -164,10 +171,16 @@ function buildNarrativePrompt(input: {
 }): string {
   const { sport, title, level, metrics, scores, riskFindings } = input;
 
+  // `sport`, `title`, `goals` and `injuryConcerns` are free text typed by the
+  // user and are wrapped as untrusted. Everything else on this prompt —
+  // angles, scores, risk bands, joint labels — is measured or computed by us
+  // and is left unwrapped so the model can tell our data from theirs.
+  const research = researchForSport(sport);
+
   const lines: string[] = [
-    `Sport: ${sport}`,
-    `Session: "${title}"`,
-    `Athlete level: ${level}`,
+    `Sport: ${wrapUntrusted(sport)}`,
+    `Session: ${wrapUntrusted(title)}`,
+    `Athlete level: ${wrapUntrusted(level)}`,
     `Clip length: ${metrics.durationSec.toFixed(1)}s`,
     `Frames analysed: ${metrics.frameCount} (tracking quality ${(metrics.trackingQuality * 100).toFixed(0)}%)`,
     "",
@@ -200,10 +213,25 @@ function buildNarrativePrompt(input: {
     lines.push("", "No joint spent measurable time outside its safe range.");
   }
 
-  if (input.goals?.length) lines.push("", `Athlete's stated goals: ${input.goals.join(", ")}`);
-  if (input.injuryConcerns?.length) {
-    lines.push(`Existing injury concerns: ${input.injuryConcerns.join(", ")}`);
+  if (input.goals?.length) {
+    lines.push("", `Athlete's stated goals: ${wrapUntrustedList(input.goals)}`);
   }
+  if (input.injuryConcerns?.length) {
+    lines.push(`Existing injury concerns: ${wrapUntrustedList(input.injuryConcerns)}`);
+  }
+
+  // Sport-specific grounding, so the write-up uses the vocabulary and emphasis
+  // of the sport rather than generic movement advice. Selected by exact match
+  // on a lowercased sport name — the user's string is never interpolated here.
+  lines.push(
+    "",
+    "SPORT CONTEXT (for your framing and emphasis — not a source of numbers):",
+    `  What matters most: ${research.emphasis}`,
+    `  Injury literature: ${research.injury}`,
+    `  Performance literature: ${research.performance}`,
+    "  Use this to decide what to emphasise and what vocabulary to use. Do not cite these",
+    "  papers to the athlete by name, and do not let them override what the measurements show.",
+  );
 
   lines.push(
     "",
@@ -226,7 +254,8 @@ How you work:
 - Be direct and encouraging, but never downplay something that could cause injury.
 - End with one concrete thing they can do today.
 - Keep it to 2-3 short paragraphs unless they ask for depth.
-- You are not a doctor. For pain, persistent or sharp, tell them to see a physio — don't diagnose.`;
+- You are not a doctor. For pain, persistent or sharp, tell them to see a physio — don't diagnose.
+${SECURITY_PREAMBLE}`;
 
 export async function chatWithCoach(
   messages: { role: "user" | "assistant"; content: string }[],
@@ -244,16 +273,30 @@ export async function chatWithCoach(
   let system = CHAT_SYSTEM;
 
   if (context) {
-    system += `\n\nAthlete context:\n- Sport: ${context.sport || "not set"}\n- Level: ${context.level || "not set"}`;
+    // Everything the athlete typed — sport, level, the session title — is
+    // wrapped. This block is appended to the *system* prompt, which is the
+    // most valuable place for an injected instruction to land, so the
+    // delimiters matter more here than anywhere else in the app.
+    system +=
+      `\n\nAthlete context:` +
+      `\n- Sport: ${context.sport ? wrapUntrusted(context.sport) : "not set"}` +
+      `\n- Level: ${context.level ? wrapUntrusted(context.level) : "not set"}`;
 
     if (context.recentAnalysis) {
       const { title, scores, strengths, improvements } = context.recentAnalysis;
       const scoreLines = Object.entries(scores)
         .map(([k, v]) => `  - ${k}: ${v === null ? "not measured" : Math.round(v)}/100`)
         .join("\n");
-      system += `\n\nMost recent analysis: "${title}"\nScores:\n${scoreLines}`;
-      if (strengths.length) system += `\nStrengths: ${strengths.slice(0, 3).join("; ")}`;
-      if (improvements.length) system += `\nTo improve: ${improvements.slice(0, 3).join("; ")}`;
+      system += `\n\nMost recent analysis: ${wrapUntrusted(title)}\nScores:\n${scoreLines}`;
+      // Strengths and improvements are Claude's own prior output, not the
+      // athlete's text, but they are still model-generated and round-trip
+      // through the database — wrap them rather than trust the round trip.
+      if (strengths.length) {
+        system += `\nStrengths: ${wrapUntrustedList(strengths.slice(0, 3))}`;
+      }
+      if (improvements.length) {
+        system += `\nTo improve: ${wrapUntrustedList(improvements.slice(0, 3))}`;
+      }
     }
   }
 

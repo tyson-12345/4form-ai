@@ -1,6 +1,6 @@
 # AthleteAI — Backend Comparison and Consolidation Decision
 
-**Status:** decision document, for Tyson and Oscar to agree on.
+**Status:** decision made and executed — see [Outcome](#outcome) at the end.
 **Date:** 2026-08-10
 **Compared:** `origin/main` @ `a2eae91` (Tyson) vs `oscar/main` @ `d43c8b3` (Oscar)
 **Common ancestor:** `e719ca7` — 12 commits behind mine, 643 behind Oscar's.
@@ -502,3 +502,77 @@ of how the rest lands.
 - My suite: `npx vitest run` in `artifacts/api-server` — 8 files, 229 tests,
   229 passing, 96 s.
 - Oscar's suite: **not executed.** All claims about it are static.
+
+---
+
+## Outcome
+
+Executed 2026-08-10. `origin/main` is the surviving trunk, with Oscar's
+architecture and the portable parts of his work merged in. Nothing was pushed
+to his repository.
+
+**One decision was overridden from §5:** item 15 (his mobile product surface,
+3–6 weeks) is **not** being ported. Tyson's Caliper design system stays. That
+removes the largest and least certain item from the plan and is why the rest
+fit into a single pass.
+
+### Ported
+
+| # | Item | Status |
+|---|---|---|
+| 1 | `resolveApiUrl()` | Done — `lense-mobile/lib/api.ts`, with an added port-preserving branch for web dev servers |
+| 2 | Prompt-injection delimiters + stripping | Done — new `lib/promptSafety.ts`, wired into the narrative *and* chat prompts, 18 tests |
+| 3 | Broader DB indexes | Done — schema + `migrations/0002_read_path_indexes.sql`, composite and uuid-adapted |
+| 4 | `repositories/` layer | Done — analysis, user, chat, achievement |
+| 5 | `services/` layer | Done — analysis, chat, achievement, entitlement |
+| 6 | `SPORT_RESEARCH` citations | Done — new `lib/sportResearch.ts`, 8 sports + honest generic fallback |
+| 7 | Biomechanics term translation | Done — `lense-mobile/utils/formatBiomechanics.ts`, wired into chat rendering, 20 tests |
+| 8 | ESLint config | Done — installed and passing, 0 errors |
+| 9 | `Dockerfile` + `railway.json` | Done — multi-stage, non-root |
+| 10 | `/health/metrics` + alerting | Done — new `lib/alerting.ts`, counters wired into six real failure paths |
+| 11 | Redis-backed rate limiting | Done — new `lib/redis.ts`, **fails closed** (see below) |
+| — | BullMQ queue (12–14 deferred, 15 dropped) | Not ported — see below |
+
+### Three deliberate departures from his implementation
+
+1. **The rate limiter fails closed.** Oscar's returns "allow" when Redis errors.
+   That converts a cache outage into an unlimited credential-stuffing window on
+   the login endpoint. Ours returns 503. The in-memory path is unchanged and
+   still used whenever `REDIS_URL` is unset, so single-instance behaviour is
+   identical to before.
+
+2. **Delimiter stripping loops to a fixed point.** His is a single
+   `String.replace` pass, so a value crafted as
+   `<athlete_<athlete_input>input>` loses the inner token and the outer halves
+   close back up into a working delimiter. `promptSafety.test.ts` pins this and
+   asserts the single-pass version would have failed.
+
+3. **The markdown-safe translator uses the single-pass span algorithm.** His
+   `formatBiomechanicsTextSafe` falls back to sequential `.replace()` calls,
+   which re-translates its own output — the same double-translation bug his
+   span rewrite fixed for the other variant.
+
+### Not ported, and why
+
+- **Object storage / thumbnails (12–13).** Unmounted and untested on his side
+  too; no current need. Revisit when videos move off-device.
+- **BullMQ queue.** Unwired in his tree. Revisit when analysis latency demands
+  it, not before.
+- **Sport-specific score weighting (14).** The §4 compromise is a product
+  decision, not a port. `SPORT_RESEARCH` landed because it only affects how
+  numbers are explained; changing what the headline number *is* should wait for
+  Oscar's answer to question 4 below.
+- **His mobile surface (15).** Superseded — see above.
+
+### Verification
+
+- `tsc --noEmit` clean in both `api-server` and `lense-mobile`.
+- `eslint .` — 0 errors, 11 warnings (all `no-unsafe-*` at SDK boundaries).
+- `vitest run` — **271 passing** in api-server (was 229), **20 passing** in
+  lense-mobile (new).
+- `pnpm run build` succeeds.
+- Oscar's suite still not executed — nothing above depends on it.
+
+**Unchanged from this document's analysis:** the scoring engine, auth, the
+paywall, and the Caliper UI are all still mine. The four questions in §7 are
+still open and still for Oscar.

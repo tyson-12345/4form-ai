@@ -8,6 +8,7 @@ import {
   jsonb,
   uuid,
   pgEnum,
+  index,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -198,7 +199,14 @@ export const analysesTable = pgTable("analyses", {
   similarityScore: real("similarity_score"),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [
+  // The list screen: every analysis for one user, newest first. The composite
+  // serves both the filter and the sort, so this is an index-only ordering
+  // rather than a sort of the whole user partition.
+  index("analyses_user_uploaded_idx").on(t.userId, t.uploadedAt),
+  // The monthly quota count, which runs on every upload attempt.
+  index("analyses_user_status_idx").on(t.userId, t.status),
+]);
 
 export const insertAnalysisSchema = createInsertSchema(analysesTable).omit({
   id: true,
@@ -221,7 +229,9 @@ export const coachingTipsTable = pgTable("coaching_tips", {
   description: text("description").notNull(),
   drill: text("drill"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [
+  index("coaching_tips_analysis_idx").on(t.analysisId),
+]);
 
 export const insertCoachingTipSchema = createInsertSchema(coachingTipsTable).omit({
   id: true,
@@ -279,7 +289,9 @@ export const progressEntriesTable = pgTable("progress_entries", {
   speedScore: real("speed_score"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [
+  index("progress_entries_user_date_idx").on(t.userId, t.date),
+]);
 
 export const insertProgressEntrySchema = createInsertSchema(progressEntriesTable).omit({
   id: true,
@@ -333,7 +345,10 @@ export const chatMessagesTable = pgTable("chat_messages", {
     { onDelete: "set null" }
   ),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [
+  // Every chat read is "newest N for this user" — see chatRepository.
+  index("chat_messages_user_created_idx").on(t.userId, t.createdAt),
+]);
 
 export const insertChatMessageSchema = createInsertSchema(chatMessagesTable).omit({
   id: true,

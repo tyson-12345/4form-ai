@@ -43,6 +43,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/authContext";
 import { displaySport } from "@/constants/sports";
+import { formatBiomechanicsTextSafe } from "../../utils/formatBiomechanics";
 
 const STARTERS = [
   "What should I film next?",
@@ -333,8 +334,14 @@ function Message({
     );
   }
 
+  // Atlas writes like a clinician if left alone; translate the jargon down to
+  // language an amateur can act on. Markdown-safe so code spans and links in a
+  // reply survive intact. Applied at render only — the stored message keeps
+  // the original wording, so this stays reversible and copy still yields it.
+  const spoken = formatBiomechanicsTextSafe(message.content);
+
   // Split a trailing prescription off the body so it can wear cobalt.
-  const { body, prescription } = splitPrescription(message.content);
+  const { body, prescription } = splitPrescription(spoken);
   const cited = findCitedSession(message.content, sessions);
 
   return (

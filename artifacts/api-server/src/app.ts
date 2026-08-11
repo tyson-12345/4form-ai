@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { rateLimit } from "./lib/rateLimit";
+import { recordAlert } from "./lib/alerting";
 
 const app: Express = express();
 
@@ -75,6 +76,7 @@ app.use(
       if (process.env.NODE_ENV === "development" && process.env.CORS_ALLOW_ALL === "true") {
         return callback(null, true);
       }
+      recordAlert("cors_rejected");
       logger.warn({ origin, event: "cors_rejected" }, "Blocked cross-origin request");
       return callback(new Error("Not allowed by CORS"));
     },

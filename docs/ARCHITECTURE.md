@@ -7,20 +7,44 @@ How the system fits together, and why the important parts are built the way they
 ```
 artifacts/
   api-server/          Express + TypeScript API (the only thing that talks to Postgres)
-    src/lib/           Pure logic: scoring, sanitization, validation, auth, rate limiting
-    src/routes/        HTTP handlers
+    src/routes/        HTTP only: parse, authenticate, status codes
+    src/services/      Orchestration and business rules
+    src/repositories/  Every database query, and nothing else
+    src/lib/           Pure logic: scoring, sanitization, validation, auth,
+                       rate limiting, prompt safety, alerting
     src/middlewares/   authenticate
     test/              Integration tests + static source audits
   lense-mobile/        Expo / React Native app (expo-router)
     app/               Screens, file-based routing
     lib/               API client, pose tracker, video storage, contexts
+    utils/             Pure helpers (unit-tested)
   mockup-sandbox/      Design scratchpad — not shipped
 lib/
   db/                  Drizzle schema + connection (shared workspace package)
   api-client-react/    Generated client (legacy, largely unused)
 scripts/               Operational scripts (password migration)
 docs/                  This directory
+Dockerfile             Production image
+railway.json           Deploy config
 ```
+
+### The three server layers
+
+Adopted from Oscar's fork during the August 2026 consolidation — see
+[BACKEND-COMPARISON.md](BACKEND-COMPARISON.md) for the decision and its
+reasoning.
+
+| Layer | May do | May not do |
+|---|---|---|
+| `routes/` | Parse and validate input, call one service, set status codes | Touch the database, call Claude, contain business rules |
+| `services/` | Orchestrate, enforce rules, call Claude, call repositories | Touch `db` directly, know about `req`/`res` |
+| `repositories/` | Build and run queries | Contain rules, call other repositories, know about HTTP |
+
+**The ownership rule.** Every repository function that reads or writes a
+user-owned row takes `userId` and puts it in the `WHERE` clause. There is
+deliberately no `findAnalysisById(id)` without an owner — the moment one exists
+a caller will use it and an IDOR ships. The safe call is the only call, so the
+check cannot be forgotten rather than merely being remembered.
 
 Package manager is **pnpm** with workspaces. `@workspace/db` is consumed by both
 the API server and the scripts package.
@@ -233,10 +257,12 @@ Migration: `lib/db/migrations/0001_security_and_measured_analysis.sql`
 
 ## Testing
 
-229 tests in `artifacts/api-server`. Run with:
+291 tests: 271 in `artifacts/api-server`, 20 in `artifacts/lense-mobile`.
 
 ```bash
 pnpm --filter @workspace/api-server test
+pnpm --filter @workspace/api-server lint
+pnpm --filter @workspace/lense-mobile test
 ```
 
 | Suite | Covers |
@@ -246,9 +272,15 @@ pnpm --filter @workspace/api-server test
 | `lib/auth.test.ts` | hashing, legacy verification, rehash detection, JWT attacks, reset tokens |
 | `lib/rateLimit.test.ts` | windows, per-IP isolation, lockout constants, progressive delay |
 | `lib/validate.test.ts` | schemas, generic error responses, non-disclosure |
-| `routes/subscriptions.test.ts` | entitlement resolution, plan/limit consistency, no client-assertable upgrade |
+| `lib/promptSafety.test.ts` | delimiter stripping, nested-delimiter reconstruction, wrapping invariants |
+| `services/entitlementService.test.ts` | entitlement resolution, plan/limit consistency, no client-assertable upgrade |
 | `test/auth-messages.test.ts` | **static source audit** — scans every file for leaky auth strings and logged passwords |
 | `test/login-lockout.test.ts` | end-to-end login, lockout, delay, rate limit, reset (in-memory DB fake) |
 
+| `lense-mobile/utils/formatBiomechanics.test.ts` | jargon translation, no re-translation, markdown/code/URL protection |
+
 The lockout tests take ~90 s because the progressive delay is real and is not
 mocked away — that cost is the security control working.
+
+The mobile suite covers `utils/` only. Screens have no test harness — that needs
+jest-expo and a native-module mock layer, which is separate work.

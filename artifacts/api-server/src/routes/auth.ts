@@ -40,6 +40,7 @@ import {
 } from "../lib/auth.js";
 import { authenticate, type AuthRequest } from "../middlewares/authenticate.js";
 import { logger } from "../lib/logger.js";
+import { recordAlert } from "../lib/alerting.js";
 import {
   parseOrReject,
   safeEmail,
@@ -136,7 +137,7 @@ router.post("/auth/signup", async (req, res) => {
 
   await Promise.all([
     db.insert(athleteProfilesTable).values({
-      userId: user!.id,
+      userId: user.id,
       name,
       sport: "",
       level: "beginner",
@@ -144,16 +145,16 @@ router.post("/auth/signup", async (req, res) => {
       injuryConcerns: [],
     }),
     db.insert(subscriptionsTable).values({
-      userId: user!.id,
+      userId: user.id,
       tier: "free",
       status: "active",
     }),
   ]);
 
-  logger.info({ userId: user!.id, event: "signup_success" }, "Account created");
+  logger.info({ userId: user.id, event: "signup_success" }, "Account created");
 
-  const token = signToken({ userId: user!.id, email: user!.email });
-  res.status(201).json({ token, user: { id: user!.id, email: user!.email, name } });
+  const token = signToken({ userId: user.id, email: user.email });
+  res.status(201).json({ token, user: { id: user.id, email: user.email, name } });
 });
 
 // ─── POST /api/auth/login ────────────────────────────────────────────────────
@@ -259,6 +260,7 @@ async function registerFailure(
     .where(eq(usersTable.id, userId));
 
   if (shouldLock) {
+    recordAlert("account_locked");
     logger.warn(
       { userId, ip, attempts, event: "account_locked" },
       "Account locked after consecutive failed logins",

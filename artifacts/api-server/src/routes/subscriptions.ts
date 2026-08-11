@@ -16,90 +16,26 @@
 
 import { Router } from "express";
 import { z } from "zod";
-import { db } from "@workspace/db";
-import { subscriptionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
 import { authenticate, type AuthRequest } from "../middlewares/authenticate.js";
 import { parseOrReject } from "../lib/validate.js";
 import { logger } from "../lib/logger.js";
 import { clientIp } from "../lib/rateLimit.js";
+import {
+  findSubscriptionByUserId,
+  updateSubscription,
+} from "../repositories/userRepository.js";
+import {
+  PLANS,
+  billingEnabled,
+  resolveEffectiveTier,
+} from "../services/entitlementService.js";
 
 const router = Router();
 
-/**
- * Monthly analysis allowance per tier. `-1` means unlimited.
- *
- * This constant is the single source of truth for both the enforcement in
- * routes/analyses.ts and the marketing copy below, so the two cannot drift —
- * the previous code advertised "3 per month" while enforcing 3 *ever*.
- */
-export const TIER_LIMITS = {
-  free: { analysesPerMonth: 3, aiChat: false, proComparisons: false, priorityProcessing: false },
-  pro: { analysesPerMonth: -1, aiChat: true, proComparisons: false, priorityProcessing: true },
-  elite: { analysesPerMonth: -1, aiChat: true, proComparisons: true, priorityProcessing: true },
-} as const;
-
-export type Tier = keyof typeof TIER_LIMITS;
-
-/**
- * True when real in-app purchases are wired up. While false, the app must not
- * present a working purchase flow — see `billingEnabled` in the plans payload.
- */
-export function billingEnabled(): boolean {
-  return Boolean(process.env.REVENUECAT_WEBHOOK_SECRET && process.env.REVENUECAT_API_KEY);
-}
-
-export const PLANS = [
-  {
-    id: "free",
-    name: "Free",
-    price: 0,
-    period: null,
-    description: "Get started with AI coaching",
-    features: [
-      `${TIER_LIMITS.free.analysesPerMonth} video analyses per month`,
-      "Pose tracking with joint-angle measurement",
-      "Technique scores",
-      "Injury risk indicators",
-    ],
-    limits: TIER_LIMITS.free,
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: 9.99,
-    period: "month",
-    description: "For serious athletes",
-    popular: true,
-    revenueCatProductId: "com.athleteai.pro.monthly",
-    features: [
-      "Unlimited video analyses",
-      "AI coach chat",
-      "Detailed coaching tips & drills",
-      "Injury prevention plans",
-      "Progress tracking & charts",
-      "Priority processing",
-    ],
-    limits: TIER_LIMITS.pro,
-  },
-  {
-    id: "elite",
-    name: "Elite",
-    price: 24.99,
-    period: "month",
-    description: "For competitive athletes",
-    revenueCatProductId: "com.athleteai.elite.monthly",
-    features: [
-      "Everything in Pro",
-      "Pro athlete comparisons",
-      "Side-by-side technique analysis",
-      "Advanced biomechanics report",
-      "Custom training programs",
-      "Early access to new features",
-    ],
-    limits: TIER_LIMITS.elite,
-  },
-];
+// TIER_LIMITS, PLANS, billingEnabled and resolveEffectiveTier moved to
+// services/entitlementService.ts — routes/analyses.ts and routes/chat.ts need
+// them too, and a route should not have to import another route to find out
+// what a user is entitled to.
 
 // ─── GET /api/subscriptions/plans ────────────────────────────────────────────
 
@@ -114,35 +50,11 @@ router.get("/subscriptions/plans", (_req, res) => {
 // ─── GET /api/subscriptions/current ──────────────────────────────────────────
 
 router.get("/subscriptions/current", authenticate, async (req: AuthRequest, res) => {
-  const [sub] = await db
-    .select()
-    .from(subscriptionsTable)
-    .where(eq(subscriptionsTable.userId, req.userId!))
-    .limit(1);
-
+  const sub = await findSubscriptionByUserId(req.userId!);
   const tier = resolveEffectiveTier(sub);
   const plan = PLANS.find((p) => p.id === tier) ?? PLANS[0];
   res.json({ subscription: sub ? { ...sub, tier } : null, plan });
 });
-
-/**
- * The tier a user is actually entitled to right now.
- *
- * A stored tier of "pro" whose `currentPeriodEnd` has passed is treated as
- * "free". Without this an expired or refunded subscription keeps working
- * forever, because nothing else downgrades the row.
- */
-export function resolveEffectiveTier(sub: {
-  tier: string;
-  status: string;
-  currentPeriodEnd: Date | null;
-} | undefined): Tier {
-  if (!sub) return "free";
-  if (sub.tier === "free") return "free";
-  if (sub.status !== "active") return "free";
-  if (sub.currentPeriodEnd && sub.currentPeriodEnd.getTime() < Date.now()) return "free";
-  return (sub.tier in TIER_LIMITS ? sub.tier : "free") as Tier;
-}
 
 // ─── POST /api/subscriptions/cancel ──────────────────────────────────────────
 
@@ -152,11 +64,10 @@ export function resolveEffectiveTier(sub: {
  * subscription must be cancelled through Apple/Google.
  */
 router.post("/subscriptions/cancel", authenticate, async (req: AuthRequest, res) => {
-  const [updated] = await db
-    .update(subscriptionsTable)
-    .set({ tier: "free", status: "cancelled", updatedAt: new Date() })
-    .where(eq(subscriptionsTable.userId, req.userId!))
-    .returning();
+  const updated = await updateSubscription(req.userId!, {
+    tier: "free",
+    status: "cancelled",
+  });
 
   logger.info(
     { userId: req.userId, event: "subscription_cancelled" },
@@ -183,7 +94,7 @@ const verifyPurchaseSchema = z.object({
  * Returning a free upgrade here would recreate exactly the hole this file exists
  * to close.
  */
-router.post("/subscriptions/verify-purchase", authenticate, async (req: AuthRequest, res) => {
+router.post("/subscriptions/verify-purchase", authenticate, (req: AuthRequest, res) => {
   const data = parseOrReject(verifyPurchaseSchema, req.body, res, {
     route: "subscriptions/verify-purchase",
     ip: clientIp(req),
@@ -246,16 +157,11 @@ router.post("/subscriptions/dev-set-tier", authenticate, async (req: AuthRequest
   });
   if (!data) return;
 
-  const [updated] = await db
-    .update(subscriptionsTable)
-    .set({
-      tier: data.tier,
-      status: "active",
-      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      updatedAt: new Date(),
-    })
-    .where(eq(subscriptionsTable.userId, req.userId!))
-    .returning();
+  const updated = await updateSubscription(req.userId!, {
+    tier: data.tier,
+    status: "active",
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+  });
 
   logger.warn(
     { userId: req.userId, tier: data.tier, event: "dev_tier_override_used" },

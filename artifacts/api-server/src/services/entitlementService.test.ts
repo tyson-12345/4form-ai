@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, afterEach } from "vitest";
-import { resolveEffectiveTier, TIER_LIMITS, billingEnabled, PLANS } from "./subscriptions.js";
+import { resolveEffectiveTier, TIER_LIMITS, billingEnabled, PLANS } from "./entitlementService.js";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -124,7 +124,7 @@ describe("no client-assertable upgrade path exists", () => {
   it("does not export a handler that sets a tier from request input", async () => {
     // Belt-and-braces: if someone reintroduces `/subscriptions/update`, the
     // route table will grow a POST that isn't in this allowlist.
-    const mod = await import("./subscriptions.js");
+    const mod = await import("../routes/subscriptions.js");
     const stack = (mod.default as unknown as { stack: { route?: { path: string; methods: Record<string, boolean> } }[] }).stack;
 
     const postRoutes = stack

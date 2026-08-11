@@ -1,8 +1,43 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { PoseMetrics } from "./poseTracker";
 
-const API_URL =
-  (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001") + "/api";
+/**
+ * Where the API lives, resolved per platform.
+ *
+ * ── Why this is not just an env var ─────────────────────────────────────────
+ * Requests must go through the proxy's `/api` path on the standard HTTPS port,
+ * not to a non-standard port like `:8080` directly. Many cellular and
+ * corporate networks silently block non-standard ports, which surfaces as a
+ * request that hangs for the full timeout and then aborts — an "Aborted" error
+ * with nothing useful in it, on the signup screen, only for some users, only
+ * on some networks.
+ *
+ * Adopted from Oscar's fork, which diagnosed and fixed this. It is the single
+ * clearest piece of field debugging in either codebase.
+ */
+function resolveApiUrl(): string {
+  // Explicit configuration always wins. Set at dev-server startup to the
+  // tunnel/proxy origin; in production, to the API's public origin.
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return `${process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, "")}/api`;
+  }
+
+  // On web with no override, use the page's own origin — same-origin, standard
+  // port, and no CORS preflight.
+  if (typeof window !== "undefined" && window.location) {
+    const { protocol, hostname, port } = window.location;
+    // Keep an explicit port when the page itself is served from one, otherwise
+    // a dev server on :19006 would resolve to the wrong origin.
+    const authority = port ? `${hostname}:${port}` : hostname;
+    return `${protocol}//${authority}/api`;
+  }
+
+  // Native, unconfigured. Only reachable from a simulator on the same host —
+  // a physical device needs EXPO_PUBLIC_API_URL set.
+  return "http://localhost:3001/api";
+}
+
+const API_URL = resolveApiUrl();
 
 const TOKEN_KEY = "auth_token";
 
