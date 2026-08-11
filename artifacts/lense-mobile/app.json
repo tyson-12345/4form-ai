@@ -6,12 +6,12 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "athleteai",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash.png",
-      "resizeMode": "cover",
-      "backgroundColor": "#07090B"
+      "resizeMode": "contain",
+      "backgroundColor": "#101312"
     },
     "ios": {
       "supportsTablet": false,
@@ -27,7 +27,7 @@
       "package": "com.athleteai.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#07090B"
+        "backgroundColor": "#101312"
       },
       "permissions": [
         "android.permission.CAMERA",
@@ -38,7 +38,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "expo-router",

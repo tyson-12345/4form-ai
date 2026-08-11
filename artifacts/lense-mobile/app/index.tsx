@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Svg, { Line, Circle } from "react-native-svg";
 
-import { Screen, Label, PrimaryButton, Chip } from "@/components/caliper";
+import { Screen, Label, PrimaryButton, Chip, AppMark } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { SPORTS } from "@/constants/sports";
@@ -47,7 +47,10 @@ export default function LandingScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Label>ATHLETE AI</Label>
+        <View style={s.brand}>
+          <AppMark size={40} />
+          <Label>ATHLETE AI</Label>
+        </View>
 
         <Text style={[T.headline, s.headline]}>
           Your technique,{"\n"}measured.
@@ -138,6 +141,7 @@ function MeasureMark() {
 }
 
 const s = StyleSheet.create({
+  brand: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 4 },
   headline: { marginTop: 12 },
   sub: { marginTop: 14, maxWidth: 320 },
   mark: { alignItems: "center", marginTop: 18, marginBottom: 4 },

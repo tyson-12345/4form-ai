@@ -128,6 +128,23 @@ rules, so nothing looks broken — it is just less refined.
 - `metricHeroXL` (82pt) and `stampDay()`
 - **Home** — hero restructured: provenance line, XL index, ruler, reference row
 - **Analysis** — ruler with band caption, frame provenance
+- **App icon** — the "A, measured across" mark, generated from
+  `scripts/generate-icons.py` (the script is the source of truth; the PNGs are
+  committed build output). iOS, Android adaptive, splash, favicon, store and
+  tinted variants. Replaced a placeholder orange square on the landing page.
+- **`AppMark`** component for in-app use — same geometry, no bitmap.
+
+**Icon follow-ups**
+- 🟡 **Apple touch icon** for the landing page (`apple-touch-icon.png`, 180×180)
+  — iOS home-screen bookmarks currently fall back to a screenshot.
+- 🟡 **`icon-store.png` / `icon-tinted.png` are generated but unwired** — the
+  store variant goes in App Store Connect by hand; the tinted variant needs an
+  iOS 18 `.icon` asset catalog, which Expo does not yet configure from
+  `app.json`.
+- ⚪️ **Dead file:** `constants/colors.ts` (Volt-era) is no longer imported by
+  anything — `hooks/useColors.ts` is a shim onto Caliper tokens. Both can go
+  once the 5 screens still using `useColors()` (compare, +not-found, measure,
+  skeleton, ErrorFallback) import `@/constants/caliper` directly.
 
 **Remaining** (each still functional, just not yet reworked)
 

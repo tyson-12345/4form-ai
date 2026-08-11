@@ -78,6 +78,80 @@ export function Card({
   );
 }
 
+// ─── App mark ────────────────────────────────────────────────────────────────
+
+/**
+ * The Caliper mark — an "A" whose crossbar is the live measurement.
+ *
+ * Same geometry as the app icon (`scripts/generate-icons.py`, which is the
+ * source of truth for the rasters). Kept here as well so the mark can appear
+ * *inside* the app without shipping a bitmap: at these sizes a PNG would either
+ * be soft or oversized, and the whole mark is two strokes.
+ *
+ * The crossbar is the only cobalt in the mark, which is the same rule the rest
+ * of the system runs on — cobalt means "the measurement", never decoration.
+ *
+ * Optical compensation matches the design: below ~40px the strokes thicken and
+ * the apex drops, so the crossbar keeps its own row of pixels rather than
+ * merging into the legs.
+ */
+export function AppMark({
+  size = 44,
+  field = color.ink,
+  letter = color.paper,
+  bar = color.cobalt,
+  rounded = true,
+}: {
+  size?: number;
+  /** `null` renders the mark alone, with no field behind it. */
+  field?: string | null;
+  letter?: string;
+  bar?: string;
+  rounded?: boolean;
+}) {
+  // Two optical sizes, matching the design's ladder. Interpolating between them
+  // would smooth away a deliberate step.
+  const small = size < 40;
+  const apexY = small ? 50 : 44;
+  const legBottom = small ? 126 : 128;
+  const letterW = small ? 22 : 14;
+  const barX1 = small ? 66 : 64;
+  const barX2 = small ? 102 : 104;
+  const barW = small ? 18 : 12;
+
+  return (
+    <View
+      style={[
+        { width: size, height: size, alignItems: "center", justifyContent: "center" },
+        field !== null && {
+          backgroundColor: field,
+          borderRadius: rounded ? size * 0.226 : 0,
+        },
+      ]}
+    >
+      <Svg width={size} height={size} viewBox="0 0 168 168">
+        <Path
+          d={`M 50 ${legBottom} L 84 ${apexY} L 118 ${legBottom}`}
+          stroke={letter}
+          strokeWidth={letterW}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <Line
+          x1={barX1}
+          y1={100}
+          x2={barX2}
+          y2={100}
+          stroke={bar}
+          strokeWidth={barW}
+          strokeLinecap="round"
+        />
+      </Svg>
+    </View>
+  );
+}
+
 // ─── Metric band (the ruler) ─────────────────────────────────────────────────
 
 /**
