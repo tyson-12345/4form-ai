@@ -14,7 +14,7 @@
  * Same rhythm, same information density, nothing invented.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -33,6 +33,7 @@ import {
   Card,
   Label,
   MetricBar,
+  MetricBand,
   Prescription,
   FlagRow,
   Chevron,
@@ -68,6 +69,12 @@ export default function AnalysisDetailScreen() {
   const [tips, setTips] = useState<TipRecord[]>([]);
   const [risks, setRisks] = useState<RiskRecord[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  /**
+   * The athlete's other measured sessions, used only to derive the band this
+   * clip is plotted against. Loaded separately and allowed to fail: without it
+   * the ruler still renders, just without a shaded band.
+   */
+  const [history, setHistory] = useState<AnalysisRecord[]>([]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -85,6 +92,33 @@ export default function AnalysisDetailScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void analysesApi
+      .list()
+      .then(({ analyses }) => setHistory(analyses))
+      .catch(() => {
+        /* band is optional context — a failure here must not blank the screen */
+      });
+  }, []);
+
+  /**
+   * The athlete's working range across their measured history — the same
+   * derivation Home uses, so the two screens cannot disagree about the band.
+   * Fewer than three readings is not a band.
+   */
+  const band = useMemo(() => {
+    const scores = history
+      .filter(
+        (a) =>
+          a.status === "complete" &&
+          a.analysisMethod === "pose-measured" &&
+          a.overallScore !== null,
+      )
+      .map((a) => a.overallScore!);
+    if (scores.length < 3) return null;
+    return { low: Math.min(...scores), high: Math.max(...scores) };
+  }, [history]);
 
   // Poll while the write-up is still being generated.
   useEffect(() => {
@@ -178,26 +212,37 @@ export default function AnalysisDetailScreen() {
           )}
 
           <View style={s.indexHead}>
-            <View>
-              <Label>FORM INDEX</Label>
-              <View style={s.indexRow}>
-                <Text
-                  style={[
-                    T.metricLarge,
-                    analysis.overallScore === null && { color: color.textGhost },
-                  ]}
-                >
-                  {analysis.overallScore === null ? "—" : Math.round(analysis.overallScore)}
-                </Text>
-              </View>
-            </View>
-            <View style={{ alignItems: "flex-end" }}>
-              <Label>MEASURED</Label>
-              <Text style={[T.measured, { fontSize: 11, marginTop: 3 }]}>
-                {measured ? `${frameCount(analysis)} FRAMES` : "NOT MEASURED"}
-              </Text>
-            </View>
+            <Label>FORM INDEX</Label>
+            <Text style={T.measuredSmall}>
+              {measured ? `${frameCount(analysis)} FRAMES MEASURED` : "NOT MEASURED"}
+            </Text>
           </View>
+
+          <View style={s.indexRow}>
+            <Text
+              style={[
+                T.metricLarge,
+                analysis.overallScore === null && { color: color.textGhost },
+              ]}
+            >
+              {analysis.overallScore === null ? "—" : Math.round(analysis.overallScore)}
+            </Text>
+          </View>
+
+          {/* The same ruler as Home, so a reading means the same thing on both
+              screens. Captioned with the band rather than a numeric axis —
+              here the band is what's being explained. */}
+          {analysis.overallScore !== null && (
+            <MetricBand
+              value={analysis.overallScore}
+              bandLow={band?.low ?? null}
+              bandHigh={band?.high ?? null}
+              markerLabel="THIS CLIP"
+              axisCaption={
+                band ? `BAND ${Math.round(band.low)}–${Math.round(band.high)}` : null
+              }
+            />
+          )}
 
           {measured && (
             <View style={s.bars}>
@@ -431,7 +476,7 @@ const s = StyleSheet.create({
   stripBar: { flex: 1, borderRadius: 1, maxWidth: 26 },
 
   indexCard: { marginHorizontal: GUTTER, marginTop: -16 },
-  indexHead: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
+  indexHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   indexRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 2 },
   bars: { marginTop: 18, gap: 11 },
   legacyNote: {

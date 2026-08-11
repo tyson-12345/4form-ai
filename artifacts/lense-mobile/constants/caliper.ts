@@ -134,6 +134,20 @@ export const type = {
     letterSpacing: -0.8,
     color: color.textPrimary,
   },
+  /**
+   * The Form Index on Home — the single largest thing in the app.
+   *
+   * Deliberately outsized: it is the one number the whole product exists to
+   * produce, and at this scale the band scale beneath it reads as an axis
+   * rather than as decoration.
+   */
+  metricHeroXL: {
+    fontFamily: font.display,
+    fontSize: 82,
+    lineHeight: 74,
+    letterSpacing: -4,
+    color: color.textPrimary,
+  },
   /** The hero measurement — Form Index. */
   metricHero: {
     fontFamily: font.display,
@@ -339,6 +353,21 @@ export function stampDate(iso: string | Date): string {
 
 function d0(d: Date): Date {
   return d;
+}
+
+/**
+ * `08 AUG` — the short stamp used in reference marks.
+ *
+ * Weekday is dropped here: in a reference row the date is identifying a
+ * session, not telling you what day it is, and the weekday costs width that
+ * the three-column row does not have.
+ */
+export function stampDay(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return d
+    .toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+    .toUpperCase()
+    .replace(/,/g, "");
 }
 
 /** `01:12` — a timestamp within a clip. */

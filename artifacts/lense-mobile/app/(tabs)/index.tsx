@@ -23,8 +23,9 @@ import {
   Prescription,
   Avatar,
   Chevron,
+  ReferenceRow,
 } from "@/components/caliper";
-import { color, type as T, GUTTER, TAB_BAR, delta, stampDate } from "@/constants/caliper";
+import { color, type as T, GUTTER, TAB_BAR, delta, stampDate, stampDay } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { analyses as analysesApi, type AnalysisRecord } from "@/lib/api";
 
@@ -83,6 +84,23 @@ export default function HomeScreen() {
 
   const change = latest && previous ? latest.overallScore! - previous.overallScore! : null;
 
+  /**
+   * The athlete's highest measured reading. Shown as a reference mark under the
+   * band, so today's number is always read against their own ceiling rather
+   * than an abstract 100.
+   */
+  const best = useMemo(() => {
+    if (measuredSessions.length < 2) return null;
+    return measuredSessions.reduce((a, b) => (b.overallScore! > a.overallScore! ? b : a));
+  }, [measuredSessions]);
+
+  /**
+   * How many frames the reading was computed from. This is the credibility of
+   * the number — a Form Index off 148 frames means something a 12-frame one
+   * does not — so it sits beside the metric rather than buried in a detail view.
+   */
+  const framesMeasured = latest?.poseMetrics?.frameCount ?? null;
+
   const headline = useMemo(() => buildHeadline(latest, measuredSessions.length), [latest, measuredSessions.length]);
 
   const prescription = useMemo(() => {
@@ -131,30 +149,53 @@ export default function HomeScreen() {
         {/* ── Form Index ── */}
         {latest ? (
           <Card style={s.block}>
+            {/* Label left, provenance right — the reading and what it was
+                measured from, on one line. */}
             <View style={s.metricHead}>
-              <View>
-                <Label>FORM INDEX</Label>
-                <View style={s.metricRow}>
-                  <Text style={T.metricHero}>{Math.round(latest.overallScore!)}</Text>
-                  {change !== null && delta(change) && (
-                    <Text style={[T.measured, { color: color.cobalt }]}>{delta(change)}</Text>
-                  )}
-                </View>
-              </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Label tone={color.textFaint}>{band ? "YOUR BAND" : "MEASURED"}</Label>
-                <Text style={[T.measured, { marginTop: 3 }]}>
-                  {band
-                    ? `${Math.round(band.low)} – ${Math.round(band.high)}`
-                    : `${measuredSessions.length} SESSION${measuredSessions.length === 1 ? "" : "S"}`}
+              <Label>FORM INDEX</Label>
+              {framesMeasured !== null && (
+                <Text style={T.measuredSmall}>{framesMeasured} FRAMES MEASURED</Text>
+              )}
+            </View>
+
+            <View style={s.metricRow}>
+              <Text style={T.metricHeroXL}>{Math.round(latest.overallScore!)}</Text>
+              {change !== null && delta(change) && (
+                <Text style={[T.measured, { fontSize: 13, color: color.cobalt }]}>
+                  {delta(change)}
                 </Text>
-              </View>
+              )}
             </View>
 
             <MetricBand
               value={latest.overallScore!}
               bandLow={band?.low ?? null}
               bandHigh={band?.high ?? null}
+              reference={previous?.overallScore ?? null}
+            />
+
+            <ReferenceRow
+              items={[
+                {
+                  label: "YOUR BAND",
+                  value: band
+                    ? `${Math.round(band.low)} – ${Math.round(band.high)}`
+                    : null,
+                },
+                {
+                  label: "PREVIOUS",
+                  value: previous
+                    ? `${Math.round(previous.overallScore!)} · ${stampDay(previous.uploadedAt)}`
+                    : null,
+                },
+                {
+                  label: "BEST",
+                  value:
+                    best && best.id !== latest.id
+                      ? `${Math.round(best.overallScore!)} · ${stampDay(best.uploadedAt)}`
+                      : null,
+                },
+              ]}
             />
           </Card>
         ) : (
@@ -299,8 +340,8 @@ const s = StyleSheet.create({
   },
   headline: { marginTop: 8, maxWidth: 280 },
   block: { marginHorizontal: GUTTER, marginTop: 22 },
-  metricHead: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
-  metricRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 2 },
+  metricHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  metricRow: { flexDirection: "row", alignItems: "baseline", gap: 10, marginTop: 4 },
   sectionHead: {
     flexDirection: "row",
     alignItems: "baseline",

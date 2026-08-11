@@ -227,6 +227,22 @@ export interface AnalysisRecord {
   strengths: string[];
   improvements: string[];
   summary?: string | null;
+  /**
+   * The raw pose measurements the scores were computed from.
+   *
+   * Only the frame count and tracking quality are read on the client — they are
+   * the provenance shown next to a reading ("148 FRAMES MEASURED"), which is
+   * what separates an instrument from a scoreboard. The joint statistics are
+   * present in the payload but typed loosely here; the analysis screen reads
+   * them through its own narrower type.
+   *
+   * Null for legacy or unscored analyses.
+   */
+  poseMetrics?: {
+    frameCount?: number;
+    trackingQuality?: number;
+    durationSec?: number;
+  } | null;
   uploadedAt: string;
 }
 

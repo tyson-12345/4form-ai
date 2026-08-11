@@ -92,16 +92,33 @@ export function MetricBand({
   max = 100,
   bandLow,
   bandHigh,
+  reference,
   markerLabel = "TODAY",
-  tickCount = 21,
+  tickCount = 25,
+  axisEvery = 20,
+  axisCaption,
 }: {
   value: number;
   min?: number;
   max?: number;
   bandLow?: number | null;
   bandHigh?: number | null;
+  /**
+   * A second, unlabelled value drawn as a plain grey stem — the previous
+   * session. Deliberately quieter than the cobalt marker: it is context for
+   * today's reading, not a second headline.
+   */
+  reference?: number | null;
   markerLabel?: string;
   tickCount?: number;
+  /** Spacing of the numeric axis labels, in score units. */
+  axisEvery?: number;
+  /**
+   * Replaces the intermediate axis ticks with a single centred caption, e.g.
+   * "BAND 61–79". Used on the analysis screen, where the band itself is the
+   * thing being explained and a full numeric axis would repeat it.
+   */
+  axisCaption?: string | null;
 }) {
   const span = Math.max(1, max - min);
   // Typed as a percentage template literal so it satisfies RN's DimensionValue.
@@ -110,6 +127,12 @@ export function MetricBand({
 
   const hasBand =
     bandLow !== null && bandLow !== undefined && bandHigh !== null && bandHigh !== undefined;
+  const hasReference = reference !== null && reference !== undefined;
+
+  // 40 · 60 · 80 · 100 — laid out with space-between rather than positioned,
+  // so the first and last labels sit flush with the ends of the scale.
+  const axisTicks: number[] = [];
+  for (let v = min; v <= max; v += axisEvery) axisTicks.push(v);
 
   return (
     <View style={s.bandWrap}>
@@ -129,20 +152,62 @@ export function MetricBand({
 
       <View style={s.bandTicks}>
         {Array.from({ length: tickCount }, (_, i) => (
-          <View
-            key={i}
-            style={[s.bandTick, { height: i % 5 === 0 ? 16 : 9 }]}
-          />
+          <View key={i} style={[s.bandTick, { height: i % 4 === 0 ? 16 : 9 }]} />
         ))}
       </View>
 
+      {hasReference && <View style={[s.bandReference, { left: pct(reference) }]} />}
+
       <View style={[s.bandMarker, { left: pct(value) }]}>
-        <View style={s.bandMarkerStem} />
         <Text style={s.bandMarkerLabel}>{markerLabel}</Text>
+        <View style={s.bandMarkerStem} />
       </View>
 
-      <Text style={[s.bandEnd, { left: 0 }]}>{min}</Text>
-      <Text style={[s.bandEnd, { right: 0 }]}>{max}</Text>
+      <View style={s.bandAxis}>
+        {axisCaption ? (
+          <>
+            <Text style={s.bandEnd}>{min}</Text>
+            <Text style={[s.bandEnd, { color: color.textFaint }]}>{axisCaption}</Text>
+            <Text style={s.bandEnd}>{max}</Text>
+          </>
+        ) : (
+          axisTicks.map((v) => (
+            <Text key={v} style={s.bandEnd}>
+              {v}
+            </Text>
+          ))
+        )}
+      </View>
+    </View>
+  );
+}
+
+// ─── Reference row (band / previous / best) ──────────────────────────────────
+
+/**
+ * The stats that give a reading its context, under the band scale.
+ *
+ * A bare number is a scoreboard. This row is what makes the hero metric an
+ * instrument reading — it always answers "compared to what?". Entries whose
+ * value is null are dropped rather than shown as "—", because an absent
+ * comparison is not a measurement of nothing.
+ */
+export function ReferenceRow({
+  items,
+}: {
+  items: { label: string; value: string | null }[];
+}) {
+  const present = items.filter((i) => i.value !== null);
+  if (present.length === 0) return null;
+
+  return (
+    <View style={s.referenceRow}>
+      {present.map((item) => (
+        <View key={item.label}>
+          <Text style={s.referenceLabel}>{item.label}</Text>
+          <Text style={s.referenceValue}>{item.value}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -619,18 +684,18 @@ const s = StyleSheet.create({
   pressed: { opacity: 0.82 },
 
   // Band
-  bandWrap: { marginTop: 20, height: 46, position: "relative" },
+  bandWrap: { marginTop: 24, height: 52, position: "relative" },
   bandBaseline: {
     position: "absolute",
     left: 0,
     right: 0,
-    top: 18,
+    top: 22,
     height: 1,
     backgroundColor: color.ruleStrong,
   },
   bandFill: {
     position: "absolute",
-    top: 12,
+    top: 16,
     height: 13,
     backgroundColor: color.cobaltWash,
     borderRadius: 3,
@@ -639,33 +704,68 @@ const s = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    top: 6,
+    top: 10,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
   bandTick: { width: 1, backgroundColor: color.tick },
+  /** The previous session — grey, unlabelled, deliberately quieter than TODAY. */
+  bandReference: {
+    position: "absolute",
+    top: 14,
+    width: 2,
+    height: 18,
+    marginLeft: -1,
+    backgroundColor: "rgba(16,19,18,0.32)",
+  },
   bandMarker: {
     position: "absolute",
     top: 0,
     alignItems: "center",
     gap: 3,
-    transform: [{ translateX: -18 }],
-    width: 36,
+    marginLeft: -22,
+    width: 44,
   },
-  bandMarkerStem: { width: 3, height: 30, backgroundColor: color.cobalt, borderRadius: 2 },
+  bandMarkerStem: { width: 3, height: 32, backgroundColor: color.cobalt, borderRadius: 2 },
   bandMarkerLabel: {
     fontFamily: font.monoBold,
     fontSize: 9,
     letterSpacing: 1,
     color: color.cobalt,
   },
-  bandEnd: {
+  bandAxis: {
     position: "absolute",
-    bottom: -2,
+    left: 0,
+    right: 0,
+    bottom: -4,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  bandEnd: {
     fontFamily: font.mono,
     fontSize: 9,
     color: color.textGhost,
+  },
+  referenceRow: {
+    flexDirection: "row",
+    gap: 22,
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: color.ruleFaint,
+  },
+  referenceLabel: {
+    fontFamily: font.mono,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    color: color.textGhost,
+  },
+  referenceValue: {
+    fontFamily: font.monoBold,
+    fontSize: 12,
+    color: color.textPrimary,
+    marginTop: 3,
   },
 
   // Metric bar
