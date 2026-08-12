@@ -226,13 +226,22 @@ async function main(): Promise<void> {
   console.log("");
 
   // ── Row counts ────────────────────────────────────────────────────────────
+  //
+  // Skipped when the table is absent. Querying it anyway throws 42P01, which
+  // the top-level handler then reported as "Could not connect" — actively
+  // misleading on a fresh database, where a missing table is the expected state
+  // and the connection is fine.
   console.log("Contents");
-  const [{ count: userCount }] = await db
-    .execute<{ count: number }>(sql`select count(*)::int as count from users`)
-    .then((r) => r.rows as { count: number }[]);
-  console.log(`  users: ${userCount}`);
-  if (userCount === 0) {
-    console.log("    (expected for a fresh database — sign up once to smoke-test the write path)");
+  if (!tables.includes("users")) {
+    console.log("  (no tables yet — nothing to count)");
+  } else {
+    const [{ count: userCount }] = await db
+      .execute<{ count: number }>(sql`select count(*)::int as count from users`)
+      .then((r) => r.rows as { count: number }[]);
+    console.log(`  users: ${userCount}`);
+    if (userCount === 0) {
+      console.log("    (expected for a fresh database — sign up once to smoke-test the write path)");
+    }
   }
   console.log("");
 
