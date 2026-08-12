@@ -142,11 +142,43 @@ function withTimeout(): AbortSignal {
 }
 
 /**
- * Provider error messages are not propagated verbatim: they routinely echo the
- * recipient address and sometimes the API key prefix. Only the status is kept.
+ * Turn a failed provider response into an error worth reading.
+ *
+ * ── Why this changed ────────────────────────────────────────────────────────
+ * This used to keep only the status code, on the reasoning that provider errors
+ * echo the recipient address and sometimes the key prefix. That was too blunt:
+ * the first real failure in production was a bare `Resend returned 403`, which
+ * says nothing about whether the key was wrong, the domain unverified, the
+ * recipient not permitted, or the account rate-limited. Every one of those has a
+ * different fix.
+ *
+ * Providers return a short machine-readable reason alongside the prose. That
+ * reason is what gets extracted here — bounded in length, and with anything
+ * that looks like an email address or a key redacted before it can reach a log.
+ * The reason travels in the *server log only*; the caller's response is
+ * unchanged, so this still cannot leak whether an address is registered.
  */
-function assertOk(res: Response, provider: string): void {
-  if (!res.ok) throw new Error(`${provider} returned ${res.status}`);
+async function assertOk(res: Response, provider: string): Promise<void> {
+  if (res.ok) return;
+
+  let reason = "";
+  try {
+    const body = await res.text();
+    // Providers disagree on the field name; take whichever is present.
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    reason =
+      String(parsed.message ?? parsed.error ?? parsed.Message ?? parsed.name ?? "") || body;
+  } catch {
+    // Non-JSON body, or already consumed. The status alone still helps.
+  }
+
+  const safe = reason
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "<address>")
+    .replace(/\b(re|sk|key)_[A-Za-z0-9_-]{6,}/gi, "<key>")
+    .slice(0, 300)
+    .trim();
+
+  throw new Error(`${provider} returned ${res.status}${safe ? `: ${safe}` : ""}`);
 }
 
 async function sendViaResend(email: Email): Promise<void> {
@@ -165,7 +197,7 @@ async function sendViaResend(email: Email): Promise<void> {
       ...(email.html ? { html: email.html } : {}),
     }),
   });
-  assertOk(res, "Resend");
+  await assertOk(res, "Resend");
 }
 
 async function sendViaPostmark(email: Email): Promise<void> {
@@ -188,7 +220,7 @@ async function sendViaPostmark(email: Email): Promise<void> {
       MessageStream: process.env.POSTMARK_MESSAGE_STREAM ?? "outbound",
     }),
   });
-  assertOk(res, "Postmark");
+  await assertOk(res, "Postmark");
 }
 
 /**
@@ -224,7 +256,7 @@ async function sendViaSes(email: Email): Promise<void> {
     headers,
     body: payload,
   });
-  assertOk(res, "SES");
+  await assertOk(res, "SES");
 }
 
 /** Minimal AWS SigV4 signer for the single SES call above. */
