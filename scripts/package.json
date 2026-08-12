@@ -8,8 +8,7 @@
     "migrate-passwords": "tsx ./src/migrate-passwords.ts",
     "prune-reset-tokens": "tsx ./src/prune-reset-tokens.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify-database": "tsx ./src/verify-database.ts",
-    "set-database-url": "node ./src/set-database-url.mjs"
+    "verify-database": "tsx ./src/verify-database.ts"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",

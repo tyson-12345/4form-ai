@@ -16,7 +16,16 @@
  * screen, does not enter shell history, and is not passed as an argument (which
  * would be visible in `ps`). Nothing is printed back except the host.
  *
- *   node scripts/src/set-database-url.mjs
+ * ── Run it directly, not through pnpm ───────────────────────────────────────
+ *     node scripts/src/set-database-url.mjs
+ *
+ * NOT `pnpm run set-database-url`. pnpm's reporter wraps child output in its
+ * own frame (the `│` gutter and a "Running..." line), which breaks the prompt:
+ * the question never reaches the terminal and typed input never reaches this
+ * process, so it just hangs looking like it did nothing.
+ *
+ * This is why there is no matching pnpm script — having one would invite
+ * exactly that failure.
  */
 
 import fs from "node:fs";
