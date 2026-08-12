@@ -2,3 +2,8 @@
 dist/
 node_modules/
 *.log
+
+# Any .env variant, including the .env.backup written by set-database-url.
+# These hold live credentials and must never be committed.
+.env*
+!.env.example
