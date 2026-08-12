@@ -193,9 +193,14 @@ describe("dummyHash", () => {
     const median = (xs: number[]): number =>
       [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
+    // Three samples, not five. Each iteration is two bcrypt comparisons at
+    // cost 12, so the sample count is the dominant cost of this test — five
+    // made it 5x more expensive than the single-sample version it replaced,
+    // which is the wrong trade for a check whose bounds are deliberately wide.
+    // Three is enough for a median to reject one outlier.
     const realSamples: number[] = [];
     const dummySamples: number[] = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 3; i++) {
       // Interleaved, so a burst of load partway through hits both equally
       // rather than penalising whichever was measured during it.
       realSamples.push(await timeOf(real));

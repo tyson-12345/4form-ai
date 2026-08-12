@@ -197,8 +197,17 @@ describe("POST /api/auth/login — response uniformity", () => {
  * cost 12 plus the progressive delay (250 + 500 + 1000 + 2000 + 4000 ms). That
  * cost is the point — an online guessing attack pays it too — so these tests
  * get a generous timeout rather than the delay being mocked away.
+ *
+ * 60s rather than 30s. The delay alone is 7.75s and the bcrypt work is CPU-
+ * bound, so on a loaded machine this genuinely approaches 30s — observed
+ * failing at 31.9s while an Xcode build was running, with nothing wrong in the
+ * code. The alternative is mocking the delay, which would delete the assertion
+ * that the delay exists at all.
+ *
+ * If this ever times out on an *idle* machine, that is a real signal: something
+ * has made the login path meaningfully slower.
  */
-const LOCKOUT_TEST_TIMEOUT = 30_000;
+const LOCKOUT_TEST_TIMEOUT = 60_000;
 
 describe("account lockout", () => {
   it("locks the account after 5 consecutive failures", { timeout: LOCKOUT_TEST_TIMEOUT }, async () => {
