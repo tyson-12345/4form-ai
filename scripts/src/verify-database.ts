@@ -80,6 +80,66 @@ async function main(): Promise<void> {
   else if (/neon/i.test(host)) console.log("Provider: Neon  ← still pointing at the OLD database");
   console.log("");
 
+  // ── Preflight: is the string even shaped right? ───────────────────────────
+  //
+  // Checked before connecting, because the driver's errors for a malformed URL
+  // are cryptic ("SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a
+  // string") and send people looking in the wrong place. Every problem below is
+  // one people actually hit copying from the Supabase dashboard.
+  console.log("Connection string");
+  let preflightFailed = false;
+
+  if (!url) {
+    fail("DATABASE_URL is not set in artifacts/api-server/.env");
+    preflightFailed = true;
+  } else {
+    if (!/^postgresql:\/\//.test(url)) {
+      fail(`does not start with postgresql:// — got "${url.slice(0, 12)}…"`);
+      preflightFailed = true;
+    }
+    // The dashboard ships literal placeholders. Leaving the brackets in is the
+    // single most common copy-paste mistake.
+    if (/\[|\]/.test(url)) {
+      fail("still contains [SQUARE BRACKETS] — replace the placeholder AND remove the brackets");
+      preflightFailed = true;
+    }
+    if (/YOUR-PASSWORD|your-password/i.test(url)) {
+      fail("still contains the literal text YOUR-PASSWORD — paste your real password there");
+      preflightFailed = true;
+    }
+    if (/\s/.test(url)) {
+      fail("contains a space or line break — it was probably wrapped when copied");
+      preflightFailed = true;
+    }
+    if (/:6543\//.test(url)) {
+      fail(
+        "uses port 6543 (transaction pooler). Use the SESSION pooler on 5432 — " +
+          "transaction mode has no prepared statements or session state and will " +
+          "break this long-running server",
+      );
+      preflightFailed = true;
+    }
+    // A password with @ : / ? # & in it must be percent-encoded or it splits
+    // the URL in the wrong place. Detect the symptom: more than one @.
+    if ((url.match(/@/g) ?? []).length > 1) {
+      fail(
+        "has more than one @ — your password probably contains a special character. " +
+          "Percent-encode it (@ becomes %40, : becomes %3A, / becomes %2F, # becomes %23), " +
+          "or reset the password in Supabase to one without symbols",
+      );
+      preflightFailed = true;
+    }
+    if (!preflightFailed) pass("format looks correct");
+  }
+
+  if (preflightFailed) {
+    console.log("");
+    console.log("Fix the connection string before anything else — nothing below can run.");
+    process.exitCode = 1;
+    return;
+  }
+  console.log("");
+
   // ── Connectivity ──────────────────────────────────────────────────────────
   console.log("Connection");
   const [{ version }] = await db.execute<{ version: string }>(sql`select version()`).then(
