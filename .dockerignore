@@ -1,0 +1,63 @@
+# Build context exclusions.
+#
+# Without this the context is ~940MB, 825MB of which is node_modules — and the
+# Dockerfile's `COPY lib/` and `COPY artifacts/api-server/` would copy host
+# node_modules straight into the image, on top of the `pnpm install` that just
+# ran. Host modules can be built for a different platform than the Alpine image,
+# so that is a correctness problem as well as a slow upload.
+#
+# `railway up` also uploads this context over the network, so every exclusion
+# here is time saved on every deploy.
+
+# ── Dependencies: installed inside the image, never copied in ────────────────
+node_modules
+**/node_modules
+.pnpm-store
+
+# ── Build output: rebuilt inside the image ───────────────────────────────────
+dist
+**/dist
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# ── Secrets: must never enter an image layer ─────────────────────────────────
+# .env is gitignored, but .dockerignore is a separate list — a file excluded
+# from git is still uploaded by `railway up` unless it is named here too.
+.env
+**/.env
+.env.*
+!**/.env.example
+*.pem
+*.key
+*.crt
+
+# ── Version control and tooling ──────────────────────────────────────────────
+.git
+.gitignore
+.github
+.claude
+.agents
+.migration-backup
+.replit
+.replitignore
+replit.md
+
+# ── The mobile app: not part of the API image ────────────────────────────────
+artifacts/lense-mobile
+artifacts/mockup-sandbox
+attached_assets
+.expo
+**/.expo
+
+# ── Docs and scripts the runtime does not need ───────────────────────────────
+docs
+scripts
+*.md
+!README.md
+
+# ── Local noise ──────────────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+coverage
+**/coverage
+*.log
