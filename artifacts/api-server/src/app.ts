@@ -67,9 +67,40 @@ app.use(
 );
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-const allowedOrigins = process.env.ALLOWED_ORIGINS
+const configuredOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
   : ["http://localhost:8081", "http://localhost:19006", "exp://localhost:8081"];
+
+/**
+ * Our own public origin, always allowed.
+ *
+ * The API serves one HTML page — the password-reset landing page — and that page
+ * fetches this API. Browsers attach an `Origin` header to that request even
+ * though it is same-origin, so without this the server rejects a request from
+ * its own page. That is exactly what happened on the first real password reset:
+ * `cors_rejected`, then a 500, and the user saw "Something went wrong."
+ *
+ * Derived from APP_PUBLIC_URL rather than hard-coded, so it stays correct when
+ * the deployment moves to a custom domain. Same-origin is not a cross-origin
+ * risk by definition — this grants nothing that the page could not already do.
+ */
+const selfOrigin = (() => {
+  const raw = process.env.APP_PUBLIC_URL?.trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    logger.warn(
+      { event: "app_public_url_invalid" },
+      "APP_PUBLIC_URL is not a valid URL — the reset page will be blocked by CORS",
+    );
+    return null;
+  }
+})();
+
+const allowedOrigins = selfOrigin
+  ? [...new Set([...configuredOrigins, selfOrigin])]
+  : configuredOrigins;
 
 app.use(
   cors({
@@ -86,7 +117,13 @@ app.use(
       }
       recordAlert("cors_rejected");
       logger.warn({ origin, event: "cors_rejected" }, "Blocked cross-origin request");
-      return callback(new Error("Not allowed by CORS"));
+      // Tagged 403 so the error handler does not report a policy decision as a
+      // server fault. Previously this surfaced as a 500 "Something went wrong",
+      // which sent us looking for a bug in the reset route when the actual
+      // problem was the allowlist.
+      const err = new Error("Not allowed by CORS") as Error & { status?: number };
+      err.status = 403;
+      return callback(err);
     },
     credentials: true,
   }),
