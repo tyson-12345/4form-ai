@@ -1,9 +1,22 @@
 # AthleteAI — Backend Comparison and Consolidation Decision
 
 **Status:** decision made and executed — see [Outcome](#outcome) at the end.
-**Date:** 2026-08-10
+**Date:** 2026-08-10 · **Updated:** 2026-08-12
 **Compared:** `origin/main` @ `a2eae91` (Tyson) vs `oscar/main` @ `d43c8b3` (Oscar)
 **Common ancestor:** `e719ca7` — 12 commits behind mine, 643 behind Oscar's.
+
+> **2026-08-12 — the scoring question is settled.** Tyson and Oscar agreed to
+> **drop power and speed entirely**, going further than the §4 compromise this
+> document proposed. That was the only substantive disagreement between the two
+> backends, and it settles the trunk question with it: Oscar's overall score is
+> a six-dimension weighted formula that gives power and speed 25% between them,
+> so removing them means rebuilding his engine's core, while Tyson's already
+> presents four measured dimensions. **Tyson's fork is the base.** See §7.
+>
+> Three of the four questions in §7 are now closed or moot. The one that matters
+> most is no longer a question but a live defect: `POST /subscriptions/update`
+> is deployed on Oscar's Railway service and lets any authenticated user grant
+> themselves a paid tier.
 
 ---
 
@@ -475,6 +488,44 @@ of how the rest lands.
 
 ## 7. Open questions for Oscar
 
+### ✅ 7.4 — SETTLED, 2026-08-12: power and speed are dropped
+
+**Tyson and Oscar agreed to remove power and speed entirely.** Not estimated,
+not reported as "not measured", not shown as a qualitative read — removed.
+
+This went further than the §4 compromise proposed. That compromise suggested
+keeping the two tiles with a clearly-labelled qualitative reading in place of a
+number. The decision instead is that a dimension a single 2D camera cannot
+measure should not occupy a tile at all.
+
+**What this settles beyond itself.** This was the only substantive disagreement
+between the two backends — everything else is plumbing with a right answer. It
+also effectively settles which fork is the trunk: Oscar's `computeOverallScore`
+is a six-dimension weighted formula with power at 0.15 and speed at 0.10, so
+removing them requires rebuilding his scoring engine's core. Tyson's already
+returns `null` for both and presents four dimensions. **Tyson's fork is the
+base**; Oscar's wins get ported onto it (§5, §6).
+
+**Shipped in the same session:**
+- Power and speed filtered out of the coaching prompt at source, and the "do not
+  comment on them" instruction removed — it named the thing it was suppressing.
+- Removed from the chat coach's score context.
+- The analysis screen's four-dimension list documented as complete rather than
+  as an exclusion.
+- The Profile explainer rewritten: "we only score what a single camera can
+  actually measure … so we don't guess at them."
+- `MOCK_ANALYSES` / `MOCK_PROGRESS` / `MOCK_ATHLETE` / `MOCK_CHAT` deleted —
+  fabricated sessions carrying invented power and speed figures, imported by
+  nothing. `PRO_ATHLETES` survived as `REFERENCE_MODELS` in
+  `lib/referenceModels.ts`.
+
+**Deliberately not done:** the `power`/`speed` fields still exist as `null` in
+the API response and as columns in the database. Removing them is a breaking
+API change and is not worth doing immediately before a first deploy. Tracked
+separately.
+
+### Still open
+
 1. **The two profile tables** — `athleteProfilesTable` vs `profilesTable`. Which
    is canonical? `routes/auth.ts` writes the legacy one on signup.
 2. **Does `securityHardening.test.ts` currently pass?** I could not run it.
@@ -482,11 +533,11 @@ of how the rest lands.
    `app.ts` as written. If it is green, I have misread something and want to
    know what.
 3. **Was `POST /subscriptions/update` intended as a stub** pending RevenueCat
-   validation, or is it the shipping design?
-4. **Do you agree with the §4 compromise** — measured engine for the four, your
-   sport weights on top, and a qualitative labelled read where power/speed sit —
-   or do you want to argue for generated numbers in those tiles? This is the one
-   I most expect pushback on and the one where I am most open to being wrong.
+   validation, or is it the shipping design? **This is now urgent rather than
+   academic**: it is live on Oscar's Railway deployment, and it writes
+   `req.body.tier` straight to the database — any authenticated user can grant
+   themselves `elite` permanently. Whatever the original intent, it should come
+   out of anything that stays deployed.
 
 ---
 

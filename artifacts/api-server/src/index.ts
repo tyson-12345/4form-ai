@@ -1,6 +1,13 @@
+// Must be first: Sentry instruments modules as they load, so anything imported
+// before init is not covered.
+import { initObservability, reportError } from "./lib/observability";
+
+initObservability();
+
 import app from "./app";
 import { logger } from "./lib/logger";
 import { warnOnPartialMailConfig } from "./lib/mailer";
+import { startResetTokenCleanup } from "./lib/tokenCleanup";
 
 // ── Environment validation ────────────────────────────────────────────────────
 // Without these the server cannot serve a single authenticated request, so
@@ -58,4 +65,28 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Spent reset tokens are deleted on a timer rather than accumulating forever.
+  // Started after listen so a database hiccup here can never stop the server
+  // coming up.
+  startResetTokenCleanup();
+});
+
+// ── Last-resort handlers ──────────────────────────────────────────────────────
+// Without these, an unhandled rejection or an uncaught exception outside a
+// request produces a process that either dies silently or keeps running in an
+// unknown state. Report first, then let the platform restart us — Railway's
+// restart policy is a better recovery than continuing on a corrupted state.
+
+process.on("unhandledRejection", (reason) => {
+  logger.error({ err: reason, event: "unhandled_rejection" }, "Unhandled promise rejection");
+  reportError(reason, { kind: "unhandledRejection" });
+});
+
+process.on("uncaughtException", (err) => {
+  logger.fatal({ err, event: "uncaught_exception" }, "Uncaught exception — exiting");
+  reportError(err, { kind: "uncaughtException" });
+  // Give the reporter a moment to flush, then exit non-zero so the platform
+  // restarts rather than leaving a half-dead process serving requests.
+  setTimeout(() => process.exit(1), 2000).unref();
 });

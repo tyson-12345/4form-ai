@@ -7,8 +7,24 @@
  * directly still pick up the correct colours through this.
  *
  * This is a migration aid, not the destination — new code should import
- * `color` / `type` from `@/constants/caliper`. Once every screen has moved
- * over, delete this file and `constants/colors.ts` with it.
+ * `color` / `type` from `@/constants/caliper`.
+ *
+ * ── Status, 2026-08-12 ──────────────────────────────────────────────────────
+ * `constants/colors.ts` (the Volt-era palette) is **deleted** — nothing imported
+ * it. This shim stays because five screens still call it:
+ *
+ *   app/+not-found.tsx              (3 keys)
+ *   app/analysis/measure.tsx        (9 keys)
+ *   app/analysis/skeleton/[id].tsx  (11 keys)
+ *   app/(tabs)/compare.tsx          (8 keys)
+ *   components/ErrorFallback.tsx    (7 keys)
+ *
+ * Migrating them is mechanical — the map below *is* the lookup table, and every
+ * value resolves to a Caliper token, so each substitution is provably identical.
+ * It is deferred rather than difficult: it touches ~38 call sites for no
+ * behaviour change, and it is the kind of edit best confirmed by looking at the
+ * screens rather than by a typecheck. Do it alongside the Instrument redesign of
+ * those screens, then delete this file.
  */
 
 import { color, radius } from "@/constants/caliper";

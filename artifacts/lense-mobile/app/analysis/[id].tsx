@@ -47,12 +47,20 @@ import {
   type RiskRecord,
 } from "@/lib/api";
 import { displaySport } from "@/constants/sports";
+import { flagSeverity, isAlarming } from "@/utils/flagSeverity";
 
 const HERO_H = 340;
 const { width: SCREEN_W } = Dimensions.get("window");
 
-/** Sub-scores in the order they're presented. Power/speed are excluded — they
- *  are structurally unmeasurable from 2D pose and would only ever read "—". */
+/**
+ * Sub-scores in the order they're presented.
+ *
+ * These four are the whole set. Power and speed are not "missing" — Tyson and
+ * Oscar agreed on 2026-08-12 to drop them outright rather than report them as
+ * unmeasured, because they cannot be derived from a single 2D camera without
+ * body mass and camera distance. Oscar's fork estimated them anyway and gave
+ * them 25% of the overall score; that is the disagreement this settles.
+ */
 const DIMENSIONS = [
   { key: "technique", label: "Technique" },
   { key: "balance", label: "Balance" },
@@ -295,8 +303,8 @@ export default function AnalysisDetailScreen() {
               <FlagRow
                 key={risk.id}
                 first={i === 0}
-                stamp={flagStamp(risk)}
-                tone={risk.riskPercent >= 10 ? color.rust : color.textFaint}
+                stamp={flagSeverity(risk.riskPercent)}
+                tone={isAlarming(risk.riskPercent) ? color.rust : color.textFaint}
                 text={risk.description}
               />
             ))}
@@ -421,7 +429,7 @@ function JointStrip({ risks }: { risks: RiskRecord[] }) {
               s.stripBar,
               {
                 height: 6 + severity * 16,
-                backgroundColor: risk.riskPercent >= 10 ? color.rust : color.onInkMuted,
+                backgroundColor: isAlarming(risk.riskPercent) ? color.rust : color.onInkMuted,
               },
             ]}
           />
@@ -438,31 +446,8 @@ function frameCount(analysis: AnalysisRecord): number {
   return metrics?.frameCount ?? 0;
 }
 
-/**
- * How often this joint sat outside its safe range, as a word.
- *
- * This used to print the raw angle range (`62–104°`). Two problems with that:
- * it is the least readable thing on the screen for someone who doesn't already
- * know what a good number looks like, and — because a range is two numbers with
- * no reference — it does not actually tell them whether it was bad. "OFTEN"
- * answers the question the athlete is asking.
- *
- * The underlying angles are still measured, still stored, and still what the
- * coaching notes reason from; they are just no longer the headline. The exact
- * figures remain available on the skeleton overlay screen for anyone who wants
- * them.
- *
- * Thresholds match the bands the risk engine already uses: 10% is where a flag
- * turns from grey to rust elsewhere on this screen, so the wording changes at
- * the same point the colour does.
- */
-function flagStamp(risk: RiskRecord): string {
-  const pct = risk.riskPercent;
-  if (pct >= 25) return "OFTEN";
-  if (pct >= 10) return "SOMETIMES";
-  if (pct > 0) return "BRIEFLY";
-  return "ONCE";
-}
+// flagSeverity / isAlarming live in utils/ so the thresholds can be tested —
+// see utils/flagSeverity.ts for why the stamp is a word rather than an angle.
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 

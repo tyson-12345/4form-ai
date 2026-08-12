@@ -5,6 +5,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { rateLimit } from "./lib/rateLimit";
 import { recordAlert } from "./lib/alerting";
+import { reportError } from "./lib/observability";
 
 const app: Express = express();
 
@@ -129,6 +130,12 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
     { err, path: req.path, method: req.method, status, event: "unhandled_error" },
     "Request failed",
   );
+
+  // Report anything that is our fault. 4xx are the caller's problem and would
+  // otherwise bury real bugs under validation noise. No-op without SENTRY_DSN.
+  if (status >= 500) {
+    reportError(err, { path: req.path, method: req.method, status });
+  }
 
   if (res.headersSent) return;
 

@@ -17,6 +17,9 @@ import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { ApiError, NetworkError } from "@/lib/api";
 import { PRIVACY_POLICY_URL, TERMS_URL, openLegal } from "@/constants/legal";
+// Date maths lives in utils/ so it can be tested — this screen cannot be, and
+// a bug here either admits an under-13 or silently blocks a legitimate signup.
+import { MINIMUM_AGE_YEARS, isOldEnough, parseBirthDate, toIsoDate } from "@/utils/age";
 
 /**
  * Kept in step with `safePassword` in the API's lib/validate.ts. Length is the
@@ -24,40 +27,6 @@ import { PRIVACY_POLICY_URL, TERMS_URL, openLegal } from "@/constants/legal";
  * than character-class rules people work around with "Password1!".
  */
 const MIN_PASSWORD_LENGTH = 12;
-
-/** Kept in step with `MINIMUM_AGE_YEARS` in the API's lib/validate.ts. */
-const MINIMUM_AGE_YEARS = 13;
-
-/** Whole years between a date of birth and today. */
-function ageInYears(birth: Date, now = new Date()): number {
-  let age = now.getFullYear() - birth.getFullYear();
-  const monthDelta = now.getMonth() - birth.getMonth();
-  if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < birth.getDate())) age--;
-  return age;
-}
-
-/**
- * Parse a typed `DD / MM / YYYY` into a real date.
- *
- * Returns null for anything incomplete or impossible. Rejecting `31/02/2010`
- * matters: `new Date("2010-02-31")` rolls over to March rather than failing,
- * which would silently accept a date the user did not enter.
- */
-function parseBirthDate(day: string, month: string, year: string): Date | null {
-  const d = Number(day);
-  const m = Number(month);
-  const y = Number(year);
-  if (!d || !m || !y || year.length !== 4) return null;
-  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
-
-  const parsed = new Date(y, m - 1, d);
-  // Round-trip check catches rollover on short months and leap years.
-  if (parsed.getFullYear() !== y || parsed.getMonth() !== m - 1 || parsed.getDate() !== d) {
-    return null;
-  }
-  if (parsed.getTime() > Date.now()) return null;
-  return parsed;
-}
 
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
@@ -85,7 +54,7 @@ export default function SignupScreen() {
 
   const birthDate = parseBirthDate(dobDay, dobMonth, dobYear);
   const dobComplete = dobDay.length > 0 && dobMonth.length > 0 && dobYear.length === 4;
-  const oldEnough = birthDate !== null && ageInYears(birthDate) >= MINIMUM_AGE_YEARS;
+  const oldEnough = isOldEnough(birthDate);
   // Only complain once they've finished typing — flagging "too young" while
   // someone is halfway through their birth year is just noise.
   const dobInvalid = dobComplete && !oldEnough;
@@ -98,16 +67,7 @@ export default function SignupScreen() {
     setBusy(true);
     setError(null);
     try {
-      // Local date parts, not toISOString(): that converts to UTC and can shift
-      // the date by a day for anyone west of Greenwich, which near a birthday
-      // is the difference between passing and failing the gate.
-      const iso = [
-        birthDate.getFullYear(),
-        String(birthDate.getMonth() + 1).padStart(2, "0"),
-        String(birthDate.getDate()).padStart(2, "0"),
-      ].join("-");
-
-      await signup(email.trim(), password, name.trim(), iso);
+      await signup(email.trim(), password, name.trim(), toIsoDate(birthDate));
       router.replace("/onboarding");
     } catch (err) {
       setError(

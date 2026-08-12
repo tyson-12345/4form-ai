@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "migrate-passwords": "tsx ./src/migrate-passwords.ts",
+    "prune-reset-tokens": "tsx ./src/prune-reset-tokens.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

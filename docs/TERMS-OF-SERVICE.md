@@ -7,9 +7,10 @@
 > Replace every `[BRACKETED]` value and host at a public HTTPS URL alongside the
 > privacy policy. **Have a lawyer in your jurisdiction read this before you take
 > money.** It is written to be a strong starting point, not a substitute for
-> advice — §7 (assumption of risk), §8 (liability cap) and §14 (arbitration) are
-> the clauses whose enforceability varies most by jurisdiction, and they are the
-> ones you most need to get right.
+> advice — §7 (assumption of risk) and §8 (liability cap) are the clauses whose
+> enforceability varies most by jurisdiction, and they are the ones you most
+> need to get right. The arbitration clause that used to sit in §14 was removed
+> on 2026-08-12; see the note there before considering reinstating it.
 
 ---
 
@@ -177,16 +178,27 @@ mandatory laws of the country you live in.
 ## 14. Disputes
 
 **Talk to us first.** Most problems are solved by writing to
-[support@yourdomain.com]. Please give us 30 days.
+[support@yourdomain.com]. Please give us 30 days — we'd rather fix it than
+argue about it.
 
-[**If the dispute isn't resolved, it will be settled by binding arbitration in
-[LOCATION] under the rules of [ARBITRATION BODY], individually and not as part
-of a class action.** You may bring a qualifying claim in small-claims court
-instead.]
+If we can't resolve it that way, either of us may bring the dispute before the
+courts identified in section 13. If you are a consumer, you keep the right to
+bring proceedings in the courts of the country where you live.
 
-> **Lawyer note:** the bracketed arbitration clause is drafted for the US. It is
-> **unenforceable against consumers in much of the EU and UK** and must be
-> removed or replaced for those users. Do not ship it worldwide unreviewed.
+> **Note on what used to be here (delete before publishing).**
+> A binding-arbitration and class-action-waiver clause was drafted here and
+> **removed on 2026-08-12**. Three reasons:
+>
+> 1. It is **unenforceable against consumers in much of the EU and UK**, so it
+>    protected nothing for those users while reading as overreach.
+> 2. An unenforceable clause can drag otherwise-valid neighbouring terms into a
+>    fight about severability — it made §8 (liability cap) weaker, not stronger.
+> 3. This app's realistic dispute is a small consumer claim, and arbitration is
+>    a poor fit for those in both directions.
+>
+> If you later want arbitration for **US users specifically**, it has to be a
+> jurisdiction-scoped clause drafted by a lawyer, not a global one. Do not
+> reinstate the removed text as-is.
 
 ## 15. Changes
 

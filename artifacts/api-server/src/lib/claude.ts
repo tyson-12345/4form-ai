@@ -219,9 +219,22 @@ function buildNarrativePrompt(input: {
     );
   }
 
-  lines.push("", "COMPUTED SCORES (0-100, null = not measurable from 2D pose):");
+  // Only the dimensions we actually measure are sent.
+  //
+  // Power and speed were previously included as "not measured", along with a
+  // note telling the model not to comment on them. That put the words in front
+  // of it and then asked it not to think about them — which is a worse prompt
+  // than simply not mentioning them. Tyson and Oscar agreed on 2026-08-12 to
+  // drop both dimensions entirely rather than report or estimate them, so they
+  // are filtered here at the source.
+  //
+  // The `power`/`speed` fields remain `null` in the API response and the
+  // database columns still exist; removing those is a breaking change and is
+  // tracked separately.
+  lines.push("", "COMPUTED SCORES (0-100):");
   for (const [key, value] of Object.entries(scores)) {
-    lines.push(`  ${key}: ${value === null ? "not measured" : value}`);
+    if (value === null) continue;
+    lines.push(`  ${key}: ${value}`);
   }
 
   if (riskFindings.length > 0) {
@@ -260,7 +273,7 @@ function buildNarrativePrompt(input: {
     "",
     "Write the coaching analysis.",
     "The numbers above are your evidence — read them, reason from them, then write what they MEAN for how this athlete moves. Do not quote the numbers back; the app displays them alongside your words.",
-    "Note: power and speed are listed as 'not measured' because they cannot be derived from 2D joint angles. Do not comment on them as if they were measured.",
+    "Only the dimensions listed above were measured. Do not introduce or estimate any other dimension.",
   );
 
   return lines.join("\n");

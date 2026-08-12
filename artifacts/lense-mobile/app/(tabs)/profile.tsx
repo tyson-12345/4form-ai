@@ -191,7 +191,7 @@ export default function ProfileScreen() {
               onPress={() =>
                 Alert.alert(
                   "How measurement works",
-                  "We track 33 body landmarks in your clip using on-device pose detection, then measure the angle at each joint across evenly-spaced frames.\n\nScores are calculated from those angles — the same clip always produces the same numbers.\n\nPower and speed are shown as 'not measured' because they can't be derived from 2D video without knowing your mass and the camera's distance.",
+                  "We track 33 body landmarks in your clip using on-device pose detection, then measure the angle at each joint across evenly-spaced frames.\n\nScores are calculated from those angles — the same clip always produces the same numbers.\n\nWe only score what a single camera can actually measure: technique, balance, consistency and mobility. Things like power and speed need your body mass and the camera's distance, so we don't guess at them.",
                 )
               }
             />

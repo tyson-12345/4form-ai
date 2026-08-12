@@ -201,10 +201,15 @@ rather than trusted. This is better handled than most production apps.
 
 ## Priority before launch
 
-1. **Lawyer review** of the Terms — §7, §8, §14 specifically, and the arbitration
-   clause must be removed for EU/UK consumers.
-2. **Age gate** at signup (§4).
-3. **Publish** the privacy policy and terms; wire the URLs (already read from
-   `constants/legal.ts`).
-4. **Sign DPAs** with all four processors.
-5. **Liability insurance** quote before real volume.
+1. ✅ **Arbitration clause removed** (2026-08-12). It was unenforceable against
+   EU/UK consumers and weakened §8's severability. See the note in Terms §14
+   before anyone reinstates it.
+2. ✅ **Age gate** shipped at signup — under-13 refused server-side (§4).
+3. 🔴 **Publish** the privacy policy and terms; the URLs are already read from
+   `constants/legal.ts` and just need to resolve.
+4. 🔴 **Sign DPAs** with all four processors.
+5. 🟠 **Lawyer review** of Terms §7 (assumption of risk) and §8 (liability cap).
+   Deferred by decision on 2026-08-12 — these are the clauses that carry the
+   injury-claim exposure in §1, so this remains the largest untreated item.
+6. 🟠 **Liability insurance** quote before real volume. It is the only control
+   on this list that actually pays a claim.

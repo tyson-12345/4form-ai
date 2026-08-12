@@ -62,7 +62,17 @@ async function buildAll() {
       "@swc/*",
       "@aws-sdk/*",
       "@azure/*",
-      "@opentelemetry/*",
+      // "@opentelemetry/*" is deliberately NOT externalized.
+      //
+      // It was, as part of the precautionary list above. But nothing installs
+      // it directly — it arrives as a transitive dependency of @sentry/node —
+      // so externalizing it produced a bundle that imported a package tree that
+      // was not resolvable from this workspace at runtime. The build succeeded,
+      // typecheck passed, all 319 tests passed, and the server then died at
+      // startup with ERR_MODULE_NOT_FOUND. Only booting it caught this.
+      //
+      // These packages are plain JavaScript with no native bindings, so
+      // bundling them is fine.
       "@google-cloud/*",
       "@google/*",
       "googleapis",

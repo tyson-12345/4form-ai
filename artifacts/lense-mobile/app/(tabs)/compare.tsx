@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
 import { useColors } from "@/hooks/useColors";
-import { PRO_ATHLETES } from "@/lib/athleteData";
+import { REFERENCE_MODELS } from "@/lib/referenceModels";
 import type { ProAthlete } from "@/lib/types";
 
 const SPORT_COLORS: Record<string, string> = {
@@ -197,7 +197,7 @@ export default function CompareScreen() {
           </View>
         )}
 
-        {PRO_ATHLETES.map((pro) => {
+        {REFERENCE_MODELS.map((pro) => {
           const sportColor = SPORT_COLORS[pro.sport] ?? colors.primary;
           const initials = pro.name.split(" ").map((n) => n[0]).join("").slice(0, 2);
           const similarity = getSimilarityForAthlete(pro.id);

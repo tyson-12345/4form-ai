@@ -117,16 +117,19 @@ export async function sendMessage(
       recentAnalysis: measured
         ? {
             title: measured.title,
-            // Nulls pass through so the coach can say "not measured" rather
-            // than treating an unmeasured dimension as a zero.
+            // Only measured dimensions. Power and speed are deliberately absent
+            // — they were dropped on 2026-08-12 rather than reported as "not
+            // measured", so the coach has no reason to raise them at all.
+            //
+            // Remaining nulls still pass through: a dimension can be unmeasured
+            // for this particular clip (poor tracking, partial body in frame),
+            // and the coach should say so rather than treat it as a zero.
             scores: {
               overall: measured.overallScore,
               technique: measured.techniqueScore,
               balance: measured.balanceScore,
               consistency: measured.consistencyScore,
               mobility: measured.mobilityScore,
-              power: measured.powerScore,
-              speed: measured.speedScore,
             },
             strengths: (measured.strengths) ?? [],
             improvements: (measured.improvements) ?? [],
