@@ -2,6 +2,7 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import resetPageRouter from "./routes/resetPage";
 import { logger } from "./lib/logger";
 import { rateLimit } from "./lib/rateLimit";
 import { recordAlert } from "./lib/alerting";
@@ -114,6 +115,17 @@ app.use("/api/analyses", rateLimit({ name: "analyses", max: 20 }));
 app.use("/api", rateLimit({ name: "global", max: 120 }));
 
 app.use("/api", router);
+
+// ── Password reset landing page ───────────────────────────────────────────────
+// Mounted at the root, not under /api: this is a page a person opens from an
+// email, and it needs its own rate limit and its own CSP. Without it the link
+// in the reset email lands on a JSON 404 — the mail sends, the token is valid,
+// and the user hits a dead end.
+//
+// A lower limit than /api because a human opening a link does it once or twice,
+// and this route is reachable without authentication.
+app.use("/reset-password", rateLimit({ name: "reset-page", max: 20 }));
+app.use(resetPageRouter);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((req: Request, res: Response) => {
