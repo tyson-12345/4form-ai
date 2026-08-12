@@ -48,6 +48,11 @@ import {
 } from "@/lib/api";
 import { displaySport } from "@/constants/sports";
 import { flagSeverity, isAlarming } from "@/utils/flagSeverity";
+// Safety net for the coaching text. The prompt already asks for plain
+// language, but that is an instruction, not a guarantee — one generation that
+// says "valgus" reaches a 15-year-old otherwise. Chat has always done this;
+// this screen carries most of the words and did not.
+import { formatBiomechanicsText } from "@/utils/formatBiomechanics";
 
 const HERO_H = 340;
 const { width: SCREEN_W } = Dimensions.get("window");
@@ -280,7 +285,7 @@ export default function AnalysisDetailScreen() {
         {analysis.summary && (
           <View style={s.section}>
             <Label style={{ marginBottom: 8 }}>READOUT</Label>
-            <Text style={T.body}>{analysis.summary}</Text>
+            <Text style={T.body}>{formatBiomechanicsText(analysis.summary)}</Text>
           </View>
         )}
 
@@ -305,7 +310,7 @@ export default function AnalysisDetailScreen() {
                 first={i === 0}
                 stamp={flagSeverity(risk.riskPercent)}
                 tone={isAlarming(risk.riskPercent) ? color.rust : color.textFaint}
-                text={risk.description}
+                text={formatBiomechanicsText(risk.description)}
               />
             ))}
             <Text style={[T.bodySmall, { marginTop: 12, fontStyle: "italic" }]}>
@@ -320,7 +325,13 @@ export default function AnalysisDetailScreen() {
           <View style={s.section}>
             <Label style={{ marginBottom: 6 }}>HOLDING UP WELL</Label>
             {analysis.strengths.map((text, i) => (
-              <FlagRow key={i} first={i === 0} stamp="✓" tone={color.cobalt} text={text} />
+              <FlagRow
+                key={i}
+                first={i === 0}
+                stamp="✓"
+                tone={color.cobalt}
+                text={formatBiomechanicsText(text)}
+              />
             ))}
           </View>
         )}
@@ -331,13 +342,15 @@ export default function AnalysisDetailScreen() {
             <Label style={{ marginBottom: 10 }}>DRILLS</Label>
             {tips.slice(1).map((tip) => (
               <Card key={tip.id} style={s.tipCard}>
-                <Text style={T.rowTitle}>{tip.title}</Text>
-                <Text style={[T.bodySmall, { marginTop: 5 }]}>{tip.description}</Text>
+                <Text style={T.rowTitle}>{formatBiomechanicsText(tip.title)}</Text>
+                <Text style={[T.bodySmall, { marginTop: 5 }]}>
+                  {formatBiomechanicsText(tip.description)}
+                </Text>
                 {tip.drill && (
                   <View style={s.drill}>
                     <Label tone={color.textFaint}>DRILL</Label>
                     <Text style={[T.bodySmall, { color: color.textPrimary, marginTop: 4 }]}>
-                      {tip.drill}
+                      {formatBiomechanicsText(tip.drill)}
                     </Text>
                   </View>
                 )}

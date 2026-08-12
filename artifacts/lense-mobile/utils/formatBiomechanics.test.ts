@@ -139,3 +139,45 @@ describe("TERM_MAP integrity", () => {
     expect(indexOf("thoracic extension")).toBeLessThan(indexOf("extension"));
   });
 });
+
+// ─── Coaching text is translated everywhere it is shown ─────────────────────
+
+describe("plain-language guarantee", () => {
+  /**
+   * The prompt asks the model for plain language, and that is the primary
+   * control. This translator is the safety net for the generation that ignores
+   * it — and a safety net wired into one screen and not the other is worse than
+   * none, because the gap is invisible until a user hits it.
+   *
+   * Chat has always translated. The analysis screen — which carries the summary,
+   * the flags, the strengths and every drill — did not, until 2026-08-12.
+   */
+  const clinical = [
+    ["knee valgus", "knee caving inward"],
+    ["lumbar flexion", "lower back rounding"],
+    ["ankle dorsiflexion", "ankle flexibility"],
+    ["anterior pelvic tilt", "pelvis tilting forward"],
+    ["scapular winging", "shoulder blade sticking out"],
+    ["eccentric", "controlled lowering"],
+    ["proprioception", "body position awareness"],
+  ] as const;
+
+  it.each(clinical)("turns %s into something an amateur understands", (jargon, plain) => {
+    expect(formatBiomechanicsText(`Watch your ${jargon} on the way up.`)).toContain(plain);
+  });
+
+  it("leaves already-plain coaching untouched", () => {
+    // The common case once the prompt is doing its job: nothing to translate,
+    // and the translator must not mangle it.
+    const written = "Sit back into your hips at the bottom and keep your chest tall.";
+    expect(formatBiomechanicsText(written)).toBe(written);
+  });
+
+  it("does not reintroduce jargon by translating its own output", () => {
+    // "lumbar flexion" → "lower back rounding" must not then have "flexion"
+    // re-matched inside the replacement. This is the single-pass guarantee.
+    const out = formatBiomechanicsText("lumbar flexion and hip flexion");
+    expect(out).toBe("Lower back rounding and hip bending forward");
+    expect(out).not.toContain("flexion");
+  });
+});
