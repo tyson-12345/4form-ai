@@ -158,16 +158,38 @@ function withTimeout(): AbortSignal {
  * The reason travels in the *server log only*; the caller's response is
  * unchanged, so this still cannot leak whether an address is registered.
  */
+/**
+ * Pull a human-readable reason out of a provider's JSON error body.
+ *
+ * The three providers disagree on the field name, and some of them nest — SES
+ * returns `{ message }`, Postmark `{ Message }`, and Resend has used both a
+ * flat `{ message }` and a wrapped `{ error: { message } }`. Coercing the field
+ * with `String()` produced `[object Object]` for the nested shape, which is
+ * exactly as useless as the bare status code this function was added to
+ * replace.
+ *
+ * Depth-bounded, because the input is an untrusted response body.
+ */
+function extractReason(value: unknown, depth = 0): string {
+  if (typeof value === "string") return value;
+  if (depth > 3 || value === null || typeof value !== "object") return "";
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["message", "Message", "error", "errorMessage", "name", "detail"]) {
+    const found = extractReason(record[key], depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
 async function assertOk(res: Response, provider: string): Promise<void> {
   if (res.ok) return;
 
   let reason = "";
   try {
     const body = await res.text();
-    // Providers disagree on the field name; take whichever is present.
-    const parsed = JSON.parse(body) as Record<string, unknown>;
-    reason =
-      String(parsed.message ?? parsed.error ?? parsed.Message ?? parsed.name ?? "") || body;
+    const parsed: unknown = JSON.parse(body);
+    reason = extractReason(parsed) || body;
   } catch {
     // Non-JSON body, or already consumed. The status alone still helps.
   }

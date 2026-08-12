@@ -151,7 +151,36 @@ describe("dummyHash", () => {
     expect(await verifyPassword("anything at all", hash, "bcrypt")).toBe(false);
   });
 
+  it("is a real bcrypt hash at the same cost as a stored password", async () => {
+    // The deterministic half of the timing guarantee, and the one that actually
+    // holds it up: equal cost factors mean bcrypt does an equal amount of work,
+    // so the two comparisons take the same time by construction.
+    //
+    // The original bug this guards against was a hand-written placeholder that
+    // was not valid bcrypt at all — `compare` rejected it instantly, so a
+    // request for an unknown email returned measurably faster than one for a
+    // real account, turning login into an enumeration oracle.
+    const real = await hashPassword(PASSWORD);
+    const dummy = await dummyHash();
+
+    const costOf = (hash: string): string | undefined =>
+      /^\$2[aby]\$(\d{2})\$/.exec(hash)?.[1];
+
+    expect(costOf(dummy)).toBeDefined();
+    expect(costOf(dummy)).toBe(costOf(real));
+    expect(Number(costOf(dummy))).toBe(BCRYPT_ROUNDS);
+  });
+
   it("costs comparable time to a real comparison", async () => {
+    // The empirical half. Wall-clock timing is measured over several samples and
+    // compared on the median, because a single sample is dominated by scheduler
+    // noise — this test failed while an unrelated compile was saturating the
+    // machine, with nothing wrong in the code.
+    //
+    // The bounds stay wide on purpose. This is here to catch an order-of-
+    // magnitude difference (the "not really bcrypt" bug), not to measure
+    // performance. A tight bound here would be a flake generator, and a test
+    // people learn to re-run is worse than no test.
     const real = await hashPassword(PASSWORD);
     const dummy = await dummyHash();
 
@@ -161,12 +190,23 @@ describe("dummyHash", () => {
       return Number(process.hrtime.bigint() - start) / 1e6;
     };
 
-    const realMs = await timeOf(real);
-    const dummyMs = await timeOf(dummy);
+    const median = (xs: number[]): number =>
+      [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
-    // Same cost factor means the same work; allow generous slack for CI jitter.
-    expect(dummyMs).toBeGreaterThan(realMs * 0.4);
-    expect(dummyMs).toBeLessThan(realMs * 2.5);
+    const realSamples: number[] = [];
+    const dummySamples: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      // Interleaved, so a burst of load partway through hits both equally
+      // rather than penalising whichever was measured during it.
+      realSamples.push(await timeOf(real));
+      dummySamples.push(await timeOf(dummy));
+    }
+
+    const realMs = median(realSamples);
+    const dummyMs = median(dummySamples);
+
+    expect(dummyMs).toBeGreaterThan(realMs * 0.25);
+    expect(dummyMs).toBeLessThan(realMs * 4);
   });
 });
 
