@@ -11,56 +11,73 @@ Status key: 🔴 blocks launch · 🟠 blocks charging money · 🟡 quality/sca
 
 ## 0. The honest summary
 
-The app **measures and scores correctly today**. Pose tracking, the scoring
-engine, auth, the paywall logic, and account deletion all work and are tested
-(315 tests green — 295 API, 20 mobile).
+The app **measures and scores correctly today**, and as of 2026-08-12 it is
+**deployed and reachable**. Pose tracking, the scoring engine, auth, the paywall
+logic, account deletion, and password reset all work and are tested
+(376 tests green — 326 API, 50 mobile).
 
-What it cannot do today: **generate coaching write-ups or chat** (no API key),
-**complete a password reset** (mail provider code is done but unconfigured),
-**take money** (no billing), or **run anywhere but your laptop** (never
-deployed). Those four are the gap between "works" and "product".
+Live at `https://athleteai-production-0b7f.up.railway.app`, on Supabase, with
+coaching write-ups and chat enabled and password reset delivering real mail.
 
-**Everything still blocking launch now needs an account you have to log into** —
-an Anthropic key, a mail provider, a Railway deploy, a Supabase project, two
-store consoles, and a lawyer. There is no remaining code-side blocker.
+What it still cannot do: **take money** (billing unconfigured), **send mail to
+anyone but the Resend account owner** (still on the test sender, needs a
+domain), and **point users at legal documents** (no domain, so nothing is
+hosted).
+
+**The single blocker behind most of what remains is a domain.** Mail from a real
+sender, the privacy policy and terms URLs both stores check, and a support
+address all wait on it. Everything else needs a console login or a lawyer.
 
 ---
 
 ## 1. 🔴 Blocks launch
 
-### 1.1 Deploy the API somewhere
-`Dockerfile` and `railway.json` exist and the image builds, but nothing has ever
-been deployed. Until this happens the mobile app can only talk to your laptop.
+### 1.1 Deploy the API — ✅ DONE 2026-08-12
 
-- Pick a host (Railway is pre-configured; Fly/Render equivalent).
-- Set env: `DATABASE_URL`, `JWT_SECRET`, `ALLOWED_ORIGINS`, `TRUST_PROXY=1`.
-- **`TRUST_PROXY` is not optional behind a load balancer** — without it every
-  request looks like it comes from the proxy and rate limits apply globally
-  instead of per-user. `app.ts` warns at boot if it's unset in production.
-- Point `EXPO_PUBLIC_API_URL` at the deployed origin.
+Live at `https://athleteai-production-0b7f.up.railway.app` (Railway project
+`athleteai`, service `athleteai`, in Oscar's workspace). `TRUST_PROXY=1` and
+`NODE_ENV=production` are set, and `eas.json` points the production app build at
+it.
 
-### 1.2 Set `ANTHROPIC_API_KEY`
-Currently empty in `artifacts/api-server/.env`. Consequence: every analysis
-completes with measurements and scores but **no written coaching and no chat**.
-The app degrades gracefully rather than failing — but a coaching app with no
-coaching text is not the product.
+Two things worth knowing about this deployment:
 
-`GET /api/health/metrics` reports `features.coachingWriteups: false` so you can
-confirm this from outside.
+- **It runs from the CLI, not GitHub.** `railway up` from the repo root. Pushing
+  to `main` does *not* redeploy. Connecting the repo is a 🟡 item below.
+- **A `.dockerignore` was required first.** The build context was ~940MB, and
+  without it `railway up` would have uploaded the local `.env` — Supabase
+  password included — into the image build context.
 
-### 1.3 Configure a mail provider
-**Code complete as of 2026-08-12 — needs an account and DNS records.**
+Correction to an earlier note in this file: the Railway deployment Oscar created
+on 2026-08-11 was already running **this** backend, not his fork. His
+`POST /subscriptions/update` self-grant hole has never been deployed anywhere.
 
-`lib/mailer.ts` now supports **Resend, Postmark, and SES**, selected by which
-credentials are present, with HTML + plain-text templates, a 10s timeout,
-delivery-failure alerting, and a startup warning for a half-configured setup.
-`/api/health/metrics` reports `transactionalEmail` and `emailProvider`.
+### 1.2 Set `ANTHROPIC_API_KEY` — ✅ DONE
 
-What remains needs a login: create an account with one provider, publish the
-SPF/DKIM/DMARC records, set `MAIL_FROM` + the key. Step-by-step, with the exact
-DNS records and a verification procedure: **`docs/EMAIL-SETUP.md`**.
+Set on the Railway service. `GET /api/health/metrics` reports
+`features.coachingWriteups: true`.
 
-Until that is done, password reset still cannot complete end to end.
+Shared with Oscar by agreement; the cost split is settled between them. Still
+empty in the local `artifacts/api-server/.env`, so coaching write-ups and chat
+are disabled when running the server locally — that is a local dev gap, not a
+production one.
+
+### 1.3 Configure a mail provider — ✅ WORKING 2026-08-12
+
+Resend is wired and live. A real password reset was completed end to end:
+request → token → email → inbox → link → landing page → password changed → old
+password rejected → token refused on replay. Session revocation fired on the
+reset, so any token issued beforehand died with it.
+
+**Still on Resend's test sender** (`onboarding@resend.dev`), which only delivers
+to the Resend account owner. Swapping to a domain you control is the only step
+left — see `docs/EMAIL-SETUP.md`, which also records the two failures this
+turned up and why neither was catchable by the test suite.
+
+Built along the way: **the reset link needed somewhere to land.** It previously
+resolved to a JSON 404 — mail sent, token valid, user stuck. Universal Links
+need a domain we do not have and custom schemes get stripped by mail clients,
+so the API now serves a self-contained reset page (`routes/resetPage.ts`) with
+its own CSP nonce and rate limit.
 
 ### 1.4 Move the database to Supabase — ✅ DONE 2026-08-12
 
@@ -200,7 +217,7 @@ before.
 | **Sentry** | No crash or error reporting on either side. See `docs/FIREBASE-ASSESSMENT.md`. |
 | **Prune expired reset tokens** | No scheduled job — the table grows forever. |
 | **`/health/metrics` monitoring** | Endpoint exists; nothing polls it. Point an uptime check at it. |
-| **Sentry / crash reporting** | None. You will not know when the app crashes in the field. |
+| **Connect Railway to GitHub** | Deploys are CLI-only; pushing to `main` does not redeploy. |
 | **Object storage for clips** | Videos are device-local. Users lose their footage on reinstall or device change. |
 
 ---
@@ -296,10 +313,10 @@ part of the first-run experience. Consider a provisional band with an explicit
 # Verify everything
 pnpm --filter @workspace/api-server typecheck
 pnpm --filter @workspace/api-server lint
-pnpm --filter @workspace/api-server test        # 295
+pnpm --filter @workspace/api-server test        # 326
 pnpm --filter @workspace/lense-mobile typecheck
-pnpm --filter @workspace/lense-mobile test      # 20
+pnpm --filter @workspace/lense-mobile test      # 50
 
 # Is the deployment healthy and fully featured?
-curl https://<host>/api/health/metrics
+curl https://athleteai-production-0b7f.up.railway.app/api/health/metrics
 ```

@@ -1,7 +1,43 @@
 # Email setup
 
-**Status:** code complete, provider not yet configured.
-**Blocks:** password reset, account-lockout notification.
+**Status: ✅ WORKING — 12 August 2026.** Resend is wired and a real password
+reset has been completed end to end: request → token → email → inbox → link →
+landing page → password changed → old password dead → token refused on replay.
+Session revocation fired on the reset, as designed.
+
+**Still on the test sender.** `MAIL_FROM` is `onboarding@resend.dev`, which
+Resend only delivers **to the address that owns the account**. That is fine for
+development and useless for users. Swapping to your own domain is §1–§3 below,
+and it is the only thing left.
+
+> ### Two things that cost time, so you don't repeat them
+>
+> **1. `403: You can only send testing emails to your own email address.`**
+> Not a bug. The test sender delivers only to the Resend account owner. If you
+> need to mail anyone else, you need a verified domain — there is no way around
+> it, and it is the whole reason §1–§3 exist.
+>
+> **2. `"Something went wrong"` when submitting the new password.**
+> This was CORS, and it was our bug. The reset page is served *by* this API and
+> fetches this API, and browsers attach an `Origin` header even to same-origin
+> requests. `ALLOWED_ORIGINS` listed only localhost, so the server refused a
+> request from its own page — and reported the refusal as a 500, which sent us
+> hunting in the wrong place.
+>
+> Fixed: the API always allows its own origin, derived from `APP_PUBLIC_URL` so
+> it follows a domain change, and CORS rejections now return 403.
+>
+> **Neither failure was reachable by the test suite.** 326 tests, typecheck, and
+> curl smoke tests all passed while both bugs were live, because none of them
+> send an `Origin` header or talk to a real provider. Click the link in a real
+> browser before calling this done.
+
+---
+
+## Original notes
+
+**Was:** code complete, provider not yet configured.
+**Blocked:** password reset, account-lockout notification.
 
 Everything in the app is wired. What remains is creating an account with one
 provider, publishing four DNS records, and setting two environment variables.
