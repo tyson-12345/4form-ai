@@ -307,6 +307,19 @@ part of the first-run experience. Consider a provisional band with an explicit
 
 ---
 
+## 5b. Running the app locally
+
+See **`docs/RUNNING-THE-APP.md`**.
+
+> ⚠️ **The repository path must not contain spaces.** The iOS build fails with a
+> misleading "No such file or directory" — `expo-constants` ships a build phase
+> that double-expands `$PODS_TARGET_SRCROOT` through two shells, and a space
+> tears the path apart. The checkout moved from `~/ai exercise coach/` to
+> `~/ai-exercise-coach/` on 2026-08-12 for this reason. Nothing on our side can
+> fix it; the quoting bug is upstream.
+
+---
+
 ## 6. Quick reference
 
 ```bash
