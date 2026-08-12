@@ -309,6 +309,50 @@ See `docs/LEGAL-RISK.md` §4 for the COPPA / GDPR Art. 8 reasoning.
 
 ---
 
+### Structural invariants, enforced by tests
+
+Some properties here hold because of how the code is *shaped*, not because of
+what any function returns. A behavioural test cannot observe them, and a comment
+saying "keep it this way" is a hope rather than enforcement.
+
+`test/authorization-invariants.test.ts` reads the source and asserts nine of
+them. Each corresponds to something that failed silently in an earlier version
+of this app, or that is currently broken in Oscar's fork:
+
+| Invariant | What its violation would mean |
+|---|---|
+| Every by-id repository read takes a `userId` | IDOR — read another user's analysis by guessing a uuid |
+| No route handler can reach `updateAnalysisById` | It takes no owner by design; safe only while unreachable with a user-supplied id |
+| No route writes a tier from the request body ungated | The free-Elite hole that is live in Oscar's fork |
+| The subscriptions router has exactly three mutating routes | A reintroduced `/subscriptions/update` |
+| No logger call interpolates a password, hash, or raw token | Credentials in a log stream |
+| Reset tokens are stored only as a hash | A database dump becomes a set of working reset links |
+| Login emits exactly one 4xx message | Response-shape enumeration |
+| The agreed auth strings are byte-exact | Drift in the non-enumeration guarantee |
+| No banned phrase appears in an auth string literal | "no such user", "wrong password", "already registered" |
+
+The banned-phrase check strips comments first. The header of `routes/auth.ts`
+*describes* the policy using the very phrases it forbids, and matching those
+would fail the test for documenting the rule it enforces.
+
+### Input schemas
+
+Every mutating route validates with `parseOrReject`. Two fields were plain
+`z.string()` until the 2026-08-12 audit:
+
+- **`analyses.videoUrl`** is now `safeMediaUrl`, a **scheme allowlist**.
+  `z.string().url()` accepts `javascript:`, `data:`, and `file:` — schemes that
+  turn a stored string into code execution or local file access at whatever
+  renders it. The field is never populated today; the constraint exists so
+  whoever wires up object storage inherits it rather than widening it.
+- **The reset token** is now `safeOpaqueToken`, bounded to the base64url
+  alphabet we actually mint. The reset *page* already applied this allowlist;
+  the API it posts to did not.
+
+`receipt` on `verify-purchase` is deliberately left raw — it is opaque store
+data and sanitizing it would corrupt the signature. Same reasoning as passwords.
+
+
 ## Billing integrity
 
 The previous build had a complete paywall bypass: `POST /subscriptions/update`
