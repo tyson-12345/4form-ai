@@ -62,7 +62,36 @@ DNS records and a verification procedure: **`docs/EMAIL-SETUP.md`**.
 
 Until that is done, password reset still cannot complete end to end.
 
-### 1.4 Move the database to Supabase 🔴
+### 1.4 Move the database to Supabase — ✅ DONE 2026-08-12
+
+Live on Supabase (`ca-central-1`, session pooler, PostgreSQL 17.6). Neon has
+been deleted, which closes the never-rotated-password item outright.
+
+Verified end to end, not just "the command exited zero":
+
+- All 11 tables, every migration column (`birth_date`, `sessions_valid_after`,
+  `password_algo`, the lockout fields), and 20 indexes — `0002`'s read-path
+  indexes were created by `push`, so pasting that SQL turned out to be
+  unnecessary.
+- A real signup/login round trip against the live database: account created,
+  the 9-year-old rejected by the age gate, duplicate email answered without
+  enumeration, wrong password refused. The stored row carried
+  `password_algo=bcrypt`, a `$2b$12$` hash, the birth date, and an incrementing
+  failed-login counter. Profile and subscription rows cascaded on delete.
+- Test account removed afterwards. The database holds 0 users.
+
+`pnpm --filter @workspace/scripts run verify-database` re-checks all of this at
+any time.
+
+**TLS note for the deploy:** Supabase signs with its own CA, so a bare
+connection fails with `SELF_SIGNED_CERT_IN_CHAIN`. `DATABASE_CA_CERT` must be
+set — locally it points at a file; on Railway, paste the PEM into the variable.
+Certificate verification stays on either way; do not "fix" this by disabling it.
+
+<details>
+<summary>Original plan (kept for the reasoning)</summary>
+
+### Move the database to Supabase 🔴
 **Decided 2026-08-12: Supabase as the Postgres host only. Auth stays as it is.**
 **Starting fresh — no data migration.**
 
@@ -83,6 +112,8 @@ never rotated (see the conversation of 2026-08-10 — `JWT_SECRET` was, the DB
 password wasn't). Deleting the Neon project after the cutover closes it
 outright, which is better than rotating a credential on a database you are about
 to abandon.
+
+</details>
 
 ### 1.5 App Store / Play Store prerequisites
 **Mostly done 2026-08-12. Full detail in `docs/STORE-COMPLIANCE.md`.**

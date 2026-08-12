@@ -122,9 +122,20 @@ rights and safety of our users.
 
 ## 6. Where it lives
 
-Data is stored in [REGION]. If you are in the UK or EU and data is processed
-outside it, that transfer relies on Standard Contractual Clauses or an adequacy
-decision.
+Data is stored in **Canada** (Supabase, `ca-central-1`).
+
+If you are in the UK or EU, this transfer relies on the European Commission's
+**adequacy decision for Canada**, which recognises Canadian commercial privacy
+law as providing equivalent protection. No Standard Contractual Clauses are
+required for it.
+
+> **Note (delete before publishing).** The adequacy decision covers organisations
+> subject to Canada's PIPEDA. It is the reason this transfer is straightforward
+> — a US region would have meant relying on the Data Privacy Framework or SCCs
+> instead. Worth keeping in mind before moving regions.
+>
+> Your other processors are separate transfers with their own bases, and are
+> listed in §5.
 
 ## 7. How long we keep it
 

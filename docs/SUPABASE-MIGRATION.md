@@ -1,10 +1,22 @@
 # Migrating the database to Supabase
 
-**Decided:** 12 August 2026 — Supabase as the **Postgres host only**. Auth stays
-exactly as it is.
-**Data:** starting fresh. No dump/restore.
+**Status: ✅ COMPLETE — 12 August 2026.** Live on Supabase (`ca-central-1`,
+session pooler, PostgreSQL 17.6). Neon deleted.
+
+**Decided:** Supabase as the **Postgres host only**. Auth stays exactly as it is.
+**Data:** started fresh. No dump/restore.
 
 This is a connection-string change plus a schema push. It is not a rewrite.
+
+> **What actually bit, for anyone repeating this.** The connection string and
+> pooler choice were right first time. The failure was TLS:
+> `SELF_SIGNED_CERT_IN_CHAIN`, because Supabase signs with its own CA
+> (`Supabase Intermediate 2021 CA`) which is not in Node's trust store. §3 is
+> the fix, and it applies to `drizzle-kit push` as well as the server —
+> `drizzle.config.ts` reads the same `DATABASE_CA_CERT`.
+>
+> The certificate must come from your own dashboard. Pinning one read off the
+> server would prove nothing, since an impersonator would present its own.
 
 ---
 
@@ -130,25 +142,40 @@ It will print the statements and ask for confirmation. **Read them.** You are
 looking for `CREATE TABLE` only — any `DROP` means it is pointed at the wrong
 database.
 
-### Then add the read-path indexes
+### The read-path indexes come with it
 
-`push` creates the schema but not the composite indexes from migration `0002`,
-which are hand-written rather than declared in the Drizzle schema. Paste
-`lib/db/migrations/0002_read_path_indexes.sql` into the Supabase SQL editor and
-run it. Every statement is `IF NOT EXISTS`, so it is safe to run twice.
+This section previously said `push` would not create the composite indexes from
+migration `0002`, and told you to paste that SQL by hand. **That turned out to
+be wrong** — the real run produced all 20 indexes, because they *are* declared
+in the Drizzle schema rather than being hand-written SQL only.
 
-Skip this and the app still works — it just does sequential scans on the quota
-count that runs before every upload.
+Nothing to do here. The verifier in §5 checks for them by name, so if a future
+schema change drops one you will be told rather than discovering it as a slow
+query.
 
 ---
 
 ## 5. Verify
 
+Start with the database itself:
+
+```bash
+pnpm --filter @workspace/scripts run verify-database
+```
+
+This is the authoritative check — connectivity, every table, the columns added
+by migrations `0003` and `0004`, the read-path indexes, and row counts. It will
+not say `READY` unless all of it holds, and it names the fix for each failure
+it recognises (untrusted certificate, wrong password, transaction pooler,
+paused project).
+
+Then the test suite:
+
 ```bash
 pnpm --filter @workspace/api-server test
 ```
 
-295 should pass. They use an in-memory fake, so this proves the code is intact,
+319 should pass. They use an in-memory fake, so this proves the code is intact,
 not the connection.
 
 For the connection itself, boot the server:
@@ -185,8 +212,19 @@ because it is bcrypt.
 
 ## 6. Update the deploy
 
-Railway → Variables → set `DATABASE_URL` and, if needed, `DATABASE_CA_CERT`.
-Redeploy.
+Railway → Variables. Two are needed, not one:
+
+```
+DATABASE_URL       the session-pooler string
+DATABASE_CA_CERT   the PEM contents, pasted inline
+```
+
+`DATABASE_CA_CERT` is **not optional on Railway**. Locally it points at the
+downloaded `.crt`; the deployed container has no such file, so paste the
+certificate's contents into the variable instead. Both forms are accepted — see
+`sslConfig()` in `lib/db/src/index.ts`. Without it the container starts and then
+fails every query with `SELF_SIGNED_CERT_IN_CHAIN`, which reads like a database
+outage rather than a missing variable.
 
 ```bash
 curl -s https://<host>/api/health/metrics | jq '.status'
@@ -196,11 +234,16 @@ curl -s https://<host>/api/health/metrics | jq '.status'
 
 ## 7. Afterwards
 
-- [ ] **Delete the Neon project** once you are satisfied — an abandoned database
-      with real credentials is a liability, and the old password was never
-      rotated (`TODO-PRODUCTION.md` §1.4). Deleting it closes that item outright.
-- [ ] **Update the privacy policy** processor table — it lists the database
-      provider by name (`docs/PRIVACY-POLICY.md` §5).
+- [x] **Delete the Neon project** — done 12 Aug 2026. This also closed the
+      never-rotated Neon password (`TODO-PRODUCTION.md` §1.4) outright, which is
+      better than rotating a credential on a database being abandoned.
+- [x] **Move the CA certificate out of `~/Downloads`** — now at
+      `~/.certs/prod-ca-2021.crt`. Downloads is where files get tidied away by
+      accident, and the app fails to start if the certificate is gone. Not
+      secret; it just has to still exist.
+- [x] **Update the privacy policy** — processor table now names Supabase, and §6
+      records the data region as Canada (`ca-central-1`), which is covered by the
+      EU adequacy decision.
 - [ ] **Sign Supabase's DPA** if you have EU users (`docs/LEGAL-RISK.md` §7).
 - [ ] **Turn on Point-in-Time Recovery** if you ever hold real user data. The
       free tier's daily backup means up to 24 hours lost.
