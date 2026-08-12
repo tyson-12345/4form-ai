@@ -251,16 +251,84 @@ async function main(): Promise<void> {
   }
 }
 
+/**
+ * Unwrap the driver's error chain.
+ *
+ * Drizzle reports "Failed query: select version()" and puts the actual cause on
+ * `.cause`. Printing only the wrapper hides the one piece of information that
+ * identifies the problem — a wrong password and an untrusted certificate look
+ * identical without it.
+ */
+function rootCause(err: unknown): { code: string; message: string } {
+  let current = err;
+  let best = { code: "", message: err instanceof Error ? err.message : String(err) };
+
+  for (let depth = 0; depth < 8 && current instanceof Error; depth++) {
+    const code = (current as { code?: string }).code;
+    if (code) best = { code, message: current.message };
+    current = (current as { cause?: unknown }).cause;
+  }
+  return best;
+}
+
+/** Map the errors we can recognise onto the actual fix. */
+function explain(code: string, message: string): string[] {
+  if (code === "SELF_SIGNED_CERT_IN_CHAIN" || /self-signed certificate/i.test(message)) {
+    return [
+      "The database's certificate is signed by a private CA that this machine does not trust.",
+      "Supabase uses its own CA, so this is expected until you supply it.",
+      "",
+      "  1. Supabase → Project Settings → Database → SSL Configuration",
+      "  2. Download the certificate (prod-ca-*.crt)",
+      "  3. Add its path to artifacts/api-server/.env:",
+      "",
+      "       DATABASE_CA_CERT=/Users/you/Downloads/prod-ca-2021.crt",
+      "",
+      "Do NOT 'fix' this by disabling certificate verification. That keeps the",
+      "encryption and throws away the authentication — which is the half that",
+      "stops someone impersonating your database.",
+    ];
+  }
+  if (code === "28P01" || /password authentication failed/i.test(message)) {
+    return [
+      "The password was rejected.",
+      "  • Check you replaced [YOUR-PASSWORD] with the real one",
+      "  • If it contains symbols, percent-encode them (@ = %40, : = %3A)",
+      "  • Or reset it: Supabase → Settings → Database → Reset database password",
+    ];
+  }
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
+    return ["The hostname did not resolve. Check it was copied in full."];
+  }
+  if (code === "ETIMEDOUT" || code === "ECONNREFUSED") {
+    return [
+      "Could not reach the host.",
+      "  • Confirm the project is not paused (free projects sleep when idle)",
+      "  • Confirm you used the session pooler on :5432",
+    ];
+  }
+  if (/Tenant or user not found/i.test(message)) {
+    return [
+      "The pooler did not recognise the username.",
+      "The session pooler needs the 'postgres.<project-ref>' form, not plain 'postgres'.",
+      "Re-copy the string from Supabase → Connect → Session pooler.",
+    ];
+  }
+  return [
+    "Unrecognised error. Common causes:",
+    "  • wrong password, or a truncated connection string",
+    "  • transaction pooler (:6543) instead of session pooler (:5432)",
+    "  • project paused",
+  ];
+}
+
 main()
   .catch((err: unknown) => {
+    const { code, message } = rootCause(err);
     console.error("");
-    console.error("Verification failed to run:", err instanceof Error ? err.message : "unknown");
+    console.error(`Could not connect${code ? ` [${code}]` : ""}: ${message}`);
     console.error("");
-    console.error("Common causes:");
-    console.error("  • DATABASE_URL not set in artifacts/api-server/.env");
-    console.error("  • wrong password, or the connection string was truncated on copy");
-    console.error("  • using the transaction pooler (:6543) — use the session pooler (:5432)");
-    console.error("  • TLS rejected — see DATABASE_CA_CERT in .env.example");
+    for (const line of explain(code, message)) console.error(line);
     process.exitCode = 1;
   })
   .finally(() => void pool.end());

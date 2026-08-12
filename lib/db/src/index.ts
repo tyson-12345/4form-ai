@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema";
@@ -34,6 +37,36 @@ if (!process.env.DATABASE_URL) {
  */
 type SslConfig = boolean | { rejectUnauthorized: boolean; ca?: string };
 
+/**
+ * Read a CA bundle from disk, resolving `~` and relative paths.
+ *
+ * Fails loudly. A missing CA file must not silently fall back to the system
+ * trust store — that would turn a configuration mistake into a connection that
+ * looks fine and verifies against the wrong authority.
+ */
+function readCaFile(value: string): string {
+  const resolved = value.startsWith("~")
+    ? path.join(os.homedir(), value.slice(1))
+    : path.resolve(value);
+
+  if (!fs.existsSync(resolved)) {
+    throw new Error(
+      `DATABASE_CA_CERT points at "${resolved}", which does not exist. ` +
+        "Give it the path to the certificate downloaded from your provider, " +
+        "or paste the PEM contents directly.",
+    );
+  }
+
+  const pem = fs.readFileSync(resolved, "utf8");
+  if (!pem.includes("BEGIN CERTIFICATE")) {
+    throw new Error(
+      `The file at "${resolved}" is not a PEM certificate. ` +
+        "Download the CA certificate again — a saved HTML error page is the usual cause.",
+    );
+  }
+  return pem;
+}
+
 function sslConfig(): SslConfig {
   const url = process.env.DATABASE_URL!;
 
@@ -44,9 +77,16 @@ function sslConfig(): SslConfig {
 
   const ca = process.env.DATABASE_CA_CERT;
   if (ca) {
-    // Accept either the PEM itself (env vars can hold newlines awkwardly, so
-    // `\n` escapes are unescaped) or a path to a file.
-    return { rejectUnauthorized: true, ca: ca.replace(/\\n/g, "\n") };
+    // Accepts either form, because the two deployment targets want different
+    // things: a downloaded `.crt` path is natural locally, while a hosting
+    // platform's variable UI wants the PEM pasted inline.
+    const pem = ca.includes("BEGIN CERTIFICATE")
+      ? // Inline PEM. Some variable UIs collapse real newlines into `\n`
+        // escapes, which produces a certificate OpenSSL cannot parse.
+        ca.replace(/\\n/g, "\n")
+      : readCaFile(ca);
+
+    return { rejectUnauthorized: true, ca: pem };
   }
 
   return { rejectUnauthorized: true };
