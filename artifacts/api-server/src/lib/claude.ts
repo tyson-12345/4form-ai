@@ -67,18 +67,23 @@ const NarrativeSchema = z.object({
     .array(z.string().max(300))
     .min(1)
     .max(4)
-    .describe("Specific things the measurements show the athlete doing well."),
+    .describe(
+      "What the athlete is doing well, in plain language they'd recognise. No degrees, no anatomy jargon.",
+    ),
   improvements: z
     .array(z.string().max(300))
     .min(1)
     .max(4)
-    .describe("Specific, actionable changes justified by the measurements."),
+    .describe(
+      "Changes to make, written as instructions the athlete can act on next rep. " +
+        "The FIRST item must be the single highest-priority fix. No degrees, no anatomy jargon.",
+    ),
   tips: z
     .array(
       z.object({
         category: z.enum(["technique", "injury-risk", "mobility", "strength", "conditioning"]),
         severity: z.enum(["info", "warning", "critical"]),
-        title: z.string().max(80),
+        title: z.string().max(80).describe("Plain-language, action-oriented. Not a diagnosis label."),
         description: z.string().max(600),
         drill: z.string().max(400).describe("A named drill with sets, reps, and a coaching cue."),
       }),
@@ -89,7 +94,13 @@ const NarrativeSchema = z.object({
     .array(
       z.object({
         joint: z.string().max(40),
-        description: z.string().max(500).describe("What the measured pattern means, mechanically."),
+        description: z
+          .string()
+          .max(500)
+          .describe(
+            "What this movement pattern puts stress on, in everyday words. " +
+              "Describe the position, not the measurement. Never predict injury.",
+          ),
         prevention: z.string().max(400).describe("A specific prevention exercise or cue."),
       }),
     )
@@ -97,24 +108,36 @@ const NarrativeSchema = z.object({
   summary: z
     .string()
     .max(800)
-    .describe("2-3 sentence plain-language readout of the session for the athlete."),
+    .describe(
+      "2-3 sentences the athlete reads first. What went well, the one thing to fix, and why it matters " +
+        "to how they move. Conversational — no numbers, no jargon.",
+    ),
 });
 
 export type Narrative = z.infer<typeof NarrativeSchema>;
 
-const NARRATIVE_SYSTEM = `You are a sports biomechanics coach writing up a movement analysis for an amateur athlete.
+const NARRATIVE_SYSTEM = `You are a great coach talking to an amateur athlete about the clip they just filmed. Think of the tone as a coach standing next to them at practice, not a clinician writing a report.
 
-You will be given REAL measurements taken from pose tracking of the athlete's video: joint angle ranges, left/right symmetry, and how much of the clip each joint spent outside safe ranges. Scores have already been computed from those measurements.
+You will be given REAL measurements taken from pose tracking of their video: joint angle ranges, left/right symmetry, and how much of the clip each joint spent outside its safe range. Scores have already been computed from those measurements. The measurements are your evidence — they are NOT your vocabulary.
 
-Hard rules:
-- Ground every statement in the measurements you are given. Cite specific numbers ("your left knee reached 62° at its deepest").
-- Never invent a measurement you were not given. If something was not measured, do not discuss it as though it was.
-- Never state or imply a probability of future injury. You may describe what a joint position stresses mechanically.
+── How to write ──
+- **Lead with what to do, not what was measured.** "Sit back into your hips more at the bottom" beats "your hip flexion measured 84°".
+- **Do not put degrees, percentages, or measurement numbers in your text.** The app already shows the numbers next to your words; repeating them makes the writing read like a lab result. Describe what the number *means* instead: "your left knee dips a lot further than your right" rather than "a 14° left-right difference".
+- **No anatomy words a 15-year-old wouldn't use.** Say "knee caving inward", not "valgus". "Lower back rounding", not "lumbar flexion". "Ankle flexibility", not "dorsiflexion". If you catch yourself writing a Latin word, replace it.
+- **Be concrete and physical.** The athlete should be able to picture the fix and try it on their next rep. Reference what they'd feel or see: where the weight is, what's moving too early, what to keep still.
+- Short sentences. Second person. Encouraging but never vague — "good depth" is useless, "you're getting low enough, the issue is what your knees do on the way up" is coaching.
+
+── Priority ──
+Put the single most important change FIRST in the improvements list. If they only fix one thing this week, that's the one. Do not bury it.
+
+── Hard rules ──
+- Ground every statement in the measurements you were given. You may describe them in plain words, but never invent one.
+- If something was not measured, do not discuss it as though it was.
+- Never state or imply a probability of future injury. You may say a position puts stress somewhere.
 - Do not diagnose. You are describing movement, not medical conditions.
-- Write for a motivated teenager or adult amateur: direct, concrete, no jargon without a plain-language gloss.
 - Every tip must name a real drill with sets, reps, and one coaching cue.
 
-If the measurements are limited (few joints tracked, short clip), say so plainly in the summary rather than padding with generic advice.
+If the measurements are limited (few joints tracked, short clip), say so plainly in the summary and keep the advice narrow rather than padding it with generic tips.
 ${SECURITY_PREAMBLE}`;
 
 export async function generateNarrative(input: {
@@ -235,7 +258,8 @@ function buildNarrativePrompt(input: {
 
   lines.push(
     "",
-    "Write the coaching analysis. Reference the numbers above directly.",
+    "Write the coaching analysis.",
+    "The numbers above are your evidence — read them, reason from them, then write what they MEAN for how this athlete moves. Do not quote the numbers back; the app displays them alongside your words.",
     "Note: power and speed are listed as 'not measured' because they cannot be derived from 2D joint angles. Do not comment on them as if they were measured.",
   );
 
@@ -248,12 +272,15 @@ const CHAT_SYSTEM = `You are Atlas, the AI coach inside AthleteAI. You help amat
 
 You have access to the athlete's most recent movement analysis, which is based on real pose-tracking measurements of a video they uploaded.
 
-How you work:
-- Reference their actual numbers when relevant ("your balance score of 72 came from a 14° difference between your knees").
+How you talk:
+- Like a coach at practice, not a report. Plain words, short sentences, second person.
+- **Lead with what to do.** The fix comes first; the reason comes second, if it helps.
+- **Keep the numbers out of it unless they ask.** You can see their scores and angles, and you should reason from them — but say "your left knee is dipping further than your right" rather than reciting the measurement. If they ask for the numbers directly, give them.
+- No anatomy jargon. "Knee caving inward", not "valgus". "Lower back rounding", not "lumbar flexion". If a Latin word appears in your draft, swap it for what it looks like.
 - Scores marked "not measured" were not measurable from 2D video — say so if asked, don't speculate.
 - Be direct and encouraging, but never downplay something that could cause injury.
 - End with one concrete thing they can do today.
-- Keep it to 2-3 short paragraphs unless they ask for depth.
+- 2-3 short paragraphs unless they ask for depth.
 - You are not a doctor. For pain, persistent or sharp, tell them to see a physio — don't diagnose.
 ${SECURITY_PREAMBLE}`;
 

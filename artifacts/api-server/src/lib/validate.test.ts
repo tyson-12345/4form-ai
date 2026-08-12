@@ -8,6 +8,9 @@ import {
   safeEmail,
   safePassword,
   safeUuid,
+  safeBirthDate,
+  ageInYears,
+  MINIMUM_AGE_YEARS,
   GENERIC_VALIDATION_ERROR,
 } from "./validate.js";
 
@@ -163,5 +166,75 @@ describe("parseOrReject", () => {
     const res = mockRes();
     const data = parseOrReject(schema, { name: "Alex", age: 20, isAdmin: true }, res, ctx);
     expect(data).not.toHaveProperty("isAdmin");
+  });
+});
+
+// ─── Age gate ────────────────────────────────────────────────────────────────
+
+describe("ageInYears", () => {
+  it("counts whole years", () => {
+    expect(ageInYears(new Date("2000-01-01T00:00:00Z"), new Date("2020-01-01T00:00:00Z"))).toBe(20);
+  });
+
+  it("does not credit a birthday that has not happened yet this year", () => {
+    // The off-by-one that matters: on 31 Dec, someone born 1 Jan is still 19.
+    expect(ageInYears(new Date("2000-01-01T00:00:00Z"), new Date("2019-12-31T00:00:00Z"))).toBe(19);
+  });
+
+  it("counts the birthday itself", () => {
+    expect(ageInYears(new Date("2010-06-15T00:00:00Z"), new Date("2023-06-15T00:00:00Z"))).toBe(13);
+  });
+
+  it("does not count the day before the birthday", () => {
+    expect(ageInYears(new Date("2010-06-15T00:00:00Z"), new Date("2023-06-14T00:00:00Z"))).toBe(12);
+  });
+});
+
+describe("safeBirthDate", () => {
+  /** A `YYYY-MM-DD` string for someone exactly `years` old today. */
+  function dobForAge(years: number): string {
+    const now = new Date();
+    const d = new Date(Date.UTC(now.getUTCFullYear() - years, now.getUTCMonth(), now.getUTCDate()));
+    return d.toISOString().slice(0, 10);
+  }
+
+  it("accepts someone comfortably over the minimum age", () => {
+    expect(safeBirthDate.safeParse(dobForAge(25)).success).toBe(true);
+  });
+
+  it("accepts someone exactly at the minimum age", () => {
+    expect(safeBirthDate.safeParse(dobForAge(MINIMUM_AGE_YEARS)).success).toBe(true);
+  });
+
+  it("rejects someone one year under the minimum", () => {
+    expect(safeBirthDate.safeParse(dobForAge(MINIMUM_AGE_YEARS - 1)).success).toBe(false);
+  });
+
+  it("rejects a young child", () => {
+    expect(safeBirthDate.safeParse(dobForAge(6)).success).toBe(false);
+  });
+
+  it("rejects a future date", () => {
+    // Otherwise a date far enough in the future wraps to a negative age, which
+    // is not >= 13 — but relying on that is accidental, so it is checked.
+    expect(safeBirthDate.safeParse("2099-01-01").success).toBe(false);
+  });
+
+  it("rejects an implausibly old date", () => {
+    expect(safeBirthDate.safeParse("1850-01-01").success).toBe(false);
+  });
+
+  it("rejects malformed input rather than coercing it", () => {
+    for (const bad of ["", "not-a-date", "2010", "2010-13-01", "01/01/2010", "2010-1-1"]) {
+      expect(safeBirthDate.safeParse(bad).success, bad).toBe(false);
+    }
+  });
+
+  it("cannot be bypassed by sending a non-string", () => {
+    // The client is not the control; a caller that skips the app entirely must
+    // still be refused.
+    for (const bad of [null, undefined, 0, {}, [], true]) {
+      expect(safeBirthDate.safeParse(bad).success).toBe(false);
+    }
   });
 });

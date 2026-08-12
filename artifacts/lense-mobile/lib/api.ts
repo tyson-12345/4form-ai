@@ -1,4 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 import type { PoseMetrics } from "./poseTracker";
 
 /**
@@ -39,18 +41,91 @@ function resolveApiUrl(): string {
 
 const API_URL = resolveApiUrl();
 
+/**
+ * Refuse to ship a build that talks to the API over cleartext.
+ *
+ * Every request carries the bearer token, so a plain-http origin puts the whole
+ * session on the wire in the clear. `__DEV__` builds are exempt — localhost and
+ * LAN dev servers are http by design — but a release build with an http origin
+ * is a misconfiguration that must not reach a user, and failing at startup is
+ * the only way to be sure it doesn't.
+ */
+if (!__DEV__ && API_URL.startsWith("http://")) {
+  throw new Error(
+    "EXPO_PUBLIC_API_URL must use https in a release build — the bearer token " +
+      "would otherwise be sent in cleartext.",
+  );
+}
+
 const TOKEN_KEY = "auth_token";
 
+/**
+ * Session token storage.
+ *
+ * ── Why not AsyncStorage ────────────────────────────────────────────────────
+ * AsyncStorage writes plaintext to the app's sandbox: an unencrypted SQLite
+ * file on Android, an unencrypted file on iOS. Anything with filesystem access
+ * — a jailbroken or rooted device, an unencrypted local backup, a forensic
+ * extraction — can read it. The token here is a 7-day JWT that grants complete
+ * access to the account, so that is the whole session sitting in cleartext.
+ *
+ * SecureStore puts it in the iOS Keychain and, on Android, in a Keystore-backed
+ * EncryptedSharedPreferences. `WHEN_UNLOCKED_THIS_DEVICE_ONLY` additionally
+ * keeps it out of iCloud Keychain sync and encrypted backups — a session token
+ * should not survive onto a different device.
+ *
+ * ── Web ─────────────────────────────────────────────────────────────────────
+ * SecureStore has no web implementation, so web falls back to AsyncStorage
+ * (localStorage underneath). That is a real downgrade — XSS on web reads the
+ * token — but it is the only option short of moving to httpOnly cookies, which
+ * the native app cannot use. Native is the shipping target; web is the dev
+ * surface.
+ */
+const useSecureStore = Platform.OS !== "web";
+
+const SECURE_OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
+
 export async function getToken(): Promise<string | null> {
-  return AsyncStorage.getItem(TOKEN_KEY);
+  if (!useSecureStore) return AsyncStorage.getItem(TOKEN_KEY);
+
+  try {
+    const token = await SecureStore.getItemAsync(TOKEN_KEY, SECURE_OPTIONS);
+    if (token) return token;
+
+    // One-time migration for sessions written by a build that used
+    // AsyncStorage. Move it across, then delete the plaintext copy — leaving it
+    // behind would defeat the point of the change.
+    const legacy = await AsyncStorage.getItem(TOKEN_KEY);
+    if (legacy) {
+      await SecureStore.setItemAsync(TOKEN_KEY, legacy, SECURE_OPTIONS);
+      await AsyncStorage.removeItem(TOKEN_KEY);
+      return legacy;
+    }
+    return null;
+  } catch {
+    // A SecureStore failure must read as "not signed in" rather than crash the
+    // app on launch. The user signs in again; nothing is lost but convenience.
+    return null;
+  }
 }
 
 export async function setToken(token: string): Promise<void> {
-  await AsyncStorage.setItem(TOKEN_KEY, token);
+  if (!useSecureStore) {
+    await AsyncStorage.setItem(TOKEN_KEY, token);
+    return;
+  }
+  await SecureStore.setItemAsync(TOKEN_KEY, token, SECURE_OPTIONS);
 }
 
 export async function clearToken(): Promise<void> {
-  await AsyncStorage.removeItem(TOKEN_KEY);
+  // Clear both stores unconditionally. Sign-out must not depend on which
+  // backend happened to hold the token, or a stale plaintext copy survives.
+  await AsyncStorage.removeItem(TOKEN_KEY).catch(() => {});
+  if (useSecureStore) {
+    await SecureStore.deleteItemAsync(TOKEN_KEY, SECURE_OPTIONS).catch(() => {});
+  }
 }
 
 export class ApiError extends Error {
@@ -117,10 +192,11 @@ async function request<T>(
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
 export const auth = {
-  signup: (email: string, password: string, name: string) =>
+  /** `dateOfBirth` is `YYYY-MM-DD`; the server enforces the minimum age. */
+  signup: (email: string, password: string, name: string, dateOfBirth: string) =>
     request<{ token: string; user: { id: string; email: string; name: string } }>(
       "/auth/signup",
-      { method: "POST", body: JSON.stringify({ email, password, name }) },
+      { method: "POST", body: JSON.stringify({ email, password, name, dateOfBirth }) },
     ),
 
   login: (email: string, password: string) =>
@@ -369,6 +445,13 @@ export interface Plan {
   period: string | null;
   description: string;
   popular?: boolean;
+  /**
+   * False when the features behind this plan are not built. Such a plan must
+   * never be shown with a working purchase button, regardless of
+   * `billingEnabled` — see PLANS in the server's entitlementService.
+   */
+  available: boolean;
+  unavailableReason?: string;
   features: string[];
   limits: {
     analysesPerMonth: number;

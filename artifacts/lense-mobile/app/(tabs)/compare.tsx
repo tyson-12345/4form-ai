@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
 import { useColors } from "@/hooks/useColors";
-import { PRO_ATHLETES, MOCK_ATHLETE } from "@/lib/athleteData";
+import { PRO_ATHLETES } from "@/lib/athleteData";
 import type { ProAthlete } from "@/lib/types";
 
 const SPORT_COLORS: Record<string, string> = {
@@ -23,15 +23,24 @@ const SPORT_COLORS: Record<string, string> = {
   running: "#38bdf8",
 };
 
-function getSimilarityForAthlete(proId: string): number | null {
-  if (proId === "pro-6") {
-    const analysis = MOCK_ATHLETE.analyses.find((a) => a.id === "an-003");
-    return analysis?.similarityScore ?? null;
-  }
-  if (proId === "pro-2") {
-    const analysis = MOCK_ATHLETE.analyses.find((a) => a.id === "an-002");
-    return 71;
-  }
+/**
+ * Similarity against a reference model.
+ *
+ * Always `null` today, because nothing computes it. This previously returned
+ * hard-coded constants (63 and 71) looked up from the mock fixture set, so two
+ * of the six cards displayed a confident "Overall Similarity 71%" that was not
+ * derived from the user's clip, their measurements, or anything else — the same
+ * number for every user, forever.
+ *
+ * Presenting a fabricated number as a measurement is the one thing this app is
+ * built not to do (see the scoring engine, where power and speed are `null`
+ * rather than guessed). Returning null routes every card to the honest
+ * "not measured yet" state below.
+ *
+ * When a real comparison ships, implement it here against the athlete's actual
+ * `poseMetrics` and the reference model's joint-angle envelope.
+ */
+function getSimilarityForAthlete(_proId: string): number | null {
   return null;
 }
 
@@ -141,7 +150,10 @@ export default function CompareScreen() {
       <ScrollView style={s.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: bottomPad }}>
         <View style={s.header}>
           <Text style={s.title}>Compare</Text>
-          <Text style={s.subtitle}>See how you stack up against the pros</Text>
+          <Text style={s.subtitle}>
+            Reference technique models for each sport. Measured comparison against your own
+            clips is still in development.
+          </Text>
         </View>
 
         {selected && (
@@ -161,7 +173,8 @@ export default function CompareScreen() {
               )}
               {getSimilarityForAthlete(selected.id) === null && (
                 <Text style={{ color: colors.mutedForeground, fontSize: 12, fontFamily: "InstrumentSans_400Regular" }}>
-                  Upload a {selected.sport} video to generate a comparison score
+                  Measured comparison isn&apos;t available yet. The attributes below are what
+                  this movement is judged on — use them as a checklist against your own clips.
                 </Text>
               )}
             </View>

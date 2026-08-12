@@ -8,7 +8,14 @@
  */
 
 import { describe, it, expect, afterEach } from "vitest";
-import { resolveEffectiveTier, TIER_LIMITS, billingEnabled, PLANS } from "./entitlementService.js";
+import {
+  resolveEffectiveTier,
+  TIER_LIMITS,
+  billingEnabled,
+  isPurchasableTier,
+  PLANS,
+  PURCHASABLE_PLANS,
+} from "./entitlementService.js";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -89,6 +96,48 @@ describe("advertised plan copy matches enforced limits", () => {
   it("keeps each plan's limits object in sync with TIER_LIMITS", () => {
     for (const plan of PLANS) {
       expect(plan.limits, plan.id).toEqual(TIER_LIMITS[plan.id as keyof typeof TIER_LIMITS]);
+    }
+  });
+});
+
+describe("no plan advertises a feature that does not ship", () => {
+  /**
+   * The 2026-08-12 audit found Elite selling four unbuilt features at
+   * $24.99/month, and Pro advertising "priority processing" that no code path
+   * reads. These pin the corrections so a future edit has to be deliberate.
+   */
+
+  it("does not offer Elite for sale while its features are unbuilt", () => {
+    const elite = PLANS.find((p) => p.id === "elite")!;
+    expect(elite.available).toBe(false);
+    expect(elite.unavailableReason).toBeTruthy();
+  });
+
+  it("excludes unavailable plans from the purchasable set", () => {
+    expect(PURCHASABLE_PLANS.map((p) => p.id)).not.toContain("elite");
+    expect(isPurchasableTier("elite")).toBe(false);
+    expect(isPurchasableTier("pro")).toBe(true);
+    expect(isPurchasableTier("free")).toBe(true);
+  });
+
+  it("makes no claim about priority processing anywhere in the catalog", () => {
+    // TIER_LIMITS.priorityProcessing is set but nothing reads it — every
+    // analysis runs the same path at the same speed. Advertising it is a
+    // promise we do not keep.
+    for (const plan of PLANS) {
+      for (const feature of plan.features) {
+        expect(feature, `${plan.id}: "${feature}"`).not.toMatch(/priority/i);
+      }
+    }
+  });
+
+  it("does not advertise pro-athlete comparison as a shipped feature", () => {
+    // The comparison screen renders reference models with no measured
+    // similarity. Any claim here must be marked as in development.
+    for (const plan of PLANS.filter((p) => p.available)) {
+      for (const feature of plan.features) {
+        expect(feature, `${plan.id}: "${feature}"`).not.toMatch(/comparison|side-by-side/i);
+      }
     }
   });
 });

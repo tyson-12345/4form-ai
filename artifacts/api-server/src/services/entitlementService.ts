@@ -66,6 +66,31 @@ export function billingEnabled(): boolean {
   return Boolean(process.env.REVENUECAT_WEBHOOK_SECRET && process.env.REVENUECAT_API_KEY);
 }
 
+/**
+ * The plan catalog shown on the pricing screen.
+ *
+ * ── One rule: never advertise a feature that does not ship ──────────────────
+ * Every string in a `features` array must correspond to behaviour a paying user
+ * actually receives today. This is not a style preference — charging for a
+ * capability that does not exist is a misrepresentation, it is the kind of thing
+ * app review rejects, and it is the kind of thing a chargeback is granted over.
+ *
+ * An audit on 2026-08-12 found three claims that failed that test and removed
+ * them:
+ *
+ *  - **"Priority processing"** (Pro). `TIER_LIMITS.priorityProcessing` is set
+ *    but nothing reads it. Every analysis runs on the same path at the same
+ *    speed regardless of tier.
+ *  - **"Pro athlete comparisons" / "Side-by-side technique analysis"** (Elite).
+ *    The Compare screen renders `PRO_ATHLETES` and `MOCK_ATHLETE` from
+ *    `lib/athleteData.ts` with hard-coded similarity scores. No real comparison
+ *    is computed from anyone's measurements.
+ *  - **"Advanced biomechanics report" / "Custom training programs"** (Elite).
+ *    Neither exists in any form.
+ *
+ * That left the Elite tier with nothing behind it, so it is no longer offered
+ * for sale — see `available` below.
+ */
 export const PLANS = [
   {
     id: "free",
@@ -73,6 +98,7 @@ export const PLANS = [
     price: 0,
     period: null,
     description: "Get started with AI coaching",
+    available: true,
     features: [
       `${TIER_LIMITS.free.analysesPerMonth} video analyses per month`,
       "Pose tracking with joint-angle measurement",
@@ -88,35 +114,54 @@ export const PLANS = [
     period: "month",
     description: "For serious athletes",
     popular: true,
+    available: true,
     revenueCatProductId: "com.athleteai.pro.monthly",
     features: [
       "Unlimited video analyses",
       "AI coach chat",
       "Detailed coaching tips & drills",
-      "Injury prevention plans",
+      "Injury-risk readings with prevention work",
       "Progress tracking & charts",
-      "Priority processing",
     ],
     limits: TIER_LIMITS.pro,
   },
   {
+    /**
+     * Retained so existing `elite` subscription rows still resolve to their
+     * entitlements, but not purchasable: every feature that justified the
+     * $24.99 price is unbuilt. Re-enable by setting `available: true` once the
+     * comparison feature genuinely ships — and not before.
+     */
     id: "elite",
     name: "Elite",
     price: 24.99,
     period: "month",
-    description: "For competitive athletes",
+    description: "Not yet available",
+    available: false,
+    unavailableReason:
+      "Elite is still in development. We're not selling it until the features behind it are real.",
     revenueCatProductId: "com.athleteai.elite.monthly",
-    features: [
-      "Everything in Pro",
-      "Pro athlete comparisons",
-      "Side-by-side technique analysis",
-      "Advanced biomechanics report",
-      "Custom training programs",
-      "Early access to new features",
-    ],
+    features: ["Everything in Pro", "Pro athlete comparisons — in development"],
     limits: TIER_LIMITS.elite,
   },
 ];
+
+/** Plans a client may actually present a purchase button for. */
+export const PURCHASABLE_PLANS = PLANS.filter((p) => p.available);
+
+/**
+ * Whether a verified purchase may be honoured for `tier`.
+ *
+ * Checked server-side on the receipt path as well as being reflected in the UI.
+ * A store product can outlive the decision to sell it — if `com.athleteai.elite.monthly`
+ * is still live in App Store Connect, someone can buy it (a stale client, a
+ * restore of an old purchase) and arrive here with a genuinely valid receipt.
+ * Taking that money for an unbuilt feature is the thing we are trying not to do,
+ * so the grant is refused at the server and the caller is told to seek a refund.
+ */
+export function isPurchasableTier(tier: string): boolean {
+  return PURCHASABLE_PLANS.some((p) => p.id === tier);
+}
 
 // ─── Monthly quota window ────────────────────────────────────────────────────
 

@@ -15,6 +15,7 @@ import { HealthCheckResponse } from "@workspace/api-zod";
 import { alertSnapshot } from "../lib/alerting.js";
 import { redisAvailable } from "../lib/redis.js";
 import { claudeConfigured } from "../lib/claude.js";
+import { activeProvider, emailConfigured } from "../lib/mailer.js";
 import { billingEnabled } from "../services/entitlementService.js";
 
 const router: IRouter = Router();
@@ -40,6 +41,13 @@ router.get("/health/metrics", (_req, res) => {
       coachingWriteups: claudeConfigured(),
       sharedRateLimits: redisAvailable(),
       billing: billingEnabled(),
+      // Without this, password reset and lockout notices are generated and
+      // logged but never delivered — the user-visible symptom is "the email
+      // never arrived", which is otherwise invisible from outside.
+      transactionalEmail: emailConfigured(),
+      // The provider name is a config *choice*, not a credential — safe to
+      // expose, and it is the fastest way to confirm a cutover actually took.
+      emailProvider: activeProvider(),
     },
     alerts: alerts.counts,
     alerting: alerts.alerting,

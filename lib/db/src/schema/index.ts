@@ -5,6 +5,7 @@ import {
   real,
   boolean,
   timestamp,
+  date,
   jsonb,
   uuid,
   pgEnum,
@@ -69,6 +70,26 @@ export const usersTable = pgTable("users", {
   /** When set and in the future, authentication is refused regardless of password. */
   lockedUntil: timestamp("locked_until", { withTimezone: true }),
   lastFailedLoginAt: timestamp("last_failed_login_at", { withTimezone: true }),
+  /**
+   * Session cutoff. Any JWT issued at or before this instant is refused, even
+   * though its signature is valid and it has not expired.
+   *
+   * JWTs are stateless: once signed, nothing can call one back. Tokens here live
+   * for 7 days, so without this column a password reset does not evict an
+   * attacker who already holds a token — the user does the one thing they are
+   * told to do when they suspect compromise, and the session survives it for up
+   * to a week. Set on password reset (see routes/auth.ts) and checked on every
+   * authenticated request (see middlewares/authenticate.ts).
+   */
+  sessionsValidAfter: timestamp("sessions_valid_after", { withTimezone: true }),
+  /**
+   * Date of birth, for the under-13 age gate (COPPA, GDPR Art. 8).
+   *
+   * A `date`, not a timestamp — the time of day is not information we need, and
+   * collecting less of a minor's data is the point of the control. NULL means
+   * the account predates migration 0004; new signups cannot be NULL.
+   */
+  birthDate: date("birth_date"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

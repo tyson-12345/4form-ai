@@ -52,3 +52,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local Claude Code tooling config (launch.json, settings.local.json)
+.claude/

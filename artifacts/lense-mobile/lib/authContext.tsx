@@ -23,7 +23,8 @@ interface AuthState {
 
 interface AuthActions {
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, name: string) => Promise<void>;
+  /** `dateOfBirth` is `YYYY-MM-DD`; the server enforces the minimum age. */
+  signup: (email: string, password: string, name: string, dateOfBirth: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfile: (data: Partial<Omit<Profile, "id" | "userId">>) => Promise<void>;
@@ -86,8 +87,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSubscription(s);
   }
 
-  async function signup(email: string, password: string, name: string) {
-    const { token, user: u } = await auth.signup(email, password, name);
+  async function signup(email: string, password: string, name: string, dateOfBirth: string) {
+    const { token, user: u } = await auth.signup(email, password, name, dateOfBirth);
     await setToken(token);
     setHasStoredToken(true);
     const { profile: p, subscription: s } = await profileApi.get();

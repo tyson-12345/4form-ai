@@ -43,6 +43,7 @@ import { logger } from "../lib/logger.js";
 import { recordAlert } from "../lib/alerting.js";
 import {
   parseOrReject,
+  safeBirthDate,
   safeEmail,
   safePassword,
   safeText,
@@ -83,6 +84,15 @@ const signupSchema = z.object({
   email: safeEmail,
   password: safePassword,
   name: safeText(1, 80),
+  /**
+   * `YYYY-MM-DD`. Rejected below the age floor — see `safeBirthDate`.
+   *
+   * A failure here returns the same generic validation message as any other bad
+   * field, which is deliberate: an under-13 who is told *precisely* which field
+   * blocked them has been handed the instruction for getting past it. The app
+   * explains the age requirement up front instead, before they type anything.
+   */
+  dateOfBirth: safeBirthDate,
 });
 
 const loginSchema = z.object({
@@ -109,7 +119,7 @@ router.post("/auth/signup", async (req, res) => {
   });
   if (!data) return;
 
-  const { email, password, name } = data;
+  const { email, password, name, dateOfBirth } = data;
 
   const [existing] = await db
     .select({ id: usersTable.id })
@@ -132,7 +142,16 @@ router.post("/auth/signup", async (req, res) => {
 
   const [user] = await db
     .insert(usersTable)
-    .values({ email, passwordHash, passwordAlgo: "bcrypt" })
+    .values({
+      email,
+      passwordHash,
+      passwordAlgo: "bcrypt",
+      // Stored as YYYY-MM-DD; the column is a DATE, so no time component is
+      // retained. Kept rather than discarded after the check so the age floor
+      // can be re-verified and so 13–17 accounts are identifiable if parental
+      // assent is ever enforced.
+      birthDate: dateOfBirth.toISOString().slice(0, 10),
+    })
     .returning({ id: usersTable.id, email: usersTable.email });
 
   await Promise.all([
@@ -397,6 +416,11 @@ router.post("/auth/reset-password", async (req, res) => {
       // proven control of the mailbox.
       failedLoginAttempts: 0,
       lockedUntil: null,
+      // Revoke every session issued before now. A reset is what a user does
+      // when they think someone else is in their account; without this the
+      // attacker's existing 7-day token would outlive the password change and
+      // the reset would accomplish nothing.
+      sessionsValidAfter: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(usersTable.id, tokenRow.userId));

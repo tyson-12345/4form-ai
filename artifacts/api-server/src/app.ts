@@ -8,6 +8,12 @@ import { recordAlert } from "./lib/alerting";
 
 const app: Express = express();
 
+// ── Fingerprinting ────────────────────────────────────────────────────────────
+// Express advertises itself in `X-Powered-By` by default. That is free
+// reconnaissance: it tells a scanner which stack to try known CVEs against, and
+// it buys us nothing. Not a vulnerability on its own — just an unnecessary hint.
+app.disable("x-powered-by");
+
 // ── Proxy trust ───────────────────────────────────────────────────────────────
 // Rate limiting keys on the client IP, so how we derive that IP is a security
 // control, not a config detail. `X-Forwarded-For` is caller-supplied: trusting

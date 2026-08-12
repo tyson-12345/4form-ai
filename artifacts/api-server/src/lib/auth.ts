@@ -30,6 +30,12 @@ export interface JwtPayload {
   email: string;
 }
 
+/** A verified token, plus when it was issued — needed for session revocation. */
+export interface VerifiedToken extends JwtPayload {
+  /** `iat` as a Date. Compared against the user's `sessionsValidAfter`. */
+  issuedAt: Date;
+}
+
 export function signToken(payload: JwtPayload): string {
   return jwt.sign(payload, JWT_SECRET!, {
     expiresIn: JWT_EXPIRES_IN,
@@ -37,7 +43,7 @@ export function signToken(payload: JwtPayload): string {
   });
 }
 
-export function verifyToken(token: string): JwtPayload {
+export function verifyToken(token: string): VerifiedToken {
   const decoded = jwt.verify(token, JWT_SECRET!, {
     issuer: JWT_ISSUER,
     algorithms: ["HS256"], // pin the algorithm: blocks `alg: none` confusion
@@ -45,7 +51,18 @@ export function verifyToken(token: string): JwtPayload {
   if (typeof decoded === "string" || !decoded.userId || !decoded.email) {
     throw new Error("Malformed token payload");
   }
-  return { userId: decoded.userId as string, email: decoded.email as string };
+  // `iat` is set automatically by `jwt.sign`. Its absence means the token was
+  // not minted by us in the current format — reject rather than treating it as
+  // un-revokable, which would make it strictly more powerful than a real token.
+  if (typeof decoded.iat !== "number") {
+    throw new Error("Token is missing an issued-at claim");
+  }
+  return {
+    userId: decoded.userId as string,
+    email: decoded.email as string,
+    // `iat` is in seconds; Date wants milliseconds.
+    issuedAt: new Date(decoded.iat * 1000),
+  };
 }
 
 export async function hashPassword(password: string): Promise<string> {

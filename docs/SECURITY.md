@@ -213,6 +213,17 @@ Set on every response:
 `X-XSS-Protection` is deliberately **not** set: it is deprecated and its legacy
 filter introduced vulnerabilities of its own. CSP is the real control.
 
+`X-Powered-By` is **disabled** (`app.disable("x-powered-by")`). Advertising the
+framework is free reconnaissance for a scanner looking for a stack to match
+known CVEs against, and it buys nothing.
+
+### Client → server transport
+
+The mobile client refuses to build a release bundle pointing at a `http://`
+origin (`lib/api.ts`). Every request carries the bearer token, so a cleartext
+origin puts the whole session on the wire; `__DEV__` builds are exempt because
+localhost dev servers are http by design.
+
 ### CORS
 
 Allowed origins come from `ALLOWED_ORIGINS` (comma-separated). Requests with no
@@ -242,7 +253,59 @@ checked:
 
 `verifyToken` pins `algorithms: ["HS256"]` and checks the issuer. Pinning blocks
 the classic `alg: none` confusion attack; a test asserts an unsigned token is
-rejected.
+rejected. A token without an `iat` claim is also rejected — without it the token
+could not be checked against the session cutoff below, which would make a
+malformed token *more* powerful than a well-formed one.
+
+### Session revocation
+
+JWTs are bearer credentials that cannot be recalled once signed, and ours live 7
+days. `users.sessions_valid_after` is the cutoff: any token issued at or before
+it is refused, regardless of signature validity.
+
+**Set on password reset.** Without it, a user who resets their password *because*
+they believe someone is in their account leaves the attacker signed in for up to
+a week — the one action they are told to take would accomplish nothing.
+
+The comparison is `<=`, not `<`: `iat` has one-second resolution, so a strict
+comparison would admit a token minted in the same second as the reset.
+
+The cost is one indexed primary-key lookup per authenticated request. That lookup
+also closes a second gap: a **deleted account's** token used to verify fine, so
+routes ran queries for a user that no longer existed.
+
+Migration `0003_session_revocation.sql`. Deliberately not backfilled — only a
+real credential change should invalidate sessions, not a deploy.
+
+### Token storage on the device
+
+The session token is held in the OS keychain via `expo-secure-store`
+(iOS Keychain; Android Keystore-backed `EncryptedSharedPreferences`), with
+`WHEN_UNLOCKED_THIS_DEVICE_ONLY` so it is excluded from iCloud sync and
+encrypted backups.
+
+It was previously in `AsyncStorage`, which is **plaintext on disk** — readable
+from a rooted or jailbroken device, an unencrypted backup, or a forensic
+extraction. `getToken` migrates a legacy value across on first read and deletes
+the plaintext copy; `clearToken` clears both stores unconditionally, so sign-out
+cannot leave a stale copy behind.
+
+Web falls back to `AsyncStorage` because SecureStore has no web implementation.
+That is a real downgrade and is documented as such — native is the shipping
+target.
+
+### Age gate
+
+Signup requires a date of birth and refuses anything under 13
+(`safeBirthDate` in `lib/validate.ts`, migration `0004_age_gate.sql`). The client
+shows a neutral date-entry screen rather than asking "are you 13?", which a child
+can simply answer yes to.
+
+The server check is the control; the client check is a courtesy. A rejection
+returns the same generic validation message as any other bad field — telling an
+under-13 precisely which field blocked them hands them the workaround.
+
+See `docs/LEGAL-RISK.md` §4 for the COPPA / GDPR Art. 8 reasoning.
 
 ---
 

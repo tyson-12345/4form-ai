@@ -44,6 +44,10 @@ router.get("/subscriptions/plans", (_req, res) => {
   // button or a "not yet available" state. Shipping a button that silently
   // grants a paid tier without charging is both a revenue hole and a
   // misrepresentation to the user.
+  //
+  // Each plan additionally carries `available`. A plan whose features are not
+  // built is returned (so the client can show it as coming soon if it wants)
+  // but must never be presented as purchasable — see entitlementService.PLANS.
   res.json({ plans: PLANS, billingEnabled: billingEnabled() });
 });
 
@@ -116,6 +120,23 @@ router.post("/subscriptions/verify-purchase", authenticate, (req: AuthRequest, r
 
   // Wire the RevenueCat receipt-validation call here, then set the tier from
   // the verified entitlement. See docs/BILLING.md for the full checklist.
+  //
+  // When implementing: the tier comes from the verified product id, and before
+  // granting it you must check `isPurchasableTier(tier)`. A store product can
+  // outlive the decision to sell it — a stale client or a restored old purchase
+  // can present a genuinely valid receipt for a tier we have withdrawn. Granting
+  // it would mean taking money for features that do not exist. Refuse, log, and
+  // point the user at a refund:
+  //
+  //   if (!isPurchasableTier(verifiedTier)) {
+  //     logger.error({ userId: req.userId, verifiedTier, event: "purchase_withdrawn_tier" },
+  //       "Valid receipt for a tier that is no longer sold");
+  //     res.status(409).json({
+  //       error: "That plan is no longer available. Please request a refund through the App Store.",
+  //       code: "PLAN_WITHDRAWN",
+  //     });
+  //     return;
+  //   }
   logger.error(
     { userId: req.userId, event: "purchase_verification_unimplemented" },
     "billingEnabled() is true but receipt verification is not implemented",

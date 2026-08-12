@@ -1,6 +1,6 @@
 # AthleteAI — Path to a Functional, Shippable App
 
-**Owner:** Tyson · **Last updated:** 2026-08-11
+**Owner:** Tyson · **Last updated:** 2026-08-12
 
 What stands between the current codebase and an app real athletes can use and
 pay for. Ordered by what blocks what — not by effort.
@@ -13,12 +13,16 @@ Status key: 🔴 blocks launch · 🟠 blocks charging money · 🟡 quality/sca
 
 The app **measures and scores correctly today**. Pose tracking, the scoring
 engine, auth, the paywall logic, and account deletion all work and are tested
-(291 tests green).
+(315 tests green — 295 API, 20 mobile).
 
 What it cannot do today: **generate coaching write-ups or chat** (no API key),
-**complete a password reset** (no mail provider), **take money** (no billing),
-or **run anywhere but your laptop** (never deployed). Those four are the gap
-between "works" and "product".
+**complete a password reset** (mail provider code is done but unconfigured),
+**take money** (no billing), or **run anywhere but your laptop** (never
+deployed). Those four are the gap between "works" and "product".
+
+**Everything still blocking launch now needs an account you have to log into** —
+an Anthropic key, a mail provider, a Railway deploy, a Supabase project, two
+store consoles, and a lawyer. There is no remaining code-side blocker.
 
 ---
 
@@ -45,31 +49,79 @@ coaching text is not the product.
 confirm this from outside.
 
 ### 1.3 Configure a mail provider
-`lib/mailer.ts` exists and the reset flow is fully built and tested, but nothing
-delivers. **Password reset cannot complete end to end**, and the account-lockout
-email never arrives. Any user who forgets their password is permanently locked
-out with no self-service path.
+**Code complete as of 2026-08-12 — needs an account and DNS records.**
 
-Wire Resend/Postmark/SES, set the sender domain, verify SPF/DKIM.
+`lib/mailer.ts` now supports **Resend, Postmark, and SES**, selected by which
+credentials are present, with HTML + plain-text templates, a 10s timeout,
+delivery-failure alerting, and a startup warning for a half-configured setup.
+`/api/health/metrics` reports `transactionalEmail` and `emailProvider`.
 
-### 1.4 Rotate the Neon database password ⚪️
-Started, not finished — see the conversation of 2026-08-10. `JWT_SECRET` was
-rotated; the DB password was not, because it needs a Neon console login.
+What remains needs a login: create an account with one provider, publish the
+SPF/DKIM/DMARC records, set `MAIL_FROM` + the key. Step-by-step, with the exact
+DNS records and a verification procedure: **`docs/EMAIL-SETUP.md`**.
 
-Neon console → Roles → `neondb_owner` → Reset password → update `DATABASE_URL`
-everywhere it is set (local `.env` **and** the deployed host once 1.1 is done).
+Until that is done, password reset still cannot complete end to end.
+
+### 1.4 Move the database to Supabase 🔴
+**Decided 2026-08-12: Supabase as the Postgres host only. Auth stays as it is.**
+**Starting fresh — no data migration.**
+
+Code side is done: `lib/db/src/index.ts` is provider-agnostic with explicit TLS
+handling and a bounded pool. What remains needs a Supabase login — create the
+project, take the **session pooler** connection string, `drizzle-kit push`, then
+apply `0002_read_path_indexes.sql` by hand.
+
+Step by step, including the traps: **`docs/SUPABASE-MIGRATION.md`**.
+
+> ⚠️ **Do not run `0001`–`0004` against the fresh Supabase database.** They are
+> incremental and start with `ALTER TABLE users`, which does not exist yet. On a
+> new database, `schema/index.ts` is the source of truth and already includes
+> everything those files add.
+
+**This supersedes the old "rotate the Neon password" item.** That password was
+never rotated (see the conversation of 2026-08-10 — `JWT_SECRET` was, the DB
+password wasn't). Deleting the Neon project after the cutover closes it
+outright, which is better than rotating a credential on a database you are about
+to abandon.
 
 ### 1.5 App Store / Play Store prerequisites
-- ✅ **Account deletion in-app** — done (`DELETE /profile/account`).
-- 🔴 **Privacy policy URL** — required by both stores. Must state that video is
-  processed on-device, that joint angles leave the device, and that clips do not.
-- 🔴 **Data safety / privacy nutrition labels** — must match what the app
-  actually collects.
-- 🔴 **Camera and photo-library usage strings** in `app.json` — must explain
-  *why*, not just *that*. Generic strings get rejected.
-- 🟠 **Health-adjacent review risk.** The app shows injury-risk readings. Keep
-  the existing "measurement, not a medical assessment" framing visible in the
-  UI — reviewers look for implied diagnosis. See §5.
+**Mostly done 2026-08-12. Full detail in `docs/STORE-COMPLIANCE.md`.**
+
+- ✅ **Account deletion in-app** — `DELETE /profile/account`, password-confirmed.
+- ✅ **Privacy policy written** — `docs/PRIVACY-POLICY.md`, verified against what
+  the code actually collects. 🔴 **Still needs hosting at a public URL.**
+- ✅ **Data safety / nutrition label answers worked out** — `STORE-COMPLIANCE.md`
+  §2 and §3, field by field. 🔴 **Still needs entering in both consoles.**
+- ✅ **Usage strings fixed.** The app requested **five permissions it never
+  used** — camera, microphone, photo-library-write, legacy storage, and an
+  unused `expo-location` dependency. All removed; the remaining photo-library
+  string explains why and states that video never leaves the device.
+- ✅ **Health-adjacent framing** — disclaimers on the analysis and skeleton
+  screens plus a new one at signup; a marketing-language table is in
+  `STORE-COMPLIANCE.md` §4.
+- ✅ **Age gate** — signup now collects a date of birth and refuses under-13s,
+  enforced server-side (migration `0004_age_gate.sql`).
+
+### 1.6 Legal
+**Reviewed 2026-08-12 — see `docs/LEGAL-RISK.md` for the full register.**
+
+- ✅ **Terms of Service drafted** — `docs/TERMS-OF-SERVICE.md`, with the medical
+  disclaimer, assumption of risk, liability cap, and store-billing terms.
+  🔴 **Needs a lawyer** for §7, §8, §14 — the arbitration clause must be removed
+  for EU/UK consumers.
+- ✅ **Right-of-publicity exposure closed.** The Compare screen shipped **six
+  real, named professional athletes** with fabricated similarity percentages,
+  inside a paid tier. That was a NIL and false-endorsement claim waiting to
+  happen. Replaced with unnamed reference technique models.
+- ✅ **Terms + Privacy now linked at signup** and in Profile, so the agreement is
+  presented at account creation rather than buried.
+- 🔴 **Sign DPAs** with hosting, database, Anthropic, and the mail provider.
+
+### 1.7 Analysis readability
+✅ Done 2026-08-12. The coaching prompt no longer asks the model to cite joint
+angles; it reasons from the measurements and writes plain instructions, with the
+highest-priority fix first. Flag stamps read `OFTEN` / `SOMETIMES` / `BRIEFLY`
+rather than `62–104°`. The skeleton overlay keeps the exact figures.
 
 ---
 
@@ -93,10 +145,17 @@ in App Store Connect and Play Console, matching `PLANS` in
 `services/entitlementService.ts`.
 
 ### 2.3 Elite tier has nothing behind it
-`TIER_LIMITS.elite.proComparisons` is `true`, but the comparison feature does
-not exist — the design deck explicitly excludes that screen because it isn't
-built. **Selling Elite today sells a feature that doesn't ship.** Either build
-it or drop the tier before billing goes live.
+✅ **Resolved 2026-08-12 by withdrawing it from sale.**
+
+The audit found Elite advertising four unbuilt features at $24.99/month, and Pro
+advertising "priority processing" that no code path reads. All removed. Elite
+carries `available: false` and is rendered as an inert "in development" card
+with no price. `isPurchasableTier()` exists so the receipt path can refuse a
+withdrawn tier once billing ships — a store product can outlive the decision to
+sell it. Four tests pin the invariant.
+
+To re-enable: build the comparison feature, then set `available: true`. Not
+before.
 
 ---
 
@@ -106,7 +165,8 @@ it or drop the tier before billing goes live.
 |---|---|
 | **Mobile screen tests** | Only `utils/` is covered (20 tests). No screen has a test — needs jest-expo + native-module mocks. |
 | **Redis** | Rate limits are per-instance until `REDIS_URL` is set. Fine for one instance; **required before scaling to two**, or limits silently weaken. |
-| **Run migration 0002** | The read-path indexes are written but must be applied to the live DB. |
+| **Run migrations 0002, 0003, 0004** | Read-path indexes, session revocation, and the age-gate column are written but must be applied to the live DB. **0004 is required** — signup fails without `users.birth_date`. |
+| **Sentry** | No crash or error reporting on either side. See `docs/FIREBASE-ASSESSMENT.md`. |
 | **Prune expired reset tokens** | No scheduled job — the table grows forever. |
 | **`/health/metrics` monitoring** | Endpoint exists; nothing polls it. Point an uptime check at it. |
 | **Sentry / crash reporting** | None. You will not know when the app crashes in the field. |
@@ -169,13 +229,26 @@ for the four measurable dimensions, adopt Oscar's sport-specific weighting, and
 replace the two nulls with a clearly-labelled qualitative read rather than a
 fabricated number. **This needs Oscar's answer before anyone builds it.**
 
-### 5.2 Neon vs Supabase
-You referred to the database as Supabase; it is Neon. If a move to Supabase is
-actually on the table, note that Supabase would want to own auth — and this app
-has hand-rolled auth with lockout, progressive delay, timing mitigation, and
-hash migration that is currently ahead of what a default Supabase setup gives
-you. Migrating means either giving that up or running both. Worth a real
-conversation before committing.
+### 5.1b Firebase
+Assessed 2026-08-12 — **recommendation: don't migrate.** Firestore is the wrong
+shape for these relational queries, and Firebase Auth's defaults are not
+obviously better than the auth already built here. Adopt Sentry for crash
+reporting; revisit Firebase Auth only if you want Google/Apple sign-in. Full
+reasoning, plus what providers are actually still missing:
+`docs/FIREBASE-ASSESSMENT.md`.
+
+### 5.2 Neon vs Supabase — ✅ resolved 2026-08-12
+Moving to **Supabase, as the Postgres host only.** Auth stays as it is.
+
+This splits the decision the old entry warned about. Supabase *is* Postgres, so
+hosting there is a connection-string change — but adopting **Supabase Auth**
+would replace the lockout, progressive delay, timing equalisation, session
+revocation, and hash migration this codebase has invested most in. Those are two
+separate decisions and only the first is being made now.
+
+Execution: `docs/SUPABASE-MIGRATION.md`. Auth reassessment, if it ever happens,
+should follow the method in `docs/FIREBASE-ASSESSMENT.md` — compare against
+`docs/SECURITY.md` rather than assuming managed means stronger.
 
 ### 5.3 Band requires 3 sessions
 A new user sees no band until their third measured clip, so the core idea of the
@@ -192,7 +265,7 @@ part of the first-run experience. Consider a provisional band with an explicit
 # Verify everything
 pnpm --filter @workspace/api-server typecheck
 pnpm --filter @workspace/api-server lint
-pnpm --filter @workspace/api-server test        # 271
+pnpm --filter @workspace/api-server test        # 295
 pnpm --filter @workspace/lense-mobile typecheck
 pnpm --filter @workspace/lense-mobile test      # 20
 

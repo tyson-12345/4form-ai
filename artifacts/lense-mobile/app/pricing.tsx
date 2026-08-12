@@ -65,6 +65,21 @@ export default function PricingScreen() {
   function attemptBuy(plan: Plan) {
     // Never grant a tier client-side. When billing ships this launches the
     // native purchase sheet and posts the receipt to /subscriptions/verify-purchase.
+    //
+    // `plan.available` is checked separately from `billingEnabled`: the first
+    // means "the features exist", the second means "we can take money". A plan
+    // must satisfy both, and the message says which one is missing rather than
+    // implying it's only a payments delay.
+    if (!plan.available) {
+      Alert.alert(
+        `${plan.name} isn't ready`,
+        plan.unavailableReason ??
+          `${plan.name} is still in development. We're not selling it until the features behind it are real.`,
+        [{ text: "Got it" }],
+      );
+      return;
+    }
+
     Alert.alert(
       "Not available yet",
       `${plan.name} isn't available to buy yet — we're still setting up payments. Nothing has been charged and your plan hasn't changed.`,
@@ -156,25 +171,24 @@ export default function PricingScreen() {
           </View>
         )}
 
-        {/* ── Elite ── */}
-        {elite && (
-          <Pressable
-            onPress={() => (currentTier === "elite" ? undefined : attemptBuy(elite))}
-            style={({ pressed }) => [s.plainCard, pressed && { opacity: 0.9 }]}
-          >
+        {/* ── Elite ──
+            Not purchasable: the comparison feature behind it isn't built. The
+            card is deliberately inert and shows no price — a price next to a
+            tappable card reads as "for sale", and selling an unbuilt feature is
+            what the plan audit removed. See PLANS in entitlementService. */}
+        {elite && !elite.available && (
+          <View style={s.plainCard}>
             <View style={s.plainHead}>
-              <Label>
-                ELITE{currentTier === "elite" ? " · CURRENT" : ""}
-              </Label>
-              <Text style={[T.measured, { fontSize: 11 }]}>
-                ${elite.price.toFixed(2)}/MO
+              <Label>ELITE</Label>
+              <Text style={[T.measured, { fontSize: 11, color: color.textMuted }]}>
+                IN DEVELOPMENT
               </Text>
             </View>
             <Text style={[T.body, { marginTop: 10 }]}>
-              Everything in Pro, plus side-by-side comparison against reference technique and
-              an advanced biomechanics report.
+              {elite.unavailableReason ??
+                "Elite is still in development. We're not selling it until the features behind it are real."}
             </Text>
-          </Pressable>
+          </View>
         )}
 
         {/* ── Free ── */}

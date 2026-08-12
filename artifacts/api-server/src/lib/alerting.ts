@@ -31,6 +31,12 @@ export const ALERT_EVENTS = [
   "account_locked",
   /** A request was rejected by the CORS allowlist. */
   "cors_rejected",
+  /**
+   * A transactional email failed to send. Worth watching closely: silent mail
+   * failure is indistinguishable from "no mail provider" to the user, and it
+   * strands anyone who has forgotten their password.
+   */
+  "email_delivery_failed",
 ] as const;
 
 export type AlertEvent = (typeof ALERT_EVENTS)[number];
@@ -49,6 +55,9 @@ const THRESHOLDS: Record<AlertEvent, number> = {
   rate_limit_backend_failed: 1,
   account_locked: 50,
   cors_rejected: 100,
+  // Low on purpose. A handful of bounces is normal; five hard failures means
+  // the provider, the domain authentication, or the key is broken.
+  email_delivery_failed: 5,
 };
 
 const counters = new Map<AlertEvent, number>();

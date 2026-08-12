@@ -438,12 +438,30 @@ function frameCount(analysis: AnalysisRecord): number {
   return metrics?.frameCount ?? 0;
 }
 
-/** The evidence for a flag: the extreme angle observed for that joint. */
+/**
+ * How often this joint sat outside its safe range, as a word.
+ *
+ * This used to print the raw angle range (`62–104°`). Two problems with that:
+ * it is the least readable thing on the screen for someone who doesn't already
+ * know what a good number looks like, and — because a range is two numbers with
+ * no reference — it does not actually tell them whether it was bad. "OFTEN"
+ * answers the question the athlete is asking.
+ *
+ * The underlying angles are still measured, still stored, and still what the
+ * coaching notes reason from; they are just no longer the headline. The exact
+ * figures remain available on the skeleton overlay screen for anyone who wants
+ * them.
+ *
+ * Thresholds match the bands the risk engine already uses: 10% is where a flag
+ * turns from grey to rust elsewhere on this screen, so the wording changes at
+ * the same point the colour does.
+ */
 function flagStamp(risk: RiskRecord): string {
-  if (risk.observedMin != null && risk.observedMax != null) {
-    return `${Math.round(risk.observedMin)}–${Math.round(risk.observedMax)}°`;
-  }
-  return `${Math.round(risk.riskPercent)}%`;
+  const pct = risk.riskPercent;
+  if (pct >= 25) return "OFTEN";
+  if (pct >= 10) return "SOMETIMES";
+  if (pct > 0) return "BRIEFLY";
+  return "ONCE";
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────

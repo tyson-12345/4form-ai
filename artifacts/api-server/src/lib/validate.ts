@@ -67,6 +67,42 @@ export const safePassword = z
 /** UUID path/body parameters. */
 export const safeUuid = z.string().uuid();
 
+// ─── Age gate ────────────────────────────────────────────────────────────────
+
+/** Minimum age to hold an account. See docs/LEGAL-RISK.md §4. */
+export const MINIMUM_AGE_YEARS = 13;
+
+/** Whole years elapsed between `birthDate` and `now`, calendar-correct. */
+export function ageInYears(birthDate: Date, now = new Date()): number {
+  let age = now.getUTCFullYear() - birthDate.getUTCFullYear();
+  const monthDelta = now.getUTCMonth() - birthDate.getUTCMonth();
+  // Not yet had this year's birthday.
+  if (monthDelta < 0 || (monthDelta === 0 && now.getUTCDate() < birthDate.getUTCDate())) {
+    age--;
+  }
+  return age;
+}
+
+/**
+ * Date of birth as `YYYY-MM-DD`, accepted only if it clears the age floor.
+ *
+ * ── Why the check is here and not only in the app ───────────────────────────
+ * The client shows a date picker and refuses to submit an under-13 date. That
+ * is a courtesy to the user, not a control: the app is one caller and curl is
+ * another. This is the check that actually holds.
+ *
+ * Rejects future dates and implausible ones (>120 years) as well, so a garbage
+ * value cannot pass the age test by being absurd in the useful direction.
+ */
+export const safeBirthDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)))
+  .transform((value) => new Date(`${value}T00:00:00Z`))
+  .refine((d) => d.getTime() <= Date.now())
+  .refine((d) => ageInYears(d) <= 120)
+  .refine((d) => ageInYears(d) >= MINIMUM_AGE_YEARS);
+
 // ─── Parse helper ────────────────────────────────────────────────────────────
 
 /**

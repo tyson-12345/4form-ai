@@ -24,6 +24,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 
 import { Screen, Card, Label, Chip, Chevron, Avatar, PrimaryButton } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
+import { PRIVACY_POLICY_URL, TERMS_URL, openLegal } from "@/constants/legal";
 import { useAuth } from "@/lib/authContext";
 import {
   analyses as analysesApi,
@@ -195,13 +196,23 @@ export default function ProfileScreen() {
               }
             />
             <Row
-              label="Privacy"
+              label="How your data is handled"
               onPress={() =>
                 Alert.alert(
-                  "Privacy",
+                  "Your data",
                   "Your videos never leave your device — only the measured joint angles are sent to our server.\n\nDeleting a session removes its clip from your phone. Deleting your account removes everything.",
                 )
               }
+            />
+            {/* The hosted documents, not a summary of them. Both stores check
+                that these are reachable from inside the app during review. */}
+            <Row
+              label="Privacy Policy"
+              onPress={() => void openLegal(PRIVACY_POLICY_URL, "Privacy Policy")}
+            />
+            <Row
+              label="Terms of Service"
+              onPress={() => void openLegal(TERMS_URL, "Terms of Service")}
             />
             <Row
               label="Support"

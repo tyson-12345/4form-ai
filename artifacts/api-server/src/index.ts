@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { warnOnPartialMailConfig } from "./lib/mailer";
 
 // ── Environment validation ────────────────────────────────────────────────────
 // Without these the server cannot serve a single authenticated request, so
@@ -30,6 +31,11 @@ if (!process.env["ANTHROPIC_API_KEY"]) {
       "but coaching write-ups and AI Coach chat are disabled.",
   );
 }
+
+// Mail is not required to boot — the app degrades to "reset link never arrives"
+// rather than refusing to start — but a half-configured provider is a typo, not
+// a decision, so it is surfaced loudly at startup.
+warnOnPartialMailConfig();
 
 const rawPort = process.env["PORT"];
 
