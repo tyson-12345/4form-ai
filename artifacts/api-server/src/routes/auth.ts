@@ -45,6 +45,7 @@ import {
   parseOrReject,
   safeBirthDate,
   safeEmail,
+  safeOpaqueToken,
   safePassword,
   safeText,
 } from "../lib/validate.js";
@@ -106,7 +107,7 @@ const loginSchema = z.object({
 const forgotPasswordSchema = z.object({ email: safeEmail });
 
 const resetPasswordSchema = z.object({
-  token: z.string().min(20).max(200),
+  token: safeOpaqueToken,
   password: safePassword,
 });
 

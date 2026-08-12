@@ -9,7 +9,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate, type AuthRequest } from "../middlewares/authenticate.js";
-import { parseOrReject, safeText, safeUuid } from "../lib/validate.js";
+import { parseOrReject, safeMediaUrl, safeText, safeUuid } from "../lib/validate.js";
 import { logger } from "../lib/logger.js";
 import { recordAlert } from "../lib/alerting.js";
 import { clientIp } from "../lib/rateLimit.js";
@@ -69,7 +69,7 @@ const createAnalysisSchema = z.object({
    * Device-local video URI. Kept only so the client can re-open the clip; it is
    * never fetched server-side, which is why an arbitrary scheme is acceptable.
    */
-  videoUrl: z.string().max(2048).optional(),
+  videoUrl: safeMediaUrl.optional(),
   duration: z.number().positive().max(7200).optional(),
   poseMetrics: poseMetricsSchema.optional(),
 });

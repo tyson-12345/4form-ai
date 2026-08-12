@@ -9,6 +9,8 @@ import {
   safePassword,
   safeUuid,
   safeBirthDate,
+  safeOpaqueToken,
+  safeMediaUrl,
   ageInYears,
   MINIMUM_AGE_YEARS,
   GENERIC_VALIDATION_ERROR,
@@ -292,5 +294,57 @@ describe("reset link base URL", () => {
     process.env.NODE_ENV = "development";
     delete process.env.APP_PUBLIC_URL;
     expect(resetLinkBase()).toMatch(/^http:\/\/localhost:/);
+  });
+});
+
+// ─── Opaque tokens and media URLs ────────────────────────────────────────────
+
+describe("safeOpaqueToken", () => {
+  it("accepts a token of the shape we mint", () => {
+    // crypto.randomBytes(32).toString("base64url")
+    expect(safeOpaqueToken.safeParse("a".repeat(43)).success).toBe(true);
+    expect(safeOpaqueToken.safeParse("Ab-_09".repeat(8)).success).toBe(true);
+  });
+
+  it("rejects characters we never mint", () => {
+    for (const bad of [
+      "<script>alert(1)</script>aaaaaaaaaaaaaaaaaaaa",
+      "'; drop table users; --aaaaaaaaaaaaaaaaaaaaa",
+      "../../../etc/passwd/aaaaaaaaaaaaaaaaaaaaaaaa",
+      `${"a".repeat(30)} ${"b".repeat(30)}`,
+      `${"a".repeat(30)}%00`,
+    ]) {
+      expect(safeOpaqueToken.safeParse(bad).success, bad.slice(0, 24)).toBe(false);
+    }
+  });
+
+  it("rejects lengths outside what we mint", () => {
+    expect(safeOpaqueToken.safeParse("short").success).toBe(false);
+    expect(safeOpaqueToken.safeParse("a".repeat(201)).success).toBe(false);
+  });
+});
+
+describe("safeMediaUrl", () => {
+  it("accepts http and https", () => {
+    expect(safeMediaUrl.safeParse("https://cdn.example.com/clip.mp4").success).toBe(true);
+    expect(safeMediaUrl.safeParse("http://localhost:3000/clip.mp4").success).toBe(true);
+  });
+
+  it("rejects the schemes that turn a stored string into code or file access", () => {
+    // z.string().url() accepts every one of these. That is the whole reason
+    // this is a scheme allowlist and not a format check.
+    for (const bad of [
+      "javascript:alert(document.cookie)",
+      "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+      "file:///etc/passwd",
+      "vbscript:msgbox(1)",
+    ]) {
+      expect(safeMediaUrl.safeParse(bad).success, bad.slice(0, 28)).toBe(false);
+    }
+  });
+
+  it("rejects a non-URL and an over-long value", () => {
+    expect(safeMediaUrl.safeParse("not a url").success).toBe(false);
+    expect(safeMediaUrl.safeParse(`https://e.com/${"a".repeat(2100)}`).success).toBe(false);
   });
 });

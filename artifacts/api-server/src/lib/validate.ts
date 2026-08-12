@@ -67,6 +67,48 @@ export const safePassword = z
 /** UUID path/body parameters. */
 export const safeUuid = z.string().uuid();
 
+/**
+ * An opaque, single-use token as it arrives from a URL — reset tokens, and
+ * anything else minted by `crypto.randomBytes(...).toString("base64url")`.
+ *
+ * Bounded to the base64url alphabet. The value is only ever hashed and looked
+ * up, so a hostile string could not do much, but there is no legitimate reason
+ * for one of our own tokens to contain anything else — and accepting only what
+ * we mint means a probing payload is rejected at the schema rather than
+ * travelling further in. The reset *page* already applies the same allowlist;
+ * this closes the same gap on the API the page posts to.
+ */
+export const safeOpaqueToken = z
+  .string()
+  .min(20)
+  .max(200)
+  .regex(/^[A-Za-z0-9_-]+$/);
+
+/**
+ * A URL we will later hand to a media player or a fetch.
+ *
+ * Scheme allowlist, not a format check. The danger with a free-text URL is not
+ * malformed input, it is `javascript:`, `data:`, and `file:` — schemes that
+ * turn a stored string into code execution or local file access at whatever
+ * renders it. `z.string().url()` accepts all three.
+ *
+ * Note this field is currently never populated: clips stay on the device and
+ * the client does not send a URL. The validation exists so that if object
+ * storage is ever added (see docs/TODO-PRODUCTION.md), the field is already
+ * constrained rather than being widened by whoever wires it up.
+ */
+export const safeMediaUrl = z
+  .string()
+  .max(2048)
+  .refine((value) => {
+    try {
+      const scheme = new URL(value).protocol.toLowerCase();
+      return scheme === "https:" || scheme === "http:";
+    } catch {
+      return false;
+    }
+  });
+
 // ─── Age gate ────────────────────────────────────────────────────────────────
 
 /** Minimum age to hold an account. See docs/LEGAL-RISK.md §4. */
