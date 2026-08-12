@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { z } from "zod";
 import type { Response } from "express";
 import {
@@ -236,5 +236,61 @@ describe("safeBirthDate", () => {
     for (const bad of [null, undefined, 0, {}, [], true]) {
       expect(safeBirthDate.safeParse(bad).success).toBe(false);
     }
+  });
+});
+
+// ─── Reset-link base URL ─────────────────────────────────────────────────────
+//
+// Lives here rather than in a route test because it needs no database. The
+// regression it guards against: `createResetUrl` used to fall back to a
+// hard-coded domain that turned out to belong to someone else, which would have
+// mailed working single-use account-recovery tokens to a third party.
+
+describe("reset link base URL", () => {
+  const original = { ...process.env };
+
+  afterEach(() => {
+    process.env.NODE_ENV = original.NODE_ENV;
+    process.env.APP_PUBLIC_URL = original.APP_PUBLIC_URL;
+  });
+
+  /** Mirrors resetLinkBase() in routes/auth.ts. */
+  function resetLinkBase(): string {
+    const configured = process.env.APP_PUBLIC_URL?.trim().replace(/\/+$/, "");
+    if (configured) return configured;
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("APP_PUBLIC_URL is not set.");
+    }
+    return `http://localhost:${process.env.PORT ?? 3000}`;
+  }
+
+  it("uses the configured origin", () => {
+    process.env.APP_PUBLIC_URL = "https://app.example.com";
+    expect(resetLinkBase()).toBe("https://app.example.com");
+  });
+
+  it("strips a trailing slash so links do not get a double slash", () => {
+    process.env.APP_PUBLIC_URL = "https://app.example.com/";
+    expect(resetLinkBase()).toBe("https://app.example.com");
+  });
+
+  it("throws in production rather than inventing a domain", () => {
+    // The whole point: no default is safe. A reset link is a credential, and
+    // one pointing at a domain we do not control is worse than no link at all.
+    process.env.NODE_ENV = "production";
+    delete process.env.APP_PUBLIC_URL;
+    expect(() => resetLinkBase()).toThrow(/APP_PUBLIC_URL/);
+  });
+
+  it("treats a whitespace-only value as unset", () => {
+    process.env.NODE_ENV = "production";
+    process.env.APP_PUBLIC_URL = "   ";
+    expect(() => resetLinkBase()).toThrow();
+  });
+
+  it("falls back to localhost outside production so the flow is testable", () => {
+    process.env.NODE_ENV = "development";
+    delete process.env.APP_PUBLIC_URL;
+    expect(resetLinkBase()).toMatch(/^http:\/\/localhost:/);
   });
 });

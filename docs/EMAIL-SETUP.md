@@ -25,6 +25,15 @@ Both stores also expect a working account-recovery path.
 
 ---
 
+> ⚠️ **`athleteai.app` is not yours.** It is registered at Porkbun with Google
+> Workspace mail already on it, and it belonged to someone else as of
+> 2026-08-12. Every example below uses `yourdomain.com` as a placeholder —
+> substitute a domain you actually control.
+>
+> The app no longer defaults to it either: `constants/legal.ts` and the reset
+> link builder now refuse to guess a domain rather than pointing users at a
+> stranger's site. See the note in each file.
+
 ## Choosing a provider
 
 Any of the three work. The code picks one by which credentials are present.
@@ -49,7 +58,7 @@ discover that the day before launch.
 Send from a **subdomain**, not your root domain:
 
 ```
-mail.athleteai.app
+mail.yourdomain.com
 ```
 
 This matters. If transactional mail is ever sent from the root domain and
@@ -69,7 +78,7 @@ mail going to spam.
 
 ```
 Type:  TXT
-Name:  mail.athleteai.app
+Name:  mail.yourdomain.com
 Value: v=spf1 include:_spf.resend.com ~all
 ```
 
@@ -86,7 +95,7 @@ Your provider gives you one to three CNAMEs:
 
 ```
 Type:  CNAME
-Name:  resend._domainkey.mail.athleteai.app
+Name:  resend._domainkey.mail.yourdomain.com
 Value: resend._domainkey.resend.com
 ```
 
@@ -96,8 +105,8 @@ DKIM survives forwarding, where SPF does not. Do not skip it.
 
 ```
 Type:  TXT
-Name:  _dmarc.mail.athleteai.app
-Value: v=DMARC1; p=none; rua=mailto:dmarc@athleteai.app; pct=100
+Name:  _dmarc.mail.yourdomain.com
+Value: v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com; pct=100
 ```
 
 **Start at `p=none`.** That means "check, report, but deliver anyway". Watch the
@@ -123,21 +132,21 @@ your domain, which is what makes SPF pass under DMARC's alignment rule.
 Local `.env` and the deployed host both need these.
 
 ```bash
-MAIL_FROM="AthleteAI <no-reply@mail.athleteai.app>"
+MAIL_FROM="AthleteAI <no-reply@mail.yourdomain.com>"
 RESEND_API_KEY=re_xxxxxxxxxxxx
 ```
 
 Postmark instead:
 
 ```bash
-MAIL_FROM="AthleteAI <no-reply@mail.athleteai.app>"
+MAIL_FROM="AthleteAI <no-reply@mail.yourdomain.com>"
 POSTMARK_SERVER_TOKEN=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 
 SES instead:
 
 ```bash
-MAIL_FROM="AthleteAI <no-reply@mail.athleteai.app>"
+MAIL_FROM="AthleteAI <no-reply@mail.yourdomain.com>"
 AWS_SES_REGION=us-east-1
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...

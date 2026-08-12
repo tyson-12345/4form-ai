@@ -369,8 +369,39 @@ async function createResetUrl(userId: string): Promise<string> {
     expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
   });
 
-  const base = process.env.APP_PUBLIC_URL ?? "https://athleteai.app";
-  return `${base}/reset-password?token=${raw}`;
+  return `${resetLinkBase()}/reset-password?token=${raw}`;
+}
+
+/**
+ * Base URL that reset links are built from.
+ *
+ * ── Why this throws instead of defaulting ───────────────────────────────────
+ * It used to fall back to `https://athleteai.app`. On 2026-08-12 that domain
+ * turned out to belong to someone else. A password-reset link is a single-use
+ * credential: sending one to a domain we do not control means mailing working
+ * account-recovery tokens to a third party, and the user sees a link that looks
+ * official and isn't.
+ *
+ * There is no safe default here. In production a missing `APP_PUBLIC_URL` is a
+ * misconfiguration that must be fixed, not papered over — the request fails,
+ * the error is logged, and the caller still gets the same generic "if that email
+ * is registered…" response, so nothing about account existence leaks either way.
+ *
+ * Locally it falls back to the dev server so the flow can be exercised.
+ */
+function resetLinkBase(): string {
+  const configured = process.env.APP_PUBLIC_URL?.trim().replace(/\/+$/, "");
+  if (configured) return configured;
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "APP_PUBLIC_URL is not set. Refusing to build a password reset link " +
+        "against a default domain — reset tokens must only ever point at a host " +
+        "we control.",
+    );
+  }
+
+  return `http://localhost:${process.env.PORT ?? 3000}`;
 }
 
 // ─── POST /api/auth/reset-password ───────────────────────────────────────────

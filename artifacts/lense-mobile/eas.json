@@ -20,7 +20,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.athleteai.app"
+        "EXPO_PUBLIC_API_URL": "https://athleteai-production-0b7f.up.railway.app"
       }
     }
   },

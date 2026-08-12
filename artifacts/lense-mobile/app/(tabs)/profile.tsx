@@ -17,14 +17,13 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
-  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 
 import { Screen, Card, Label, Chip, Chevron, Avatar, PrimaryButton } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
-import { PRIVACY_POLICY_URL, TERMS_URL, openLegal } from "@/constants/legal";
+import { PRIVACY_POLICY_URL, TERMS_URL, openLegal, openSupport } from "@/constants/legal";
 import { useAuth } from "@/lib/authContext";
 import {
   analyses as analysesApi,
@@ -216,7 +215,7 @@ export default function ProfileScreen() {
             />
             <Row
               label="Support"
-              onPress={() => void Linking.openURL("mailto:support@athleteai.app")}
+              onPress={() => void openSupport()}
             />
             <Row label="Version" value="1.0.0" last />
           </Card>
