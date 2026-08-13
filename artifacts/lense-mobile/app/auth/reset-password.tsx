@@ -23,9 +23,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Screen, Label, PrimaryButton, Chevron, Check } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { auth, ApiError, NetworkError } from "@/lib/api";
-
-/** Must match `safePassword` on the server. */
-const MIN_PASSWORD_LENGTH = 12;
+import { MIN_PASSWORD_LENGTH } from "@/constants/auth";
 
 export default function ResetPasswordScreen() {
   const insets = useSafeAreaInsets();

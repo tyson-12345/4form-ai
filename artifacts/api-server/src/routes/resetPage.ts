@@ -34,11 +34,12 @@
 
 import { Router, type IRouter } from "express";
 import crypto from "node:crypto";
+// Imported rather than restated, so this page cannot tell a user a rule the
+// server disagrees with.
+import { MIN_PASSWORD_LENGTH } from "../lib/validate.js";
 
 const router: IRouter = Router();
 
-/** Kept in step with `safePassword` in lib/validate.ts. */
-const MIN_PASSWORD_LENGTH = 12;
 
 function escapeHtml(value: string): string {
   return value

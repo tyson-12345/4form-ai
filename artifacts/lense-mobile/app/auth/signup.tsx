@@ -20,13 +20,8 @@ import { PRIVACY_POLICY_URL, TERMS_URL, openLegal } from "@/constants/legal";
 // Date maths lives in utils/ so it can be tested — this screen cannot be, and
 // a bug here either admits an under-13 or silently blocks a legitimate signup.
 import { MINIMUM_AGE_YEARS, isOldEnough, parseBirthDate, toIsoDate } from "@/utils/age";
+import { MIN_PASSWORD_LENGTH } from "@/constants/auth";
 
-/**
- * Kept in step with `safePassword` in the API's lib/validate.ts. Length is the
- * single biggest factor in real-world resistance, so we ask for length rather
- * than character-class rules people work around with "Password1!".
- */
-const MIN_PASSWORD_LENGTH = 12;
 
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();

@@ -9,6 +9,7 @@ import {
   safePassword,
   safeUuid,
   safeBirthDate,
+  MIN_PASSWORD_LENGTH,
   safeOpaqueToken,
   safeMediaUrl,
   ageInYears,
@@ -94,9 +95,22 @@ describe("safeEmail", () => {
 });
 
 describe("safePassword", () => {
-  it("requires at least 12 characters", () => {
-    expect(safePassword.safeParse("short").success).toBe(false);
-    expect(safePassword.safeParse("a".repeat(12)).success).toBe(true);
+  it("enforces the shared minimum length", () => {
+    expect(safePassword.safeParse("a".repeat(MIN_PASSWORD_LENGTH - 1)).success).toBe(false);
+    expect(safePassword.safeParse("a".repeat(MIN_PASSWORD_LENGTH)).success).toBe(true);
+  });
+
+  it("has no composition rules", () => {
+    // Deliberate. NIST SP 800-63B advises against requiring a symbol, a digit,
+    // or mixed case: they produce "Password1!" rather than entropy. Length is
+    // the only requirement, so a long lowercase passphrase must pass.
+    expect(safePassword.safeParse("correct horse battery staple").success).toBe(true);
+    expect(safePassword.safeParse("aaaaaaaa").success).toBe(true);
+  });
+
+  it("keeps a floor — an empty or one-character password is refused", () => {
+    expect(safePassword.safeParse("").success).toBe(false);
+    expect(safePassword.safeParse("a").success).toBe(false);
   });
 
   it("caps length to bound bcrypt cost", () => {

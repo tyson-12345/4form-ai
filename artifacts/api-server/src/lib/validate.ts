@@ -52,8 +52,30 @@ export const safeEmail = z
   .pipe(z.string().email().max(254));
 
 /**
- * Password. Bounded at 200 to stop bcrypt CPU-exhaustion via huge inputs, and
- * at 12 minimum because length dominates complexity for real-world resistance.
+ * The password floor, in one place. The mobile app and the reset page mirror it
+ * for their inline hints; this is the value that is actually enforced.
+ *
+ * Lowered from 12 to 8 on 2026-08-12. Twelve was creating real signup friction
+ * for a consumer app, and 8 is the floor in NIST SP 800-63B — which also
+ * advises *against* the composition rules (a symbol, a number, mixed case) that
+ * usually accompany a short minimum, because they push people toward
+ * "Password1!" rather than toward entropy. So there are none here: length is
+ * the only requirement.
+ *
+ * What carries the weight instead of a long minimum:
+ *   - bcrypt at cost 12, so offline guessing is expensive per attempt
+ *   - 10 login attempts per IP per minute
+ *   - account lockout after 5 consecutive failures
+ *   - a progressive delay doubling to 4s on each failure
+ *
+ * Those make an online guessing attack impractical regardless of length. The
+ * residual risk is a *breach* plus an offline crack of a short password, which
+ * is what the bcrypt cost factor exists for.
+ */
+export const MIN_PASSWORD_LENGTH = 8;
+
+/**
+ * Password. Bounded at 200 to stop bcrypt CPU-exhaustion via huge inputs.
  *
  * NOTE: the value is deliberately *not* sanitized — stripping characters from a
  * password would silently change it and break login for anyone using markup
@@ -61,7 +83,7 @@ export const safeEmail = z
  */
 export const safePassword = z
   .string()
-  .min(12, "Password must be at least 12 characters")
+  .min(MIN_PASSWORD_LENGTH, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
   .max(200);
 
 /** UUID path/body parameters. */

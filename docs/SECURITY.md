@@ -11,8 +11,23 @@ What's protected, how, and what still isn't. Written to be read before launch.
 | Algorithm | bcrypt |
 | Cost factor | 12 (`BCRYPT_ROUNDS` in `src/lib/auth.ts`) |
 | Comparison | `bcrypt.compare` (constant-time) — never `===` |
-| Minimum length | 12 characters |
+| Minimum length | 8 characters (`MIN_PASSWORD_LENGTH`) — no composition rules |
 | Maximum length | 200 (bounds bcrypt CPU cost) |
+
+Lowered from 12 to 8 on 2026-08-12. Twelve created real signup friction, and 8
+is the floor in NIST SP 800-63B — which also advises **against** the composition
+rules that usually accompany a short minimum, because a required symbol and
+digit produce `Password1!` rather than entropy. There are none here.
+
+What carries the weight instead of a long minimum: bcrypt at cost 12 (expensive
+per offline guess), 10 login attempts per IP per minute, lockout after 5
+consecutive failures, and a progressive delay doubling to 4s. Those make online
+guessing impractical at any length. The residual risk is a breach plus an
+offline crack, which is what the cost factor is for.
+
+The value lives in `lib/validate.ts` and is imported by the reset page and
+mirrored in `lense-mobile/constants/auth.ts`, so a form cannot state a rule the
+server disagrees with.
 
 ### Legacy hash migration
 
