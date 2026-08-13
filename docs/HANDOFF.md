@@ -102,9 +102,13 @@ Without it, an unlinked directory plus `--ci` makes `railway up` **silently
 create a brand-new project**. That happened once (after the folder rename broke
 the link) and created a stray project in Oscar's workspace.
 
-> 🔴 **Outstanding:** delete the stray project. Empty, failed deploy, nothing
-> running, but it is clutter in a shared paid account.
-> `railway delete --project 73ae908f-db01-4cfd-b445-401b87537a25`
+> ✅ **Resolved 2026-08-13.** The stray project has been deleted.
+>
+> Worth knowing for next time: `railway delete --project <id-or-name> --yes`
+> returned `not found` for a project that was plainly listed — its lookup does
+> not appear to resolve into the shared workspace, only the personal one. The
+> GraphQL mutation worked:
+> `railway api 'mutation { projectDelete(id: "<id>") }'`
 
 The CLI is authenticated as **`oac60647@gmail.com` — Oscar's account.** It is a
 shared paid account. Anything done there is attributed to him and shows on his
@@ -164,35 +168,34 @@ Read `docs/TODO-PRODUCTION.md` for the full history and reasoning.
 | 10 | Create a Sentry project, set `SENTRY_DSN` — code is wired and inert without it | 15 min |
 | 11 | Point an uptime check at `/api/health/metrics` | 15 min |
 | 12 | Connect Railway to GitHub — deploys are CLI-only, so `main` and deployed can diverge | 15 min |
-| 13 | Delete the stray Railway project (above) | 2 min |
-| 14 | Resend webhooks — bounces currently vanish; a hard bounce strands a user | 30 min |
-| 15 | Supabase PITR before real users — free tier can lose 24h | 5 min |
-| 16 | Redis — required before a second instance or rate limits multiply | 30 min |
-| 17 | `ALLOWED_ORIGINS` is localhost-only — a web build would be CORS-blocked | 5 min |
-| 18 | PostHog — cannot currently answer "does anyone record a second clip?" | 2h |
-| 19 | Log retention — security logs age out of Railway | 30 min |
-| 20 | Mobile Sentry — needs EAS dev builds; breaks Expo Go | 1h |
-| 21 | Instrument redesign — Progress, Sessions, Skeleton (+ the `useColors` migration) | days |
-| 22 | Delete the `oac60647@gmail.com` test account and sign up properly in-app | 2 min |
+| 13 | Resend webhooks — bounces currently vanish; a hard bounce strands a user | 30 min |
+| 14 | Supabase PITR before real users — free tier can lose 24h | 5 min |
+| 15 | Redis — required before a second instance or rate limits multiply | 30 min |
+| 16 | `ALLOWED_ORIGINS` is localhost-only — a web build would be CORS-blocked | 5 min |
+| 17 | PostHog — cannot currently answer "does anyone record a second clip?" | 2h |
+| 18 | Log retention — security logs age out of Railway | 30 min |
+| 19 | Mobile Sentry — needs EAS dev builds; breaks Expo Go | 1h |
+| 20 | Instrument redesign — Progress, Sessions, Skeleton (+ the `useColors` migration) | days |
+| 21 | Delete the `oac60647@gmail.com` test account and sign up properly in-app | 2 min |
 
 ### 🔵 Provider upgrades — see `docs/PROVIDERS.md`
 
 | # | Item |
 |---|---|
-| 23 | **Streaming chat** — best user-visible win, no cost change |
-| 24 | Anthropic prompt caching — worthwhile at volume |
-| 25 | Batch API for write-ups — roughly half price, analyses are already async |
-| 26 | Try Haiku for chat, keep Sonnet for the write-up |
+| 22 | **Streaming chat** — best user-visible win, no cost change |
+| 23 | Anthropic prompt caching — worthwhile at volume |
+| 24 | Batch API for write-ups — roughly half price, analyses are already async |
+| 25 | Try Haiku for chat, keep Sonnet for the write-up |
 
 ### ⚪️ Decisions
 
 | # | Item |
 |---|---|
-| 27 | Which fork survives — effectively settled: this one is deployed |
-| 28 | Build Elite or kill it |
-| 29 | Band requires 3 sessions — the core idea is invisible for a new user's first two clips |
-| 30 | Object storage for clips — Oscar's best feature, but it changes the privacy policy, both store labels, and the BIPA position |
-| 31 | `docs/LEGAL-RISK.md` is on a public repo and reads as a written admission |
+| 26 | Which fork survives — effectively settled: this one is deployed |
+| 27 | Build Elite or kill it |
+| 28 | Band requires 3 sessions — the core idea is invisible for a new user's first two clips |
+| 29 | Object storage for clips — Oscar's best feature, but it changes the privacy policy, both store labels, and the BIPA position |
+| 30 | `docs/LEGAL-RISK.md` is on a public repo and reads as a written admission |
 
 ---
 
