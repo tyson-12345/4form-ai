@@ -49,6 +49,16 @@ export const JOINT_KEYS: readonly JointKey[] = [
   "rightElbow",
 ];
 
+/**
+ * Per-joint angle readings, one entry per tracked frame, in capture order.
+ *
+ * `null` marks a frame where that joint was not visible — the arrays stay index
+ * aligned across joints so a single frame index means the same instant for all
+ * of them. Optional because clips measured by app builds before this shipped
+ * carry no series at all; see `consistencyScore` for what happens then.
+ */
+export type JointSeries = Partial<Record<JointKey, (number | null)[]>>;
+
 export interface PoseMetrics {
   /** Frames on which a pose was detected with acceptable confidence. */
   frameCount: number;
@@ -58,6 +68,8 @@ export interface PoseMetrics {
   joints: Partial<Record<JointKey, JointStats>>;
   /** Frames where each joint sat in a caution (lvl 1) or risk (lvl 2) range. */
   riskFrames: Partial<Record<JointKey, { caution: number; risk: number }>>;
+  /** Ordered angle readings per joint. Absent on clips from older app builds. */
+  series?: JointSeries;
 }
 
 export interface Scores {
@@ -151,28 +163,209 @@ export function balanceScore(metrics: PoseMetrics): number | null {
   return round(clamp(100 - (meanDelta / DEGREES_FOR_ZERO) * 100));
 }
 
-/**
- * Consistency — how repeatable the movement was, from angular variability.
- *
- * Standard deviation is scaled against each joint's own range: a joint that
- * swings through 90° is expected to vary more than one held near-static, so
- * raw stdDev alone would unfairly penalise large-ROM movements.
- */
-export function consistencyScore(metrics: PoseMetrics): number | null {
-  const ratios: number[] = [];
+// ─── Consistency ─────────────────────────────────────────────────────────────
+//
+// ── What this used to do, and why it was replaced ───────────────────────────
+// The previous implementation scored `stdDev / range` per joint, mapping 0.4 to
+// zero. That number cannot measure repeatability, because it is fixed by the
+// *shape* of the motion rather than by the athlete: a smooth full-range rep sits
+// at ≈0.354 and a linear one at ≈0.289 no matter how well or badly it is
+// performed. A textbook-perfect squat scored 12/100, and standing almost still
+// scored 25 — higher — because low travel produces both a small deviation and a
+// small range. The metric was inverted, and it capped every athlete's overall
+// score near 80 because overall is an unweighted mean.
+//
+// Repeatability is a property of the *sequence*, so it cannot be recovered from
+// a standard deviation at all. It needs the ordered readings, which the tracker
+// now sends. A clip with no detectable repetition — a single rep, a static hold,
+// a warm-up wander — has no repeatability to measure, and returns `null` rather
+// than a number, exactly as power and speed do.
 
-  for (const key of JOINT_KEYS) {
-    const stats = metrics.joints[key];
-    if (!stats) continue;
-    const range = Math.max(1, stats.max - stats.min);
-    ratios.push(Math.min(1, stats.stdDev / range));
+/** Fewest frames a cycle may span before it is noise rather than a repetition. */
+const MIN_PERIOD_FRAMES = 4;
+
+/** How strongly the signal must repeat before we accept a period at all. */
+const MIN_AUTOCORRELATION = 0.5;
+
+/** Fraction of frames a joint must be visible for before we trust its series. */
+const MIN_JOINT_COVERAGE = 0.6;
+
+/** Points each cycle is resampled to before cycles are compared. */
+const CYCLE_RESOLUTION = 32;
+
+/**
+ * Mean rep-to-rep deviation, in degrees, that scores zero.
+ *
+ * 15° is roughly the point where two reps stop looking like the same movement
+ * to the eye. Elite repeatability sits near 3–5°.
+ */
+const DEVIATION_FOR_ZERO_DEG = 15;
+
+/**
+ * Fill visibility gaps by linear interpolation, and trim the unmeasured ends.
+ *
+ * Returns `null` when the joint was visible for too little of the clip to be
+ * worth comparing — an occluded far-side limb interpolated across half the clip
+ * would otherwise contribute invented smoothness.
+ */
+function cleanSeries(raw: (number | null)[]): number[] | null {
+  const first = raw.findIndex((v) => v !== null);
+  if (first === -1) return null;
+  let last = raw.length - 1;
+  while (last > first && raw[last] === null) last--;
+
+  const span = raw.slice(first, last + 1);
+  const seen = span.filter((v) => v !== null).length;
+  if (seen / raw.length < MIN_JOINT_COVERAGE) return null;
+
+  const out: number[] = [];
+  for (let i = 0; i < span.length; i++) {
+    const v = span[i];
+    if (v !== null) {
+      out.push(v);
+      continue;
+    }
+    // Bridge the gap between the nearest real readings either side.
+    let prev = i - 1;
+    while (prev >= 0 && span[prev] === null) prev--;
+    let next = i + 1;
+    while (next < span.length && span[next] === null) next++;
+    if (prev < 0 || next >= span.length) {
+      out.push(span[prev >= 0 ? prev : next] as number);
+      continue;
+    }
+    const a = span[prev] as number;
+    const b = span[next] as number;
+    out.push(a + ((b - a) * (i - prev)) / (next - prev));
+  }
+  return out;
+}
+
+/**
+ * The repetition period of a signal, in frames, or `null` if it does not repeat.
+ *
+ * Normalised autocorrelation rather than peak-finding: peak detection needs
+ * thresholds that differ per movement, while autocorrelation asks the question
+ * directly — "does this signal look like itself, shifted?" — and answers it on
+ * the same scale for a squat and a sprint stride.
+ */
+function findPeriod(signal: number[]): number | null {
+  const n = signal.length;
+  const maxLag = Math.floor(n / 2);
+  if (maxLag < MIN_PERIOD_FRAMES) return null;
+
+  const mean = signal.reduce((a, b) => a + b, 0) / n;
+  const centred = signal.map((v) => v - mean);
+
+  const r: number[] = new Array(maxLag + 1).fill(0);
+  for (let lag = 1; lag <= maxLag; lag++) {
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i + lag < n; i++) {
+      dot += centred[i] * centred[i + lag];
+      normA += centred[i] * centred[i];
+      normB += centred[i + lag] * centred[i + lag];
+    }
+    r[lag] = normA === 0 || normB === 0 ? 0 : dot / Math.sqrt(normA * normB);
   }
 
-  if (ratios.length === 0) return null;
+  // Look for a local maximum, not merely a lag that clears the threshold.
+  //
+  // Any smooth signal resembles itself at short lags, so a single slow rep
+  // scores highly at a lag of a few frames and would be reported as a rapid
+  // repetition — which is how an unrepeated movement ends up scored as a very
+  // inconsistent one. What separates real repetition from mere smoothness is
+  // that repetition puts a *peak* back into the autocorrelation after it has
+  // fallen away; a lone arc only ever declines.
+  let bestLag: number | null = null;
+  let bestScore = MIN_AUTOCORRELATION;
 
-  const meanRatio = ratios.reduce((a, b) => a + b, 0) / ratios.length;
-  // A stdDev at 40% of range is treated as maximally inconsistent.
-  return round(clamp(100 - (meanRatio / 0.4) * 100));
+  for (let lag = MIN_PERIOD_FRAMES; lag < maxLag; lag++) {
+    const isPeak = r[lag] > r[lag - 1] && r[lag] >= r[lag + 1];
+    if (isPeak && r[lag] > bestScore) {
+      bestScore = r[lag];
+      bestLag = lag;
+    }
+  }
+
+  return bestLag;
+}
+
+/** Resample `slice` onto a fixed number of points so cycles can be compared. */
+function resample(slice: number[], points: number): number[] {
+  if (slice.length === 0) return [];
+  const out: number[] = [];
+  for (let i = 0; i < points; i++) {
+    const pos = (i * (slice.length - 1)) / (points - 1);
+    const lo = Math.floor(pos);
+    const hi = Math.min(slice.length - 1, lo + 1);
+    out.push(slice[lo] + (slice[hi] - slice[lo]) * (pos - lo));
+  }
+  return out;
+}
+
+/**
+ * Mean spread between repetitions of `signal`, in degrees.
+ *
+ * Each cycle is resampled to a common length, then we take the standard
+ * deviation across cycles at each point of the movement and average it. The
+ * result reads directly: "your reps differ by about N degrees".
+ */
+function cycleSpreadDegrees(signal: number[], period: number): number | null {
+  const cycles = Math.floor(signal.length / period);
+  if (cycles < 2) return null;
+
+  const shapes: number[][] = [];
+  for (let c = 0; c < cycles; c++) {
+    shapes.push(resample(signal.slice(c * period, (c + 1) * period), CYCLE_RESOLUTION));
+  }
+
+  let total = 0;
+  for (let i = 0; i < CYCLE_RESOLUTION; i++) {
+    const at = shapes.map((s) => s[i]);
+    const mean = at.reduce((a, b) => a + b, 0) / at.length;
+    total += Math.sqrt(at.reduce((a, v) => a + (v - mean) ** 2, 0) / at.length);
+  }
+  return total / CYCLE_RESOLUTION;
+}
+
+/**
+ * Consistency — how closely the athlete's repetitions match each other.
+ *
+ * `null` when there is nothing to compare: no series (an older app build), no
+ * joint tracked well enough, or a movement that does not repeat. A single rep
+ * is not inconsistent; it is unmeasured, and saying so is the point.
+ */
+export function consistencyScore(metrics: PoseMetrics): number | null {
+  if (!metrics.series) return null;
+
+  // Clean every joint first — the period is a property of the whole body, so
+  // it is found once on the clearest signal and then applied to all of them.
+  const cleaned: { key: JointKey; signal: number[]; range: number }[] = [];
+  for (const key of JOINT_KEYS) {
+    const raw = metrics.series[key];
+    if (!raw || raw.length === 0) continue;
+    const signal = cleanSeries(raw);
+    if (!signal || signal.length < MIN_PERIOD_FRAMES * 2) continue;
+    cleaned.push({ key, signal, range: Math.max(...signal) - Math.min(...signal) });
+  }
+  if (cleaned.length === 0) return null;
+
+  // The joint that travels furthest carries the movement's rhythm most clearly.
+  const driver = cleaned.reduce((a, b) => (b.range > a.range ? b : a));
+  const period = findPeriod(driver.signal);
+  if (period === null) return null;
+
+  const spreads: number[] = [];
+  for (const { signal } of cleaned) {
+    const spread = cycleSpreadDegrees(signal, period);
+    if (spread !== null) spreads.push(spread);
+  }
+  if (spreads.length === 0) return null;
+
+  const meanSpread = spreads.reduce((a, b) => a + b, 0) / spreads.length;
+  return round(clamp(100 - (meanSpread / DEVIATION_FOR_ZERO_DEG) * 100));
 }
 
 /**

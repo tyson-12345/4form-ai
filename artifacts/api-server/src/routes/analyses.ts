@@ -54,12 +54,27 @@ const JOINT_ENUM = z.enum([
   "rightElbow",
 ]);
 
+/**
+ * Ordered angle readings for one joint, `null` where it was not visible.
+ *
+ * Bounded at 600 against SCAN_SAMPLES of 90: generous enough that raising the
+ * sample cap does not require a schema change, tight enough that six of these
+ * cannot approach the 256 kB body limit.
+ */
+const jointSeriesSchema = z.array(z.number().min(0).max(360).nullable()).max(600);
+
 const poseMetricsSchema = z.object({
   frameCount: z.number().int().min(0).max(1_000_000),
   trackingQuality: z.number().min(0).max(1),
   durationSec: z.number().min(0).max(7200),
   joints: z.record(JOINT_ENUM, jointStatsSchema),
   riskFrames: z.record(JOINT_ENUM, riskFramesSchema),
+  /**
+   * Optional so clips from app builds predating the consistency rewrite are
+   * still accepted. Those score `null` for consistency rather than being
+   * rejected — the rest of the measurement is unaffected.
+   */
+  series: z.record(JOINT_ENUM, jointSeriesSchema).optional(),
 });
 
 const createAnalysisSchema = z.object({

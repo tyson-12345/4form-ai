@@ -47,6 +47,12 @@ export interface PoseMetrics {
   durationSec: number;
   joints: Partial<Record<JointKey, JointStats>>;
   riskFrames: Partial<Record<JointKey, { caution: number; risk: number }>>;
+  /**
+   * Ordered readings per joint, index-aligned across joints, `null` where a
+   * joint was not visible on that frame. Scan mode only — the interactive
+   * overlay does not accumulate. Consumed by the server's consistency score.
+   */
+  series?: Partial<Record<JointKey, (number | null)[]>>;
 }
 
 export type PoseMessage =
@@ -230,10 +236,25 @@ ${
   // ── Measurement accumulators (scan mode) ──
   var KEYS = ["leftKnee","rightKnee","leftHip","rightHip","leftElbow","rightElbow"];
   var acc = {};
+  // Ordered readings per joint, one entry per tracked frame, null where the
+  // joint was not visible. Consistency is rep-to-rep agreement, which is a
+  // property of the sequence — the aggregates below cannot express it, so the
+  // sequence itself has to travel. Bounded by SCAN_SAMPLES, so this is at most
+  // 6 x 90 numbers.
+  var series = {};
   KEYS.forEach(function(k){
     acc[k] = { n:0, sum:0, sumSq:0, min:Infinity, max:-Infinity, caution:0, risk:0 };
+    series[k] = [];
   });
   var trackedFrames = 0, attemptedFrames = 0;
+
+  // Push one entry per joint per tracked frame, so index N means the same
+  // instant for every joint. Alignment is what makes the cycles comparable.
+  function recordFrame(seen){
+    KEYS.forEach(function(k){
+      series[k].push(k in seen ? seen[k] : null);
+    });
+  }
 
   function record(key, deg, level){
     var a = acc[key];
@@ -245,10 +266,11 @@ ${
   }
 
   function buildMetrics(){
-    var joints = {}, riskFrames = {};
+    var joints = {}, riskFrames = {}, out = {};
     KEYS.forEach(function(k){
       var a = acc[k];
       if (a.n === 0) return;
+      out[k] = series[k];
       var mean = a.sum / a.n;
       var variance = Math.max(0, a.sumSq / a.n - mean * mean);
       joints[k] = {
@@ -264,7 +286,8 @@ ${
       trackingQuality: attemptedFrames > 0 ? Math.round((trackedFrames / attemptedFrames) * 100) / 100 : 0,
       durationSec: Math.round((video.duration || 0) * 10) / 10,
       joints: joints,
-      riskFrames: riskFrames
+      riskFrames: riskFrames,
+      series: out
     };
   }
 
@@ -293,7 +316,12 @@ ${
     var measured = Object.keys(jr);
     if (measured.length > 0) {
       trackedFrames++;
-      measured.forEach(function(idx){ record(jr[idx].key, jr[idx].deg, jr[idx].lvl); });
+      var seen = {};
+      measured.forEach(function(idx){
+        record(jr[idx].key, jr[idx].deg, jr[idx].lvl);
+        seen[jr[idx].key] = jr[idx].deg;
+      });
+      if (IS_SCAN) recordFrame(seen);
     }
 
     if (IS_SCAN) { advanceScan(); return; }

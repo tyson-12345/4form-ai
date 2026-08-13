@@ -144,27 +144,93 @@ describe("balanceScore", () => {
 });
 
 describe("consistencyScore", () => {
-  it("rewards low variability relative to range", () => {
-    const m = goodMetrics({ joints: {} });
-    m.joints.leftKnee = { min: 100, max: 180, mean: 140, stdDev: 2 };
-    expect(consistencyScore(m)!).toBeGreaterThan(90);
+  /**
+   * `count` cycles of a smooth movement, each swinging `lo`→`hi`→`lo`.
+   *
+   * `drift` shrinks the amplitude progressively across the clip, the way range
+   * of motion decays under fatigue. Progressive rather than alternating on
+   * purpose: an every-other-rep wobble is not inconsistency at all, it is a
+   * two-rep cycle that repeats perfectly, and the scorer is right to say so.
+   */
+  function reps(count: number, lo: number, hi: number, perRep = 20, drift = 0): number[] {
+    const out: number[] = [];
+    const mid = (hi + lo) / 2;
+    const base = (hi - lo) / 2;
+    for (let c = 0; c < count; c++) {
+      const amp = base - drift * (count > 1 ? c / (count - 1) : 0);
+      for (let i = 0; i < perRep; i++) {
+        out.push(mid - amp * Math.cos((2 * Math.PI * i) / perRep));
+      }
+    }
+    return out;
+  }
+
+  const withSeries = (signal: (number | null)[]) =>
+    goodMetrics({ series: { leftKnee: signal, rightKnee: signal } });
+
+  it("is null when the clip carries no series at all", () => {
+    // Clips measured by app builds predating this must still be accepted; they
+    // simply have no repeatability to report.
+    const m = goodMetrics();
+    expect(m.series).toBeUndefined();
+    expect(consistencyScore(m)).toBeNull();
   });
 
-  it("penalises high variability relative to range", () => {
-    const m = goodMetrics({ joints: {} });
-    m.joints.leftKnee = { min: 100, max: 180, mean: 140, stdDev: 40 };
-    expect(consistencyScore(m)!).toBeLessThan(10);
+  it("is null for a single rep — one repetition has no repeatability", () => {
+    expect(consistencyScore(withSeries(reps(1, 80, 170, 40)))).toBeNull();
   });
 
-  it("does not penalise large range of motion on its own", () => {
-    // A big movement should not score worse than a small one just for being big.
-    const wide = goodMetrics({ joints: {} });
-    wide.joints.leftKnee = { min: 60, max: 180, mean: 120, stdDev: 12 };
+  it("is null for a static hold, rather than scoring it well", () => {
+    // The old metric gave motionless clips a *better* score than real reps.
+    expect(consistencyScore(withSeries(new Array(80).fill(120)))).toBeNull();
+  });
 
-    const narrow = goodMetrics({ joints: {} });
-    narrow.joints.leftKnee = { min: 130, max: 160, mean: 145, stdDev: 3 };
+  it("scores identical repetitions near 100", () => {
+    expect(consistencyScore(withSeries(reps(4, 80, 170)))!).toBeGreaterThan(95);
+  });
 
-    expect(consistencyScore(wide)!).toBeCloseTo(consistencyScore(narrow)!, 0);
+  it("scores a textbook full-range rep highly, not near zero", () => {
+    // The regression that prompted this rewrite: a perfect squat scored 12.
+    expect(consistencyScore(withSeries(reps(4, 80, 170)))!).toBeGreaterThan(90);
+  });
+
+  it("does not penalise range of motion on its own", () => {
+    const wide = consistencyScore(withSeries(reps(4, 60, 180)))!;
+    const narrow = consistencyScore(withSeries(reps(4, 130, 160)))!;
+    expect(wide).toBeCloseTo(narrow, 0);
+  });
+
+  it("penalises reps that vary from each other", () => {
+    const steady = consistencyScore(withSeries(reps(4, 80, 170, 20, 0)))!;
+    const erratic = consistencyScore(withSeries(reps(4, 80, 170, 20, 25)))!;
+    expect(erratic).toBeLessThan(steady);
+  });
+
+  it("ranks a clean athlete above an erratic one", () => {
+    expect(consistencyScore(withSeries(reps(4, 80, 170, 20, 2)))!).toBeGreaterThan(
+      consistencyScore(withSeries(reps(4, 80, 170, 20, 30)))!,
+    );
+  });
+
+  it("bridges brief visibility gaps rather than discarding the joint", () => {
+    const signal: (number | null)[] = reps(4, 80, 170);
+    signal[5] = null;
+    signal[31] = null;
+    expect(consistencyScore(withSeries(signal))!).toBeGreaterThan(90);
+  });
+
+  it("is null when a joint was visible for too little of the clip", () => {
+    const signal: (number | null)[] = reps(4, 80, 170);
+    for (let i = 0; i < signal.length * 0.7; i++) signal[i] = null;
+    expect(consistencyScore(withSeries(signal))).toBeNull();
+  });
+
+  it("no longer lets standing still outscore a real rep", () => {
+    // The exact inversion this replaced: motionless 25, perfect rep 12.
+    const moving = consistencyScore(withSeries(reps(4, 80, 170)));
+    const still = consistencyScore(withSeries(new Array(80).fill(120)));
+    expect(still).toBeNull();
+    expect(moving!).toBeGreaterThan(90);
   });
 });
 

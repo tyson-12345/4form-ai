@@ -27,10 +27,18 @@ import { defineConfig } from "vitest/config";
  *
  * A real harness for the screens themselves is still worth doing; this is how to
  * cover the parts that matter until then.
+ *
+ * ── Why `lib/` is included too, from 2026-08-13 ─────────────────────────────
+ * `lib/poseTracker.ts` builds the tracker's browser JS inside a template
+ * string. TypeScript never parses that code — it is a string until a WebView
+ * evaluates it on a phone — so a syntax error in it typechecks clean, ships,
+ * and fails silently at measurement time. `lib/poseTracker.test.ts` parses the
+ * emitted script so that blind spot is covered by CI rather than by a user
+ * filming a squat.
  */
 export default defineConfig({
   test: {
-    include: ["utils/**/*.test.ts"],
+    include: ["utils/**/*.test.ts", "lib/**/*.test.ts"],
     environment: "node",
   },
 });
