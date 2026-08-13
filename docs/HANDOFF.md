@@ -199,7 +199,7 @@ Read `docs/TODO-PRODUCTION.md` for the full history and reasoning.
 | 18 | Log retention — security logs age out of Railway | 30 min |
 | 19 | Mobile Sentry — needs EAS dev builds; breaks Expo Go | 1h |
 | 20 | Instrument redesign — Progress, Sessions, Skeleton (+ the `useColors` migration) | days |
-| 21 | Delete the `oac60647@gmail.com` test account and sign up properly in-app | 2 min |
+| 21 | Delete the `oac60647@gmail.com` test account — **the sign-up half is done** (Tyson signed up fresh in-app on 2026-08-13, against the live Railway API / production Supabase). The old test account has **not** been deleted; it is still live in production. Deleting it destroys production data, so confirm the correct account before running anything | 2 min |
 
 ### 🔵 Provider upgrades — see `docs/PROVIDERS.md`
 
