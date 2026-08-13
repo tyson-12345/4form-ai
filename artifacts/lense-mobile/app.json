@@ -26,7 +26,9 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#101312"
       },
-      "permissions": ["android.permission.READ_MEDIA_VIDEO"],
+      "permissions": [
+        "android.permission.READ_MEDIA_VIDEO"
+      ],
       "blockedPermissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
@@ -50,7 +52,8 @@
           "cameraPermission": false,
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
