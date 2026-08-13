@@ -19,6 +19,14 @@ for (const mode of ["scan", "interactive"] as const) {
   });
 }
 
+it("carries the camera-view measurement in the scan payload", () => {
+  // Balance is gated on this. If it stops being sent, every clip silently
+  // loses its symmetry score rather than failing loudly.
+  const all = inlineScripts(buildPoseHtml({ videoUri: "file:///clip.mp4", mode: "scan" })).join("\n");
+  expect(all).toContain("recordFacing");
+  expect(all).toMatch(/facingRatio:\s*medianFacing\(\)/);
+});
+
 it("carries the per-frame angle series in the scan payload", () => {
   // Consistency is rep-to-rep agreement, which the aggregates cannot express.
   // If this stops being sent, consistency silently becomes null for everyone.

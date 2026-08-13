@@ -75,6 +75,12 @@ const poseMetricsSchema = z.object({
    * rejected — the rest of the measurement is unaffected.
    */
   series: z.record(JOINT_ENUM, jointSeriesSchema).optional(),
+  /**
+   * How square the athlete stood to the camera; see `balanceScore`. Nullable
+   * because the tracker reports `null` when the torso was never fully visible,
+   * and optional for the same backward-compatibility reason as `series`.
+   */
+  facingRatio: z.number().min(0).max(10).nullable().optional(),
 });
 
 const createAnalysisSchema = z.object({

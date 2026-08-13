@@ -12,12 +12,18 @@ import {
   type PoseMetrics,
 } from "./scoring.js";
 
-/** A well-tracked clip with symmetric, clean movement. */
+/**
+ * A well-tracked clip with symmetric, clean movement.
+ *
+ * `facingRatio` is set to a square-on view so the balance comparison is
+ * exercised by default; the view gate itself is covered separately.
+ */
 function goodMetrics(overrides: Partial<PoseMetrics> = {}): PoseMetrics {
   return {
     frameCount: 90,
     trackingQuality: 0.95,
     durationSec: 7.5,
+    facingRatio: 0.75,
     joints: {
       leftKnee: { min: 95, max: 175, mean: 135, stdDev: 22 },
       rightKnee: { min: 96, max: 174, mean: 135, stdDev: 22 },
@@ -140,6 +146,42 @@ describe("balanceScore", () => {
     const m = goodMetrics({ joints: {} });
     m.joints.leftKnee = { min: 90, max: 170, mean: 130, stdDev: 20 };
     expect(balanceScore(m)).toBeNull();
+  });
+
+  describe("camera view gate", () => {
+    /** Asymmetric enough that a computed score would be clearly non-null. */
+    function lopsided(facingRatio: number | null | undefined): PoseMetrics {
+      const m = goodMetrics({ joints: {}, facingRatio });
+      m.joints.leftKnee = { min: 90, max: 170, mean: 120, stdDev: 20 };
+      m.joints.rightKnee = { min: 90, max: 170, mean: 135, stdDev: 20 };
+      return m;
+    }
+
+    it("scores symmetry when the athlete was square to the camera", () => {
+      expect(lopsided(0.75)).toBeDefined();
+      expect(balanceScore(lopsided(0.75))).not.toBeNull();
+    });
+
+    it("is null in profile, where the far side is occluded rather than measured", () => {
+      // The view the app actually asks for. MediaPipe still emits landmarks for
+      // the hidden limb, so without this the score looks measured and is not.
+      expect(balanceScore(lopsided(0.1))).toBeNull();
+    });
+
+    it("is null just below the threshold and scores just above it", () => {
+      expect(balanceScore(lopsided(0.34))).toBeNull();
+      expect(balanceScore(lopsided(0.36))).not.toBeNull();
+    });
+
+    it("is null when the tracker could not read the view at all", () => {
+      expect(balanceScore(lopsided(null))).toBeNull();
+    });
+
+    it("is null for clips from app builds predating the view measurement", () => {
+      // Cannot be recovered after the fact: the clip may have been fine or may
+      // have been shot in profile, and nothing recorded which.
+      expect(balanceScore(lopsided(undefined))).toBeNull();
+    });
   });
 });
 

@@ -53,6 +53,13 @@ export interface PoseMetrics {
    * overlay does not accumulate. Consumed by the server's consistency score.
    */
   series?: Partial<Record<JointKey, (number | null)[]>>;
+  /**
+   * Median shoulder-and-hip width against torso length across the clip — how
+   * square the athlete stood to the camera. Near 0.75 filmed front-on, near 0.1
+   * in profile. `null` when the torso was never fully visible. Gates the
+   * left/right symmetry score, which profile footage cannot support.
+   */
+  facingRatio?: number | null;
 }
 
 export type PoseMessage =
@@ -256,6 +263,41 @@ ${
     });
   }
 
+  // ── How square the athlete is to the camera ──
+  //
+  // Left/right symmetry can only be compared when both sides are actually in
+  // view. Filmed side-on — which is what we ask for, because it is the right
+  // angle for knee and hip flexion — one side is behind the other and its
+  // landmarks are inferred rather than seen.
+  //
+  // Shoulder and hip separation collapse toward zero as the athlete turns to
+  // profile, so their width against torso length reads the view angle directly.
+  // Square to camera lands near 0.75 (shoulder breadth is about 0.85 of
+  // shoulder-to-hip length, hip breadth about 0.65); true profile lands near
+  // 0.1. Torso pitch during a squat shortens the projected torso and inflates
+  // the ratio by at most ~1.4x, which is far smaller than the ~7x gap between
+  // the two views, and the median across frames damps it further.
+  var facings = [];
+  function recordFacing(pt, vis){
+    if (!(vis(11) && vis(12) && vis(23) && vis(24))) return;
+    var ls = pt(11), rs = pt(12), lh = pt(23), rh = pt(24);
+    var shoulderSep = Math.abs(ls.x - rs.x);
+    var hipSep = Math.abs(lh.x - rh.x);
+    var midSx = (ls.x + rs.x) / 2, midSy = (ls.y + rs.y) / 2;
+    var midHx = (lh.x + rh.x) / 2, midHy = (lh.y + rh.y) / 2;
+    var torso = Math.sqrt((midSx - midHx) * (midSx - midHx) + (midSy - midHy) * (midSy - midHy));
+    if (torso <= 1) return;
+    facings.push((shoulderSep + hipSep) / (2 * torso));
+  }
+
+  function medianFacing(){
+    if (facings.length === 0) return null;
+    var sorted = facings.slice().sort(function(a, b){ return a - b; });
+    var mid = Math.floor(sorted.length / 2);
+    var v = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    return Math.round(v * 1000) / 1000;
+  }
+
   function record(key, deg, level){
     var a = acc[key];
     a.n++; a.sum += deg; a.sumSq += deg*deg;
@@ -287,7 +329,8 @@ ${
       durationSec: Math.round((video.duration || 0) * 10) / 10,
       joints: joints,
       riskFrames: riskFrames,
-      series: out
+      series: out,
+      facingRatio: medianFacing()
     };
   }
 
@@ -321,7 +364,7 @@ ${
         record(jr[idx].key, jr[idx].deg, jr[idx].lvl);
         seen[jr[idx].key] = jr[idx].deg;
       });
-      if (IS_SCAN) recordFrame(seen);
+      if (IS_SCAN) { recordFrame(seen); recordFacing(pt, vis); }
     }
 
     if (IS_SCAN) { advanceScan(); return; }

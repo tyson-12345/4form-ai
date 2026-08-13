@@ -70,6 +70,12 @@ export interface PoseMetrics {
   riskFrames: Partial<Record<JointKey, { caution: number; risk: number }>>;
   /** Ordered angle readings per joint. Absent on clips from older app builds. */
   series?: JointSeries;
+  /**
+   * Median shoulder-and-hip width against torso length — how square the athlete
+   * stood to the camera. Absent on clips from older app builds; `null` when the
+   * torso was never fully visible. See `balanceScore`.
+   */
+  facingRatio?: number | null;
 }
 
 export interface Scores {
@@ -135,13 +141,53 @@ export function techniqueScore(metrics: PoseMetrics): number | null {
 }
 
 /**
- * Balance — left/right symmetry.
+ * How square to the camera the athlete must be before left/right symmetry means
+ * anything.
+ *
+ * Filmed square-on the ratio sits near 0.75 — shoulder breadth is roughly 0.85
+ * of shoulder-to-hip length and hip breadth roughly 0.65. In true profile it
+ * collapses to about 0.1. 0.35 sits between them, at roughly 28° off profile,
+ * with margin for body-type variation and for the torso pitch of a deep hinge.
+ *
+ * The failure direction is deliberate: an ambiguous view returns `null` rather
+ * than a number we cannot stand behind.
+ */
+const MIN_FACING_RATIO_FOR_BALANCE = 0.35;
+
+/**
+ * Balance — left/right symmetry, when the camera angle can actually show it.
  *
  * Compares the mean angle of each paired joint. A 30° mean difference scores 0;
  * identical sides score 100. Pairs where only one side was tracked are skipped
  * rather than assumed symmetric.
+ *
+ * ── Why the view gate exists ────────────────────────────────────────────────
+ * Every filming instruction in the app asks for side-on, and it is right to:
+ * that is the view where knee, hip and elbow flexion project cleanly, which is
+ * what Technique and Mobility are built from. It is also the one view where the
+ * far side of the body is behind the near side. MediaPipe still emits landmarks
+ * for the occluded limb — inferred, not seen — and the visibility gate in the
+ * tracker is permissive enough to let them through.
+ *
+ * So this score was being computed, and reported with the same confidence as
+ * the rest, from the least reliable measurement the recommended camera angle
+ * can produce. It now returns `null` unless the athlete was square enough for
+ * both sides to be genuinely visible. That means most clips shot to our own
+ * guidance will not carry a Balance score — which is the honest outcome, and
+ * the same choice already made for power and speed.
+ *
+ * Clips from app builds that predate `facingRatio` also return `null`: the
+ * measurement may have been fine or may have been occluded, and there is no way
+ * to tell after the fact.
  */
 export function balanceScore(metrics: PoseMetrics): number | null {
+  if (metrics.facingRatio == null) return null;
+  if (metrics.facingRatio < MIN_FACING_RATIO_FOR_BALANCE) return null;
+  return rawBalanceScore(metrics);
+}
+
+/** The symmetry comparison itself, once the view has been judged usable. */
+function rawBalanceScore(metrics: PoseMetrics): number | null {
   const pairs: [JointKey, JointKey][] = [
     ["leftKnee", "rightKnee"],
     ["leftHip", "rightHip"],
