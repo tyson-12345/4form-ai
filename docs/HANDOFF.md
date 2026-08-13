@@ -60,9 +60,14 @@ xcodebuild -workspace AthleteAI.xcworkspace -scheme AthleteAI \
   -derivedDataPath ./build build
 ```
 
-JS-only changes need no rebuild — Metro reloads them.
+JS-only changes need no rebuild — Metro reloads them. **`.env` changes are not
+JS changes** — they need a Metro restart. See trap 5.
 
-### Four traps already paid for. Do not rediscover these.
+`.env` currently points at the live Railway API, so the simulator talks to
+production Supabase data. Switch it back to a local server when doing backend
+work; the previous local value is kept as a comment in that file.
+
+### Five traps already paid for. Do not rediscover these.
 
 1. **The repo path must not contain spaces.** `expo-constants` ships a build
    phase that double-expands `$PODS_TARGET_SRCROOT` through two shells; a space
@@ -86,6 +91,24 @@ JS-only changes need no rebuild — Metro reloads them.
 4. **Never wait on a build with `until ! pgrep -f xcodebuild`.** `pgrep -f`
    matches full command lines, so it matches the waiter itself and never exits.
    Watch the **log file's growth and its result line** instead.
+
+5. **"Can't reach the server" on login is almost always `.env`, not the app.**
+   `artifacts/lense-mobile/.env` sets `EXPO_PUBLIC_API_URL`. It was left pointing
+   at a local dev server (`http://192.168.1.157:3001`) with nothing listening, so
+   every auth call died with `ECONNREFUSED (61)` → `NSURLErrorDomain -1004`. The
+   app was fine; it was aimed at a backend that did not exist.
+   - Confirm from the simulator, not from the code:
+     `xcrun simctl spawn <UDID> log show --last 3m --predicate 'processImagePath CONTAINS "AthleteAI"' --style compact | grep -i "error\|3001"`
+     — it prints the exact failing URL.
+   - **`EXPO_PUBLIC_*` vars are inlined into the bundle at build time, not read
+     at runtime.** Editing `.env` does nothing until Metro restarts. Restart with
+     `--clear` (see trap 3) and relaunch the app.
+   - To prove the change landed rather than assume it, grep the *served* bundle:
+     `curl -s "http://localhost:8081/.expo/.virtual-metro-entry.bundle?platform=ios&dev=true" | grep -c <your-host>`
+     (that virtual entry path is the one the app actually requests — `/index.bundle`
+     and `/node_modules/expo-router/entry.bundle` both 404).
+   - Note `.env.example` documents port **3000**, but the stale `.env` used
+     **3001**, and `api-server` has no default — `PORT` is required.
 
 ---
 
