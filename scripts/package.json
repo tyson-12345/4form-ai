@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "grant-tier": "tsx ./src/grant-tier.ts",
     "hello": "tsx ./src/hello.ts",
     "migrate-passwords": "tsx ./src/migrate-passwords.ts",
     "prune-reset-tokens": "tsx ./src/prune-reset-tokens.ts",
