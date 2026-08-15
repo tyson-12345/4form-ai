@@ -309,7 +309,7 @@ function findPeriod(signal: number[]): number | null {
   const mean = signal.reduce((a, b) => a + b, 0) / n;
   const centred = signal.map((v) => v - mean);
 
-  const r: number[] = new Array(maxLag + 1).fill(0);
+  const r: number[] = new Array<number>(maxLag + 1).fill(0);
   for (let lag = 1; lag <= maxLag; lag++) {
     let dot = 0;
     let normA = 0;

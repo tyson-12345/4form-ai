@@ -1,6 +1,29 @@
-# Handoff — state as of 13 August 2026
+# Handoff — state as of 15 August 2026
 
 Written so a session with no prior context can pick up and be useful in one read.
+
+> ⚠️ **Deploy debt (2026-08-15).** A large working session landed on `main`
+> that production has not seen. Before or with the next `railway up`:
+>
+> 1. Apply `lib/db/migrations/0005_analysis_soft_delete.sql` **and**
+>    `0006_progress_entry_provenance.sql` to Supabase (`psql -f`, or
+>    `drizzle-kit push`). The new server code reads `analyses.deleted_at`
+>    and writes `progress_entries.analysis_id` — deploying without the
+>    columns breaks list/delete/quota paths.
+> 2. Redeploy the API (`railway up`, CLI-only as ever). Server changes:
+>    quota integrity (delete no longer refunds; failed/unscored no longer
+>    charge), rep detection stored into `poseMetrics.detectedReps`,
+>    band-aware fallback risk prose, per-joint fallback prevention.
+> 3. The mobile app changes are JS-only except `app.json`'s photo-library
+>    usage strings (native rebuild required before the store submission).
+>
+> What shipped in that session, in one line each: sign-out fixed (route
+> collision — `/` is now a dispatcher, landing moved to `/welcome`, tabs
+> guarded); every Alert works on web (`lib/alert.ts`); device-local profile
+> photos; the hero body map replaced with the caliper-language measure
+> figure; chat paywall shows before typing; DOB row fits phone-width web;
+> rep counts + session deltas on the readout; quota loopholes closed both
+> directions; deleted sessions leave the Progress trend.
 
 ---
 
@@ -19,14 +42,22 @@ Written so a session with no prior context can pick up and be useful in one read
 **Verify commands** (all should pass):
 
 ```bash
-pnpm --filter @workspace/api-server test        # 344
-pnpm --filter @workspace/lense-mobile test      # 59
+pnpm --filter @workspace/api-server test        # 367
+pnpm --filter @workspace/lense-mobile test      # 76
 pnpm --filter @workspace/api-server typecheck
 pnpm --filter @workspace/lense-mobile typecheck
 pnpm --filter @workspace/api-server lint        # 0 errors, 11 known warnings
 pnpm --filter @workspace/scripts run verify-database
 curl -s https://athleteai-production-0b7f.up.railway.app/api/health/metrics | jq .features
 ```
+
+**Local full stack (2026-08-15):** Homebrew Postgres 17 with database
+`athleteai_dev`; `artifacts/api-server/.env.local` points at it (port 3001,
+throwaway JWT secret, `ALLOW_DEV_TIER_OVERRIDE=true` so
+`POST /api/subscriptions/dev-set-tier` works). Run with
+`node --env-file=.env.local ./dist/index.mjs` after `pnpm run build`. The
+mobile `.env` keeps the localhost alternative as a comment. Local test data
+(walkthrough-1@example.com) lives only in that local database.
 
 ---
 
