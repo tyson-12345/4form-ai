@@ -20,6 +20,7 @@ import {
   type TextStyle,
 } from "react-native";
 import Svg, { Line, Path, Circle, Polyline, Rect, Polygon } from "react-native-svg";
+import { Image as ExpoImage } from "expo-image";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
 
 // ─── Label ───────────────────────────────────────────────────────────────────
@@ -731,8 +732,22 @@ export function Screen({
   return <View style={[s.screen, style]}>{children}</View>;
 }
 
-/** Avatar showing the athlete's initials. */
-export function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+/** Avatar: the athlete's photo when one is set, their initials otherwise. */
+export function Avatar({ name, uri, size = 40 }: { name: string; uri?: string | null; size?: number }) {
+  const round = { width: size, height: size, borderRadius: size / 2 };
+
+  if (uri) {
+    return (
+      <ExpoImage
+        source={{ uri }}
+        style={[s.avatar, round]}
+        contentFit="cover"
+        transition={120}
+        accessibilityLabel={`${name}'s profile photo`}
+      />
+    );
+  }
+
   const initials =
     name
       .trim()
@@ -741,7 +756,7 @@ export function Avatar({ name, size = 40 }: { name: string; size?: number }) {
       .map((w) => w[0]?.toUpperCase() ?? "")
       .join("") || "?";
   return (
-    <View style={[s.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
+    <View style={[s.avatar, round]}>
       <Text style={[T.measured, { color: color.onInk, fontSize: size * 0.3 }]}>{initials}</Text>
     </View>
   );

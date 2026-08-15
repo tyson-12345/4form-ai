@@ -12,6 +12,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  Platform,
   Pressable,
   Modal,
   TextInput,
@@ -19,6 +20,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
+import Svg, { Path as SvgPath, Circle as SvgCircle } from "react-native-svg";
 
 import { Screen, Card, Label, Chip, Chevron, Avatar, PrimaryButton } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
@@ -41,7 +44,8 @@ type EditField = "name" | "sport" | "level" | "weeklyGoal" | null;
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, profile, subscription, logout, updateProfile } = useAuth();
+  const { user, profile, subscription, logout, updateProfile, avatarUri, setAvatarPhoto, removeAvatarPhoto } =
+    useAuth();
 
   const [sessions, setSessions] = useState<AnalysisRecord[]>([]);
   const [usage, setUsage] = useState<UsageRecord | null>(null);
@@ -49,6 +53,42 @@ export default function ProfileScreen() {
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [photoOpen, setPhotoOpen] = useState(false);
+
+  /**
+   * Pick a square-cropped photo from the library and store it on-device.
+   * The photo never leaves the phone — see lib/avatarStore.ts.
+   */
+  async function choosePhoto() {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        alert(
+          "Photo access needed",
+          "Allow photo access in Settings so you can pick a profile photo.",
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images",
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        // Web stores the photo as a data URI; native copies the file.
+        base64: Platform.OS === "web",
+      });
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      if (!asset?.uri) return;
+
+      await setAvatarPhoto(asset.uri, asset.base64);
+      setPhotoOpen(false);
+    } catch {
+      alert("Couldn't set that photo", "Please try a different image.");
+    }
+  }
 
   const load = useCallback(async () => {
     const [list, u] = await Promise.allSettled([analysesApi.list(), analysesApi.usage()]);
@@ -120,7 +160,18 @@ export default function ProfileScreen() {
       >
         {/* ── Identity ── */}
         <View style={s.identity}>
-          <Avatar name={displayName} size={62} />
+          <Pressable
+            onPress={() => setPhotoOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Change profile photo"
+            style={({ pressed }) => pressed && { opacity: 0.8 }}
+          >
+            <Avatar name={displayName} uri={avatarUri} size={62} />
+            {/* The affordance that makes the avatar read as editable. */}
+            <View style={s.avatarBadge}>
+              <CameraGlyph />
+            </View>
+          </Pressable>
           <View style={{ flex: 1 }}>
             <Text style={[T.metricMedium, { fontSize: 24 }]} numberOfLines={1}>
               {displayName}
@@ -337,10 +388,56 @@ export default function ProfileScreen() {
         </Screen>
       </Modal>
 
+      {/* ── Photo sheet ── */}
+      <Modal
+        visible={photoOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setPhotoOpen(false)}
+      >
+        <Screen>
+          <View style={s.sheetHead}>
+            <Pressable onPress={() => setPhotoOpen(false)} hitSlop={12}>
+              <Text style={[T.buttonSmall, { color: color.textMuted }]}>Cancel</Text>
+            </Pressable>
+            <Label>PROFILE PHOTO</Label>
+            <View style={{ width: 48 }} />
+          </View>
+
+          <View style={{ padding: GUTTER, alignItems: "center" }}>
+            <Avatar name={displayName} uri={avatarUri} size={120} />
+            <Text style={[T.bodySmall, { marginTop: 16, textAlign: "center", maxWidth: 280 }]}>
+              Your photo stays on this phone — it's never uploaded.
+            </Text>
+
+            <View style={{ alignSelf: "stretch", marginTop: 28, gap: 10 }}>
+              <PrimaryButton
+                label={avatarUri ? "Choose a different photo" : "Choose a photo"}
+                onPress={() => void choosePhoto()}
+              />
+              {avatarUri && (
+                <PrimaryButton
+                  label="Remove photo"
+                  tone={color.card}
+                  labelTone={color.rust}
+                  onPress={() => {
+                    void removeAvatarPhoto();
+                    setPhotoOpen(false);
+                  }}
+                />
+              )}
+            </View>
+          </View>
+        </Screen>
+      </Modal>
+
       <DeleteAccountSheet
         visible={deleteOpen}
         onClose={() => setDeleteOpen(false)}
         onDeleted={async () => {
+          // Deleting the account deletes everything — the device-local photo
+          // included. Must run before logout clears the user id it is keyed by.
+          await removeAvatarPhoto().catch(() => {});
           await logout();
           router.replace("/welcome");
         }}
@@ -450,6 +547,22 @@ function DeleteAccountSheet({
 
 // ─── Pieces ──────────────────────────────────────────────────────────────────
 
+/** Small camera mark for the avatar's edit badge — drawn, not an icon font. */
+function CameraGlyph() {
+  return (
+    <Svg width={11} height={11} viewBox="0 0 24 24">
+      <SvgPath
+        d="M4 8 h3 l2-2.5 h6 L17 8 h3 a1.5 1.5 0 0 1 1.5 1.5 v9 a1.5 1.5 0 0 1 -1.5 1.5 H4 a1.5 1.5 0 0 1 -1.5 -1.5 v-9 A1.5 1.5 0 0 1 4 8 Z"
+        fill="none"
+        stroke={color.onCobalt}
+        strokeWidth={2.4}
+        strokeLinejoin="round"
+      />
+      <SvgCircle cx={12} cy={13.5} r={3.4} fill="none" stroke={color.onCobalt} strokeWidth={2.4} />
+    </Svg>
+  );
+}
+
 function Stat({ value, label, tone }: { value: number; label: string; tone?: string }) {
   return (
     <View style={s.stat}>
@@ -493,6 +606,19 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const s = StyleSheet.create({
   identity: { paddingHorizontal: GUTTER, flexDirection: "row", alignItems: "center", gap: 16 },
+  avatarBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: color.cobalt,
+    borderWidth: 2,
+    borderColor: color.paper,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   stats: { flexDirection: "row", gap: 10, paddingHorizontal: GUTTER, paddingTop: 20 },
   stat: { flex: 1, backgroundColor: color.card, borderRadius: radius.tile, padding: 14 },
 

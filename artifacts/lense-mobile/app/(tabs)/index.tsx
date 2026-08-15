@@ -32,7 +32,7 @@ import { analyses as analysesApi, type AnalysisRecord } from "@/lib/api";
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { profile, user } = useAuth();
+  const { profile, user, avatarUri } = useAuth();
 
   const [list, setList] = useState<AnalysisRecord[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -142,7 +142,7 @@ export default function HomeScreen() {
             <Text style={[T.screenTitle, s.headline]}>{headline}</Text>
           </View>
           <Pressable onPress={() => router.push("/(tabs)/profile")}>
-            <Avatar name={displayName} />
+            <Avatar name={displayName} uri={avatarUri} />
           </Pressable>
         </View>
 

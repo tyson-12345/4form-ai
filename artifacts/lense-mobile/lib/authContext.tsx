@@ -6,6 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import { auth, profile as profileApi, setToken, clearToken, getToken, ApiError, type Profile, type SubscriptionRecord } from "./api";
+import { loadAvatar, removeAvatar, saveAvatar } from "./avatarStore";
 
 interface AuthUser {
   id: string;
@@ -19,6 +20,8 @@ interface AuthState {
   subscription: SubscriptionRecord | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  /** Device-local profile photo URI, or null. Never leaves the device. */
+  avatarUri: string | null;
 }
 
 interface AuthActions {
@@ -28,6 +31,9 @@ interface AuthActions {
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfile: (data: Partial<Omit<Profile, "id" | "userId">>) => Promise<void>;
+  /** Persist a picked photo (base64 required on web) and update every screen. */
+  setAvatarPhoto: (pickedUri: string, base64?: string | null) => Promise<void>;
+  removeAvatarPhoto: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState & AuthActions>({
@@ -36,11 +42,14 @@ const AuthContext = createContext<AuthState & AuthActions>({
   subscription: null,
   isLoading: true,
   isAuthenticated: false,
+  avatarUri: null,
   login: async () => {},
   signup: async () => {},
   logout: async () => {},
   refreshProfile: async () => {},
   updateProfile: async () => {},
+  setAvatarPhoto: async () => {},
+  removeAvatarPhoto: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -48,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
   // Tracks whether a saved token exists — stays true even when the server is
   // unreachable, so navigation isn't blocked while offline/server is down.
   const [hasStoredToken, setHasStoredToken] = useState(false);
@@ -55,6 +65,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     restoreSession();
   }, []);
+
+  // The photo is device-local state keyed by user id, so it follows the
+  // signed-in user rather than the session: load on sign-in, drop on
+  // sign-out, and never show one account's photo to another.
+  useEffect(() => {
+    let cancelled = false;
+    if (!user) {
+      setAvatarUri(null);
+      return;
+    }
+    loadAvatar(user.id)
+      .then((uri) => {
+        if (!cancelled) setAvatarUri(uri);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   async function restoreSession() {
     try {
@@ -121,6 +150,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user]
   );
 
+  const setAvatarPhoto = useCallback(
+    async (pickedUri: string, base64?: string | null) => {
+      if (!user) return;
+      const durable = await saveAvatar(user.id, pickedUri, base64);
+      setAvatarUri(durable);
+    },
+    [user],
+  );
+
+  const removeAvatarPhoto = useCallback(async () => {
+    if (!user) return;
+    await removeAvatar(user.id);
+    setAvatarUri(null);
+  }, [user]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -129,11 +173,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         subscription,
         isLoading,
         isAuthenticated: !!user || hasStoredToken,
+        avatarUri,
         login,
         signup,
         logout,
         refreshProfile,
         updateProfile,
+        setAvatarPhoto,
+        removeAvatarPhoto,
       }}
     >
       {children}
