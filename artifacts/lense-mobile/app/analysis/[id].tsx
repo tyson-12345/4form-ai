@@ -26,7 +26,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import Svg, { Defs, Pattern, Rect, Line, Circle } from "react-native-svg";
+import Svg, { Defs, Pattern, Rect } from "react-native-svg";
 
 import {
   Screen,
@@ -53,6 +53,7 @@ import { flagSeverity, isAlarming } from "@/utils/flagSeverity";
 // says "valgus" reaches a 15-year-old otherwise. Chat has always done this;
 // this screen carries most of the words and did not.
 import { formatBiomechanicsText } from "@/utils/formatBiomechanics";
+import { BodyMap } from "@/components/BodyMap";
 
 const HERO_H = 340;
 
@@ -168,6 +169,12 @@ export default function AnalysisDetailScreen() {
 
   const prescription = tips[0] ?? null;
 
+  // Only genuinely alarming findings mark the body. A caution-only flag is
+  // reported in the list below, but painting it on the figure would give the
+  // screen's most prominent element the app's one alarm colour for something
+  // that never left the caution band.
+  const flaggedJoints = risks.filter((r) => isAlarming(r.riskPercent)).map((r) => r.joint);
+
   return (
     <Screen>
       <ScrollView
@@ -178,9 +185,13 @@ export default function AnalysisDetailScreen() {
         <Pressable onPress={() => router.push(`/analysis/skeleton/${analysis.id}`)}>
           <View style={s.hero}>
             <FilmBackdrop width={screenW} />
-            <SkeletonMark risks={risks} width={screenW} />
-
             <View style={s.heroScrim} />
+
+            {/* Above the scrim: it is there to protect the footer text, and
+                dimming the one element carrying data is the wrong trade. */}
+            <View style={s.heroBody} pointerEvents="none">
+              <BodyMap flagged={flaggedJoints} height={148} />
+            </View>
 
             <View style={[s.heroTop, { top: insets.top + 6 }]}>
               <Pressable onPress={() => router.back()} style={s.heroBtn} hitSlop={8}>
@@ -401,98 +412,6 @@ function FilmBackdrop({ width }: { width: number }) {
 }
 
 /**
- * A body map of the six joints we measure, with the flagged ones marked.
- *
- * ── What this replaced, and why ─────────────────────────────────────────────
- * The previous mark was fixed artwork: hardcoded limb coordinates, identical
- * for every athlete, every sport and every session. Its one dynamic element was
- * a boolean — if the session had *any* flag, one arm turned rust and gained a
- * ring. Always the same arm. A flagged left knee highlighted the right elbow.
- *
- * That is the failure this screen's header argues against three lines up: a
- * time-axis waveform was rejected as "decoration drawn to look like data", and
- * the mark was doing exactly that, more prominently, above it. It also read as
- * a picture of *your* pose, which it never was — and it is the first thing on
- * the screen, so it set the terms for everything below.
- *
- * It is now a schematic, and honest about being one: a diagram of the joints
- * the tracker measures, with each flagged joint marked in the alarm colour and
- * the rest left as quiet furniture. Nothing here claims to be the athlete's
- * posture; the real skeleton, drawn from tracked landmarks, is one tap away.
- */
-function SkeletonMark({ risks, width }: { risks: RiskRecord[]; width: number }) {
-  const cx = width / 2 - 27;
-
-  // `joint` arrives as the label the server stores — "left knee", "right hip".
-  const flagged = new Set(
-    risks.filter((r) => isAlarming(r.riskPercent)).map((r) => r.joint.toLowerCase().trim()),
-  );
-  const measured = new Set(risks.map((r) => r.joint.toLowerCase().trim()));
-
-  const bone = { stroke: color.onInk, strokeOpacity: 0.35, strokeWidth: 2 } as const;
-
-  /** Segment styling: rust when this joint was flagged, quiet otherwise. */
-  const seg = (joint: string) =>
-    flagged.has(joint)
-      ? { stroke: color.rust, strokeOpacity: 1, strokeWidth: 2.75 }
-      : bone;
-
-  /** The dot sitting on a joint, sized and coloured by whether it was flagged. */
-  const dot = (joint: string, x: number, y: number) => {
-    if (flagged.has(joint)) {
-      return <Circle key={joint} cx={x} cy={y} r={4.5} fill={color.rust} />;
-    }
-    if (measured.has(joint)) {
-      return (
-        <Circle key={joint} cx={x} cy={y} r={3.5} fill={color.onInk} fillOpacity={0.45} />
-      );
-    }
-    return null;
-  };
-
-  // Mirror view: the athlete's left limb is drawn on the viewer's left.
-  //
-  // Anatomical diagrams use the opposite convention — the subject faces you, so
-  // their left is on your right. That is correct for a clinician looking at a
-  // patient and wrong here, where the person reading the screen is the person
-  // in the clip and is used to seeing themselves in a gym mirror. The flag text
-  // beside this says "left knee" in words, so the two must not disagree.
-  const shoulderY = 136;
-  const pelvisY = 192;
-  const elbow = { x: 32, y: 168 };
-  const knee = { x: 22, y: 234 };
-
-  return (
-    <Svg width={width} height={HERO_H} style={StyleSheet.absoluteFill}>
-      {/* Head and spine carry no measurement, so they stay furniture. */}
-      <Circle cx={cx} cy={104} r={14} {...bone} fill="none" />
-      <Line x1={cx} y1={118} x2={cx} y2={pelvisY} {...bone} />
-      <Line x1={cx - 20} y1={shoulderY} x2={cx + 20} y2={shoulderY} {...bone} />
-      <Line x1={cx - 14} y1={pelvisY} x2={cx + 14} y2={pelvisY} {...bone} />
-
-      {/* Arms: upper arm and forearm meet at the elbow. */}
-      <Line x1={cx - 20} y1={shoulderY} x2={cx - elbow.x} y2={elbow.y} {...seg("left elbow")} />
-      <Line x1={cx - elbow.x} y1={elbow.y} x2={cx - elbow.x - 8} y2={elbow.y + 34} {...seg("left elbow")} />
-      <Line x1={cx + 20} y1={shoulderY} x2={cx + elbow.x} y2={elbow.y} {...seg("right elbow")} />
-      <Line x1={cx + elbow.x} y1={elbow.y} x2={cx + elbow.x + 8} y2={elbow.y + 34} {...seg("right elbow")} />
-
-      {/* Legs: thigh is the hip's segment, shin is the knee's. */}
-      <Line x1={cx - 14} y1={pelvisY} x2={cx - knee.x} y2={knee.y} {...seg("left hip")} />
-      <Line x1={cx - knee.x} y1={knee.y} x2={cx - knee.x - 4} y2={knee.y + 40} {...seg("left knee")} />
-      <Line x1={cx + 14} y1={pelvisY} x2={cx + knee.x} y2={knee.y} {...seg("right hip")} />
-      <Line x1={cx + knee.x} y1={knee.y} x2={cx + knee.x + 4} y2={knee.y + 40} {...seg("right knee")} />
-
-      {dot("left elbow", cx - elbow.x, elbow.y)}
-      {dot("right elbow", cx + elbow.x, elbow.y)}
-      {dot("left hip", cx - 14, pelvisY)}
-      {dot("right hip", cx + 14, pelvisY)}
-      {dot("left knee", cx - knee.x, knee.y)}
-      {dot("right knee", cx + knee.x, knee.y)}
-    </Svg>
-  );
-}
-
-/**
  * One bar per tracked joint, height and colour from that joint's reading.
  *
  * Replaces the mockup's timeline waveform, which we have no per-frame data to
@@ -553,6 +472,9 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // Sized and placed to clear the footer block entirely — at HERO_H 340 the
+  // sport line starts near y=205, and the figures plus caption end by ~176.
+  heroBody: { position: "absolute", left: 0, right: 0, top: 14, alignItems: "center" },
   heroFoot: { position: "absolute", left: GUTTER, right: GUTTER, bottom: 26 },
   heroCta: { marginTop: 12, opacity: 0.6 },
 
