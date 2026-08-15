@@ -50,6 +50,15 @@ function caCert(): string | undefined {
 
 const ca = caCert();
 
+/**
+ * Local loopback databases have no TLS story — mirror the runtime pool's
+ * exception in lib/db/src/index.ts so `push` against a local Postgres works
+ * the same way the server does. Anything non-local keeps full verification.
+ */
+const isLocal =
+  /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(process.env.DATABASE_URL) &&
+  process.env.NODE_ENV !== "production";
+
 export default defineConfig({
   schema: path.join(__dirname, "./src/schema/index.ts"),
   dialect: "postgresql",
@@ -58,6 +67,6 @@ export default defineConfig({
     // Verification stays on. A CA is supplied when the provider needs one;
     // disabling verification instead would keep the encryption and discard the
     // authentication.
-    ssl: ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true },
+    ssl: isLocal ? false : ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true },
   },
 });
