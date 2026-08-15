@@ -17,7 +17,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.athleteai.app",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "AthleteAI reads the training video you pick so it can measure your joint angles frame by frame on this device. Your video is analysed on your phone and is never uploaded to our servers — only the resulting angle measurements are sent, never the footage."
+        "NSPhotoLibraryUsageDescription": "AthleteAI reads the training video you pick so it can measure your joint angles frame by frame on this device, and the photo you pick if you set a profile picture. Neither ever leaves your phone \u2014 only the resulting angle measurements are sent, never the footage or the photo."
       }
     },
     "android": {
@@ -48,7 +48,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "AthleteAI reads the training video you pick so it can measure your joint angles frame by frame on this device. Your video is analysed on your phone and is never uploaded to our servers — only the resulting angle measurements are sent, never the footage.",
+          "photosPermission": "AthleteAI reads the training video you pick so it can measure your joint angles frame by frame on this device, and the photo you pick if you set a profile picture. Neither ever leaves your phone \u2014 only the resulting angle measurements are sent, never the footage or the photo.",
           "cameraPermission": false,
           "microphonePermission": false
         }

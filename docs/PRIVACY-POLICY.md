@@ -71,7 +71,9 @@ delete the session or uninstall the app.
 ### What we do **not** collect
 
 - Your video footage
-- Photos or media other than the clip you explicitly pick
+- Photos or media other than the clip you explicitly pick. If you set a
+  profile photo, it is stored only on your device and is never uploaded;
+  removing it, or deleting your account, deletes it from the device.
 - Location
 - Contacts, calendar, microphone, or camera
 - Advertising identifiers
