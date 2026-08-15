@@ -13,7 +13,7 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
@@ -21,6 +21,7 @@ import { Screen, Label, Check, Chevron } from "@/components/caliper";
 import { color, type as T, radius, GUTTER } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { subscriptions, type Plan } from "@/lib/api";
+import { alert } from "@/lib/alert";
 
 export default function PricingScreen() {
   const insets = useSafeAreaInsets();
@@ -56,7 +57,7 @@ export default function PricingScreen() {
       await refreshProfile();
       router.back();
     } catch {
-      Alert.alert("Couldn't switch plans", "Please try again in a moment.");
+      alert("Couldn't switch plans", "Please try again in a moment.");
     } finally {
       setWorking(false);
     }
@@ -71,7 +72,7 @@ export default function PricingScreen() {
     // must satisfy both, and the message says which one is missing rather than
     // implying it's only a payments delay.
     if (!plan.available) {
-      Alert.alert(
+      alert(
         `${plan.name} isn't ready`,
         plan.unavailableReason ??
           `${plan.name} is still in development. We're not selling it until the features behind it are real.`,
@@ -80,7 +81,7 @@ export default function PricingScreen() {
       return;
     }
 
-    Alert.alert(
+    alert(
       "Not available yet",
       `${plan.name} isn't available to buy yet — we're still setting up payments. Nothing has been charged and your plan hasn't changed.`,
       [{ text: "Got it" }],

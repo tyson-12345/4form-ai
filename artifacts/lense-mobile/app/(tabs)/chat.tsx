@@ -22,7 +22,6 @@ import {
   TextInput,
   Pressable,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -44,6 +43,7 @@ import {
 import { useAuth } from "@/lib/authContext";
 import { displaySport } from "@/constants/sports";
 import { formatBiomechanicsTextSafe } from "../../utils/formatBiomechanics";
+import { alert } from "@/lib/alert";
 
 const STARTERS = [
   "What should I film next?",
@@ -120,10 +120,10 @@ export default function CoachScreen() {
         return;
       }
       if (err instanceof NetworkError) {
-        Alert.alert("Can't reach Atlas", err.message);
+        alert("Can't reach Atlas", err.message);
         return;
       }
-      Alert.alert(
+      alert(
         "Atlas is unavailable",
         err instanceof ApiError
           ? err.message
@@ -190,7 +190,7 @@ export default function CoachScreen() {
           {messages.length > 0 && (
             <Pressable
               onPress={() =>
-                Alert.alert("Clear conversation", "This deletes your chat history with Atlas.", [
+                alert("Clear conversation", "This deletes your chat history with Atlas.", [
                   { text: "Cancel", style: "cancel" },
                   {
                     text: "Clear",

@@ -15,7 +15,6 @@ import {
   Pressable,
   Modal,
   TextInput,
-  Alert,
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -33,6 +32,7 @@ import {
   ApiError,
 } from "@/lib/api";
 import { SPORTS, displaySport } from "@/constants/sports";
+import { alert } from "@/lib/alert";
 
 const LEVELS = ["Beginner", "Intermediate", "Advanced", "Elite"] as const;
 
@@ -103,7 +103,7 @@ export default function ProfileScreen() {
       else if (edit === "weeklyGoal") await updateProfile({ weeklyGoal: Number(next) });
       setEdit(null);
     } catch {
-      Alert.alert("Couldn't save", "Please try again.");
+      alert("Couldn't save", "Please try again.");
     } finally {
       setSaving(false);
     }
@@ -188,7 +188,7 @@ export default function ProfileScreen() {
             <Row
               label="How measurement works"
               onPress={() =>
-                Alert.alert(
+                alert(
                   "How measurement works",
                   "We track 33 body landmarks in your clip using on-device pose detection, then measure the angle at each joint across evenly-spaced frames.\n\nScores are calculated from those angles — the same clip always produces the same numbers.\n\nWe only score what a single camera can actually measure: technique, balance, consistency and mobility. Things like power and speed need your body mass and the camera's distance, so we don't guess at them.",
                 )
@@ -197,7 +197,7 @@ export default function ProfileScreen() {
             <Row
               label="How your data is handled"
               onPress={() =>
-                Alert.alert(
+                alert(
                   "Your data",
                   "Your videos never leave your device — only the measured joint angles are sent to our server.\n\nDeleting a session removes its clip from your phone. Deleting your account removes everything.",
                 )
@@ -228,14 +228,14 @@ export default function ProfileScreen() {
             <Row
               label="Sign out"
               onPress={() =>
-                Alert.alert("Sign out", "You can sign back in any time.", [
+                alert("Sign out", "You can sign back in any time.", [
                   { text: "Cancel", style: "cancel" },
                   {
                     text: "Sign out",
                     style: "destructive",
                     onPress: async () => {
                       await logout();
-                      router.replace("/");
+                      router.replace("/welcome");
                     },
                   },
                 ])
@@ -342,7 +342,7 @@ export default function ProfileScreen() {
         onClose={() => setDeleteOpen(false)}
         onDeleted={async () => {
           await logout();
-          router.replace("/");
+          router.replace("/welcome");
         }}
       />
     </Screen>

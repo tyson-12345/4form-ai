@@ -16,6 +16,7 @@ import { Screen, Label, Chip, PrimaryButton, Chevron } from "@/components/calipe
 import { color, type as T, GUTTER } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { SPORTS } from "@/constants/sports";
+import { alert } from "@/lib/alert";
 
 const LEVELS = [
   { key: "beginner", label: "Beginner", note: "New to structured training" },
@@ -104,7 +105,7 @@ export default function OnboardingScreen() {
       });
       router.replace("/(tabs)");
     } catch {
-      Alert.alert("Couldn't save", "Check your connection and try again.");
+      alert("Couldn't save", "Check your connection and try again.");
     } finally {
       setSaving(false);
     }

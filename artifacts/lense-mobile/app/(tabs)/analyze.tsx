@@ -15,7 +15,6 @@ import {
   ScrollView,
   Pressable,
   Modal,
-  Alert,
   RefreshControl,
   TextInput,
   ActivityIndicator,
@@ -39,6 +38,7 @@ import { analyses as analysesApi, type AnalysisRecord, type UsageRecord } from "
 import { deleteVideo } from "@/lib/videoStore";
 import { useAuth } from "@/lib/authContext";
 import { SPORTS } from "@/constants/sports";
+import { alert } from "@/lib/alert";
 
 export default function SessionsScreen() {
   const insets = useSafeAreaInsets();
@@ -88,7 +88,7 @@ export default function SessionsScreen() {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert(
+        alert(
           "Photo access needed",
           "Allow photo and video access in Settings so we can read the clip you want measured.",
         );
@@ -112,7 +112,7 @@ export default function SessionsScreen() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const iCloud = /3164|PHPhotos|could not be completed/i.test(message);
-      Alert.alert(
+      alert(
         "Couldn't open that clip",
         iCloud
           ? "This video is still in iCloud. Open it in Photos, let it download fully, then try again."
@@ -126,7 +126,7 @@ export default function SessionsScreen() {
 
     if (usage && usage.limit !== -1 && usage.remaining <= 0) {
       setPickerOpen(false);
-      Alert.alert(
+      alert(
         "Monthly limit reached",
         `Your plan measures ${usage.limit} clips a month. Your next ${usage.limit} unlock on ${new Date(usage.resetsAt).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}.`,
         [
@@ -245,7 +245,7 @@ export default function SessionsScreen() {
               onPress={() => router.push(`/analysis/${item.id}`)}
               onDelete={async () => {
                 await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                Alert.alert(item.title, "Delete this session and its clip?", [
+                alert(item.title, "Delete this session and its clip?", [
                   { text: "Cancel", style: "cancel" },
                   {
                     text: "Delete",
@@ -257,7 +257,7 @@ export default function SessionsScreen() {
                         setList((prev) => prev.filter((a) => a.id !== item.id));
                         void load();
                       } catch {
-                        Alert.alert("Couldn't delete", "Please try again.");
+                        alert("Couldn't delete", "Please try again.");
                       }
                     },
                   },
