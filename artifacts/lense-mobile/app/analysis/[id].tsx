@@ -53,6 +53,7 @@ import { flagSeverity, isAlarming } from "@/utils/flagSeverity";
 // says "valgus" reaches a 15-year-old otherwise. Chat has always done this;
 // this screen carries most of the words and did not.
 import { formatBiomechanicsText } from "@/utils/formatBiomechanics";
+import { provenance } from "@/utils/provenance";
 import { MeasureFigure } from "@/components/MeasureFigure";
 
 const HERO_H = 340;
@@ -247,7 +248,9 @@ export default function AnalysisDetailScreen() {
 
           <View style={s.indexHead}>
             <Label>FORM INDEX</Label>
-            <Text style={T.measuredSmall}>{measured ? provenance(analysis) : "NOT MEASURED"}</Text>
+            <Text style={T.measuredSmall}>
+              {(measured && provenance(analysis.poseMetrics)) || "NOT MEASURED"}
+            </Text>
           </View>
 
           <View style={s.indexRow}>
@@ -455,17 +458,7 @@ function JointStrip({ risks }: { risks: RiskRecord[] }) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * The reading's provenance: reps when the movement repeated, always frames.
- * "4 REPS · 90 FRAMES" is the sentence "this number came from four measured
- * repetitions" in the instrument's shorthand.
- */
-function provenance(analysis: AnalysisRecord): string {
-  const metrics = analysis.poseMetrics;
-  const frames = `${metrics?.frameCount ?? 0} FRAMES MEASURED`;
-  const reps = metrics?.detectedReps;
-  return reps != null && reps > 0 ? `${reps} REPS · ${frames}` : frames;
-}
+// The provenance stamp is shared with Home — see utils/provenance.ts.
 
 // flagSeverity / isAlarming live in utils/ so the thresholds can be tested —
 // see utils/flagSeverity.ts for why the stamp is a word rather than an angle.

@@ -61,7 +61,19 @@ export default function CoachScreen() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [locked, setLocked] = useState(false);
+  const [serverLocked, setServerLocked] = useState(false);
+
+  /**
+   * The wall must come from the tier, not from a server error. GET /api/chat
+   * is deliberately not tier-gated (history is the user's own data), so a free
+   * user's history call succeeds — and keying `locked` off an UPGRADE_REQUIRED
+   * from that call meant a free user saw the full chat UI, typed a message,
+   * and only hit the paywall after the effort. The server still enforces on
+   * POST; `serverLocked` catches the disagreement case where the client
+   * believes a tier the server refuses.
+   */
+  const tier = subscription?.tier ?? "free";
+  const locked = serverLocked || !(tier === "pro" || tier === "elite");
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -73,7 +85,7 @@ export default function CoachScreen() {
       ]);
       if (history.status === "fulfilled") setMessages(history.value.messages);
       else if (history.reason instanceof ApiError && history.reason.code === "UPGRADE_REQUIRED") {
-        setLocked(true);
+        setServerLocked(true);
       }
       if (list.status === "fulfilled") setSessions(list.value.analyses);
     } finally {
@@ -116,7 +128,7 @@ export default function CoachScreen() {
       setInput(content);
 
       if (err instanceof ApiError && err.code === "UPGRADE_REQUIRED") {
-        setLocked(true);
+        setServerLocked(true);
         return;
       }
       if (err instanceof NetworkError) {

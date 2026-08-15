@@ -28,6 +28,7 @@ import {
 import { color, type as T, GUTTER, TAB_BAR, delta, stampDate, stampDay } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { analyses as analysesApi, type AnalysisRecord } from "@/lib/api";
+import { provenance } from "@/utils/provenance";
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -99,7 +100,7 @@ export default function HomeScreen() {
    * the number — a Form Index off 148 frames means something a 12-frame one
    * does not — so it sits beside the metric rather than buried in a detail view.
    */
-  const framesMeasured = latest?.poseMetrics?.frameCount ?? null;
+  const provenanceStamp = provenance(latest?.poseMetrics);
 
   const headline = useMemo(() => buildHeadline(latest, measuredSessions.length), [latest, measuredSessions.length]);
 
@@ -153,8 +154,8 @@ export default function HomeScreen() {
                 measured from, on one line. */}
             <View style={s.metricHead}>
               <Label>FORM INDEX</Label>
-              {framesMeasured !== null && (
-                <Text style={T.measuredSmall}>{framesMeasured} FRAMES MEASURED</Text>
+              {provenanceStamp !== null && (
+                <Text style={T.measuredSmall}>{provenanceStamp}</Text>
               )}
             </View>
 

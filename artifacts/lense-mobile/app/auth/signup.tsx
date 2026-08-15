@@ -307,8 +307,12 @@ const s = StyleSheet.create({
   },
   legalLink: { color: color.textPrimary, textDecorationLine: "underline" },
   dobRow: { flexDirection: "row", gap: 10 },
-  dobPart: { flex: 1, textAlign: "center" },
-  dobYear: { flex: 1.6, textAlign: "center" },
+  // minWidth 0 matters on web: an <input> has an intrinsic ~20-character
+  // minimum width, and a flex item never shrinks below min-content without
+  // it — the three fields overflowed the screen on any phone-width browser,
+  // pushing YYYY out of view entirely. No effect on native.
+  dobPart: { flex: 1, minWidth: 0, textAlign: "center" },
+  dobYear: { flex: 1.6, minWidth: 0, textAlign: "center" },
   inputError: { borderWidth: 1, borderColor: color.rust },
   head: { paddingHorizontal: GUTTER, paddingBottom: 10 },
   backBtn: {
