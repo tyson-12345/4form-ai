@@ -220,6 +220,15 @@ export const analysesTable = pgTable("analyses", {
   similarityScore: real("similarity_score"),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  /**
+   * Soft-delete marker. A deleted analysis disappears from every read path but
+   * the row survives (scrubbed of content) until the monthly quota window it
+   * was created in has closed — hard deletion would refund the quota slot, and
+   * create-measure-delete-repeat would make the free tier unlimited. Rows are
+   * hard-pruned by the cleanup sweep once they can no longer affect a count.
+   * Account deletion still cascades immediately and removes everything.
+   */
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (t) => [
   // The list screen: every analysis for one user, newest first. The composite
   // serves both the filter and the sort, so this is an index-only ordering

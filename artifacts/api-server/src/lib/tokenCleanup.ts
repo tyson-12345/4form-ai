@@ -21,6 +21,7 @@
 import { lt, and, isNotNull, or } from "drizzle-orm";
 import { db, passwordResetTokensTable } from "@workspace/db";
 import { logger } from "./logger.js";
+import { pruneDeletedAnalyses } from "../repositories/analysisRepository.js";
 
 /** How often the sweep runs. */
 const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -77,6 +78,38 @@ export async function pruneResetTokens(now = new Date()): Promise<number> {
   }
 }
 
+/**
+ * How long a scrubbed (soft-deleted) analysis row is kept.
+ *
+ * The row exists only so the monthly quota count cannot be refunded by
+ * deleting sessions. 32 days guarantees the calendar month it was uploaded in
+ * has closed — a row deleted more than 32 days ago was necessarily uploaded in
+ * a prior month, and prior months never enter a quota count again.
+ */
+const DELETED_ANALYSIS_RETENTION_MS = 32 * 24 * 60 * 60 * 1000;
+
+/** Remove scrubbed analysis rows that can no longer affect a quota count. */
+export async function pruneDeletedAnalysisRows(now = new Date()): Promise<number> {
+  try {
+    const removed = await pruneDeletedAnalyses(
+      new Date(now.getTime() - DELETED_ANALYSIS_RETENTION_MS),
+    );
+    if (removed > 0) {
+      logger.info(
+        { count: removed, event: "deleted_analyses_pruned" },
+        "Pruned scrubbed analysis rows past their quota month",
+      );
+    }
+    return removed;
+  } catch (err) {
+    logger.error(
+      { err, event: "deleted_analysis_prune_failed" },
+      "Failed to prune scrubbed analysis rows",
+    );
+    return 0;
+  }
+}
+
 let timer: NodeJS.Timeout | undefined;
 
 /**
@@ -91,6 +124,7 @@ export function startResetTokenCleanup(): void {
 
   timer = setInterval(() => {
     void pruneResetTokens();
+    void pruneDeletedAnalysisRows();
   }, SWEEP_INTERVAL_MS);
 
   // Do not hold the event loop open — this must never delay a shutdown or keep

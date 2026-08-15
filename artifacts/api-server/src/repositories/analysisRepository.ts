@@ -21,7 +21,7 @@ import {
   injuryRisksTable,
   progressEntriesTable,
 } from "@workspace/db";
-import { eq, and, desc, count, gte } from "drizzle-orm";
+import { eq, and, ne, desc, count, gte, lt, isNull, isNotNull } from "drizzle-orm";
 
 export type AnalysisRow = typeof analysesTable.$inferSelect;
 export type NewAnalysis = typeof analysesTable.$inferInsert;
@@ -30,11 +30,18 @@ export type InjuryRiskRow = typeof injuryRisksTable.$inferSelect;
 
 // ─── Analyses ────────────────────────────────────────────────────────────────
 
+/**
+ * Soft-deleted rows are invisible to every read path. They survive, scrubbed,
+ * only so `countAnalysesSince` keeps counting them until their quota month
+ * closes — see `deleteAnalysis`.
+ */
+const notDeleted = () => isNull(analysesTable.deletedAt);
+
 export async function findAnalysesByUserId(userId: string): Promise<AnalysisRow[]> {
   return db
     .select()
     .from(analysesTable)
-    .where(eq(analysesTable.userId, userId))
+    .where(and(eq(analysesTable.userId, userId), notDeleted()))
     .orderBy(desc(analysesTable.uploadedAt));
 }
 
@@ -45,7 +52,7 @@ export async function findAnalysisById(
   const [row] = await db
     .select()
     .from(analysesTable)
-    .where(and(eq(analysesTable.id, id), eq(analysesTable.userId, userId)))
+    .where(and(eq(analysesTable.id, id), eq(analysesTable.userId, userId), notDeleted()))
     .limit(1);
   return row;
 }
@@ -58,7 +65,7 @@ export async function findAnalysisOwnership(
   const [row] = await db
     .select({ id: analysesTable.id })
     .from(analysesTable)
-    .where(and(eq(analysesTable.id, id), eq(analysesTable.userId, userId)))
+    .where(and(eq(analysesTable.id, id), eq(analysesTable.userId, userId), notDeleted()))
     .limit(1);
   return row;
 }
@@ -67,7 +74,7 @@ export async function findLatestAnalysis(userId: string): Promise<AnalysisRow | 
   const [row] = await db
     .select()
     .from(analysesTable)
-    .where(eq(analysesTable.userId, userId))
+    .where(and(eq(analysesTable.userId, userId), notDeleted()))
     .orderBy(desc(analysesTable.uploadedAt))
     .limit(1);
   return row;
@@ -93,22 +100,74 @@ export async function updateAnalysisById(
   await db.update(analysesTable).set(data).where(eq(analysesTable.id, id));
 }
 
+/**
+ * Delete a session, as the user sees it. Under the hood: scrub and mark.
+ *
+ * A hard DELETE refunded the monthly quota slot — `countAnalysesSince` counts
+ * rows, so create-measure-delete-repeat made the free tier unlimited. Instead
+ * the row is stripped of everything a person put into it or got out of it
+ * (title, scores, summary, prose, measurements, tips, risks) and keeps only
+ * the skeleton the quota count needs: who, when, and whether it was a real
+ * measurement. The sweep in `lib/tokenCleanup.ts` hard-deletes it once its
+ * quota month has closed. Account deletion cascades immediately either way.
+ */
 export async function deleteAnalysis(
   id: string,
   userId: string,
 ): Promise<{ id: string } | undefined> {
   const [row] = await db
-    .delete(analysesTable)
-    .where(and(eq(analysesTable.id, id), eq(analysesTable.userId, userId)))
+    .update(analysesTable)
+    .set({
+      deletedAt: new Date(),
+      title: "",
+      videoUrl: null,
+      thumbnailUrl: null,
+      summary: null,
+      strengths: [],
+      improvements: [],
+      overallScore: null,
+      techniqueScore: null,
+      powerScore: null,
+      balanceScore: null,
+      consistencyScore: null,
+      mobilityScore: null,
+      speedScore: null,
+      poseMetrics: null,
+    })
+    .where(
+      and(eq(analysesTable.id, id), eq(analysesTable.userId, userId), notDeleted()),
+    )
     .returning({ id: analysesTable.id });
+  if (!row) return undefined;
+
+  // The prose rows have no counting value — remove them outright.
+  await db.delete(coachingTipsTable).where(eq(coachingTipsTable.analysisId, id));
+  await db.delete(injuryRisksTable).where(eq(injuryRisksTable.analysisId, id));
   return row;
 }
 
+/**
+ * How many quota-consuming analyses this user has created since `since`.
+ *
+ * Three deliberate properties, each an honesty rule in one direction or the
+ * other:
+ *   - soft-deleted rows still count — deleting a session must not refund it;
+ *   - failed rows do not count — a pipeline fault is our problem, not a slot;
+ *   - unscored rows do not count — a clip we couldn't measure gave the user
+ *     nothing, so it must not cost them anything.
+ */
 export async function countAnalysesSince(userId: string, since: Date): Promise<number> {
   const [row] = await db
     .select({ total: count() })
     .from(analysesTable)
-    .where(and(eq(analysesTable.userId, userId), gte(analysesTable.uploadedAt, since)));
+    .where(
+      and(
+        eq(analysesTable.userId, userId),
+        gte(analysesTable.uploadedAt, since),
+        ne(analysesTable.status, "failed"),
+        ne(analysesTable.analysisMethod, "unscored"),
+      ),
+    );
   return Number(row?.total ?? 0);
 }
 
@@ -116,8 +175,22 @@ export async function countAnalyses(userId: string): Promise<number> {
   const [row] = await db
     .select({ total: count() })
     .from(analysesTable)
-    .where(eq(analysesTable.userId, userId));
+    .where(and(eq(analysesTable.userId, userId), notDeleted()));
   return Number(row?.total ?? 0);
+}
+
+/**
+ * Hard-delete scrubbed rows whose quota month has closed. Called by the
+ * periodic sweep; `olderThan` is the newest deletion time that may go.
+ */
+export async function pruneDeletedAnalyses(olderThan: Date): Promise<number> {
+  const deleted = await db
+    .delete(analysesTable)
+    .where(
+      and(isNotNull(analysesTable.deletedAt), lt(analysesTable.deletedAt, olderThan)),
+    )
+    .returning({ id: analysesTable.id });
+  return deleted.length;
 }
 
 // ─── Coaching tips ───────────────────────────────────────────────────────────
