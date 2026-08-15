@@ -12,12 +12,13 @@
  * Android.
  */
 
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
 import React from "react";
 import { View, Pressable, StyleSheet } from "react-native";
 
 import { color, radius, shadow, GUTTER, TAB_BAR } from "@/constants/caliper";
 import { TabIcon, PlusGlyph } from "@/components/caliper";
+import { useAuth } from "@/lib/authContext";
 
 /** Route name → glyph. `analyze` is the centre action and is handled separately. */
 const GLYPH = {
@@ -110,6 +111,14 @@ function CaliperTabBar({ state, navigation }: TabBarProps) {
 }
 
 export default function TabLayout() {
+  const { isAuthenticated } = useAuth();
+
+  // The whole tab group is signed-in territory. Guarding here rather than in
+  // each screen means sign out (or a deep link while signed out) can never
+  // strand someone inside the shell — the moment the session clears, this
+  // layout re-renders and hands them to the welcome screen.
+  if (!isAuthenticated) return <Redirect href="/welcome" />;
+
   return (
     <Tabs
       tabBar={(props) => <CaliperTabBar {...props} />}

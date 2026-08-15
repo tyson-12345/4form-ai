@@ -1,5 +1,5 @@
 /**
- * Landing — the first screen, and the promise.
+ * Welcome — the signed-out landing screen, and the promise.
  *
  * The old copy led with "Elite coaching. Powered by AI." and claimed
  * "biomechanics analysis, personalized coaching, and injury prevention in
@@ -8,9 +8,18 @@
  *
  * Caliper's promise is narrower and true — we measure your joints and show you
  * the numbers. That is also the more interesting claim.
+ *
+ * ── Why this is /welcome and not / ──────────────────────────────────────────
+ * This screen used to be `app/index.tsx`, which made `/` ambiguous: both it
+ * and `(tabs)/index` matched. Navigating to `/` from inside the tab
+ * navigator resolved to the *tabs* index, so "Sign out" cleared the session
+ * and then dropped the signed-out user back on Home — the app looked like it
+ * had ignored the tap. `/` now belongs to a single dispatcher
+ * (`app/index.tsx`) that routes by auth state, and this screen has an
+ * unambiguous address the dispatcher and the tabs guard can target.
  */
 
-import React, { useEffect } from "react";
+import React from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -18,23 +27,14 @@ import Svg, { Line, Circle } from "react-native-svg";
 
 import { Screen, Label, PrimaryButton, Chip, AppMark } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
-import { useAuth } from "@/lib/authContext";
 import { SPORTS } from "@/constants/sports";
 
 /** A representative slice of the catalogue — the full list lives in onboarding. */
 const SHOWCASE = SPORTS.slice(0, 8);
 
-export default function LandingScreen() {
+export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isAuthenticated, profile } = useAuth();
-
-  // Already signed in — go straight to the instrument panel. Onboarding is only
-  // for accounts that haven't picked a sport yet.
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    router.replace(profile?.sport ? "/(tabs)" : "/onboarding");
-  }, [isAuthenticated, profile?.sport, router]);
 
   return (
     <Screen>
