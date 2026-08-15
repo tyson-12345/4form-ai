@@ -309,6 +309,14 @@ export const progressEntriesTable = pgTable("progress_entries", {
   userId: uuid("user_id")
     .notNull()
     .references(() => usersTable.id, { onDelete: "cascade" }),
+  /**
+   * The analysis this entry's scores came from. Deliberately a bare uuid, not
+   * a foreign key: the source row is scrubbed on user deletion and hard-pruned
+   * a month later, and this entry's fate must follow the *user's* delete (the
+   * entry goes when they delete the session), not the janitor's. Null on rows
+   * created before provenance existed — those pre-date per-session deletion.
+   */
+  analysisId: uuid("analysis_id"),
   date: text("date").notNull(),
   overallScore: real("overall_score").notNull(),
   techniqueScore: real("technique_score"),

@@ -345,6 +345,8 @@ async function persistMeasurements(
   if (scores.overall !== null) {
     await createProgressEntry({
       userId,
+      // Provenance: the trend point dies with the session that produced it.
+      analysisId,
       date: new Date().toISOString().split("T")[0],
       overallScore: scores.overall,
       techniqueScore: scores.technique,

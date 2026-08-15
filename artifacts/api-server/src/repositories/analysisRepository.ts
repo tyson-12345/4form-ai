@@ -140,9 +140,13 @@ export async function deleteAnalysis(
     .returning({ id: analysesTable.id });
   if (!row) return undefined;
 
-  // The prose rows have no counting value — remove them outright.
+  // The prose rows have no counting value — remove them outright. The progress
+  // entry goes too: a deleted session's score must not linger in the trend or
+  // as a phantom BEST. (Entries from before provenance existed have a null
+  // analysisId and are untouched.)
   await db.delete(coachingTipsTable).where(eq(coachingTipsTable.analysisId, id));
   await db.delete(injuryRisksTable).where(eq(injuryRisksTable.analysisId, id));
+  await db.delete(progressEntriesTable).where(eq(progressEntriesTable.analysisId, id));
   return row;
 }
 
