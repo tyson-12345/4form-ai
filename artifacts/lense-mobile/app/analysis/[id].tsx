@@ -53,7 +53,7 @@ import { flagSeverity, isAlarming } from "@/utils/flagSeverity";
 // says "valgus" reaches a 15-year-old otherwise. Chat has always done this;
 // this screen carries most of the words and did not.
 import { formatBiomechanicsText } from "@/utils/formatBiomechanics";
-import { BodyMap } from "@/components/BodyMap";
+import { MeasureFigure } from "@/components/MeasureFigure";
 
 const HERO_H = 340;
 
@@ -169,11 +169,18 @@ export default function AnalysisDetailScreen() {
 
   const prescription = tips[0] ?? null;
 
-  // Only genuinely alarming findings mark the body. A caution-only flag is
-  // reported in the list below, but painting it on the figure would give the
-  // screen's most prominent element the app's one alarm colour for something
-  // that never left the caution band.
-  const flaggedJoints = risks.filter((r) => isAlarming(r.riskPercent)).map((r) => r.joint);
+  /**
+   * The previous measured session, for the "vs last time" deltas on the
+   * sub-score bars. History arrives newest-first; the previous session is the
+   * first measured one that isn't this clip.
+   */
+  const previous = history.find(
+    (a) =>
+      a.id !== analysis.id &&
+      a.status === "complete" &&
+      a.analysisMethod === "pose-measured" &&
+      new Date(a.uploadedAt) < new Date(analysis.uploadedAt),
+  );
 
   return (
     <Screen>
@@ -190,7 +197,7 @@ export default function AnalysisDetailScreen() {
             {/* Above the scrim: it is there to protect the footer text, and
                 dimming the one element carrying data is the wrong trade. */}
             <View style={s.heroBody} pointerEvents="none">
-              <BodyMap flagged={flaggedJoints} height={148} />
+              <MeasureFigure findings={risks} height={168} />
             </View>
 
             <View style={[s.heroTop, { top: insets.top + 6 }]}>
@@ -240,9 +247,7 @@ export default function AnalysisDetailScreen() {
 
           <View style={s.indexHead}>
             <Label>FORM INDEX</Label>
-            <Text style={T.measuredSmall}>
-              {measured ? `${frameCount(analysis)} FRAMES MEASURED` : "NOT MEASURED"}
-            </Text>
+            <Text style={T.measuredSmall}>{measured ? provenance(analysis) : "NOT MEASURED"}</Text>
           </View>
 
           <View style={s.indexRow}>
@@ -273,16 +278,25 @@ export default function AnalysisDetailScreen() {
 
           {measured && (
             <View style={s.bars}>
-              {DIMENSIONS.map((d) => (
-                <MetricBar
-                  key={d.key}
-                  name={d.label}
-                  value={
-                    (analysis as unknown as Record<string, number | null>)[`${d.key}Score`] ??
-                    null
-                  }
-                />
-              ))}
+              {DIMENSIONS.map((d) => {
+                const value =
+                  (analysis as unknown as Record<string, number | null>)[`${d.key}Score`] ?? null;
+                const prev = previous
+                  ? ((previous as unknown as Record<string, number | null>)[`${d.key}Score`] ??
+                    null)
+                  : null;
+                return (
+                  <MetricBar
+                    key={d.key}
+                    name={d.label}
+                    value={value}
+                    // The change since last session — context the athlete had
+                    // to hold in their head before. Only shown when both clips
+                    // actually measured the dimension.
+                    deltaValue={value !== null && prev !== null ? value - prev : null}
+                  />
+                );
+              })}
             </View>
           )}
 
@@ -441,9 +455,16 @@ function JointStrip({ risks }: { risks: RiskRecord[] }) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function frameCount(analysis: AnalysisRecord): number {
-  const metrics = (analysis as unknown as { poseMetrics?: { frameCount?: number } }).poseMetrics;
-  return metrics?.frameCount ?? 0;
+/**
+ * The reading's provenance: reps when the movement repeated, always frames.
+ * "4 REPS · 90 FRAMES" is the sentence "this number came from four measured
+ * repetitions" in the instrument's shorthand.
+ */
+function provenance(analysis: AnalysisRecord): string {
+  const metrics = analysis.poseMetrics;
+  const frames = `${metrics?.frameCount ?? 0} FRAMES MEASURED`;
+  const reps = metrics?.detectedReps;
+  return reps != null && reps > 0 ? `${reps} REPS · ${frames}` : frames;
 }
 
 // flagSeverity / isAlarming live in utils/ so the thresholds can be tested —

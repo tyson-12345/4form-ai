@@ -21,7 +21,7 @@ import {
 } from "react-native";
 import Svg, { Line, Path, Circle, Polyline, Rect, Polygon } from "react-native-svg";
 import { Image as ExpoImage } from "expo-image";
-import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
+import { color, type as T, radius, GUTTER, TAB_BAR, font, delta } from "@/constants/caliper";
 
 // ─── Label ───────────────────────────────────────────────────────────────────
 
@@ -299,24 +299,43 @@ export function MetricBar({
   name,
   value,
   tone = color.ink,
+  deltaValue = null,
 }: {
   name: string;
   value: number | null;
   tone?: string;
+  /** Signed change against the previous session; hidden when null or zero. */
+  deltaValue?: number | null;
 }) {
   const unmeasured = value === null;
+  const deltaText = unmeasured ? null : delta(deltaValue);
   return (
     <View>
       <View style={s.metricBarHead}>
         <Text style={[T.labelTight, { color: color.textMuted }]}>{name.toUpperCase()}</Text>
-        <Text
-          style={[
-            T.measured,
-            { fontSize: 11, color: unmeasured ? color.textGhost : color.textPrimary },
-          ]}
-        >
-          {unmeasured ? "NOT MEASURED" : Math.round(value)}
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "baseline", gap: 7 }}>
+          {deltaText && (
+            <Text
+              style={[
+                T.measured,
+                {
+                  fontSize: 10,
+                  color: (deltaValue ?? 0) > 0 ? color.cobalt : color.textFaint,
+                },
+              ]}
+            >
+              {deltaText}
+            </Text>
+          )}
+          <Text
+            style={[
+              T.measured,
+              { fontSize: 11, color: unmeasured ? color.textGhost : color.textPrimary },
+            ]}
+          >
+            {unmeasured ? "NOT MEASURED" : Math.round(value)}
+          </Text>
+        </View>
       </View>
       <View style={s.metricBarTrack}>
         {!unmeasured && (
@@ -917,7 +936,9 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: color.rule,
   },
-  flagStamp: { width: 56, paddingTop: 2, fontSize: 10, letterSpacing: 0.6 },
+  // Wide enough for SOMETIMES, the longest stamp, at this size — 56 wrapped it
+  // to "SOMETIME\nS" on every caution-band flag.
+  flagStamp: { width: 72, paddingTop: 2, fontSize: 10, letterSpacing: 0.6 },
   flagText: {
     flex: 1,
     fontFamily: font.body,

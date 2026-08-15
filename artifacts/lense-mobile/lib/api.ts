@@ -318,6 +318,8 @@ export interface AnalysisRecord {
     frameCount?: number;
     trackingQuality?: number;
     durationSec?: number;
+    /** Server-derived at scoring time; null when the movement didn't repeat. */
+    detectedReps?: number | null;
   } | null;
   uploadedAt: string;
 }
