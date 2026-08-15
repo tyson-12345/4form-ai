@@ -206,6 +206,9 @@ function buildNarrativePrompt(input: {
     `Athlete level: ${wrapUntrusted(level)}`,
     `Clip length: ${metrics.durationSec.toFixed(1)}s`,
     `Frames analysed: ${metrics.frameCount} (tracking quality ${(metrics.trackingQuality * 100).toFixed(0)}%)`,
+    metrics.detectedReps != null
+      ? `Repetitions detected: ${metrics.detectedReps}`
+      : "Repetitions: none detected — a single rep, a hold, or a non-repeating movement.",
     "",
     "MEASURED JOINT ANGLES (degrees):",
   ];

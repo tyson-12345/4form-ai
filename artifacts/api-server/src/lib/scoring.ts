@@ -76,6 +76,12 @@ export interface PoseMetrics {
    * torso was never fully visible. See `balanceScore`.
    */
   facingRatio?: number | null;
+  /**
+   * Repetitions detected by `detectReps`. Server-derived at scoring time and
+   * stored back into the metrics; never accepted from the client (the request
+   * schema does not include it). `null` when the movement did not repeat.
+   */
+  detectedReps?: number | null;
 }
 
 export interface Scores {
@@ -324,18 +330,29 @@ function findPeriod(signal: number[]): number | null {
   // inconsistent one. What separates real repetition from mere smoothness is
   // that repetition puts a *peak* back into the autocorrelation after it has
   // fallen away; a lone arc only ever declines.
-  let bestLag: number | null = null;
-  let bestScore = MIN_AUTOCORRELATION;
-
+  interface Peak {
+    lag: number;
+    score: number;
+  }
+  const peaks: Peak[] = [];
   for (let lag = MIN_PERIOD_FRAMES; lag < maxLag; lag++) {
     const isPeak = r[lag] > r[lag - 1] && r[lag] >= r[lag + 1];
-    if (isPeak && r[lag] > bestScore) {
-      bestScore = r[lag];
-      bestLag = lag;
-    }
+    if (isPeak && r[lag] > MIN_AUTOCORRELATION) peaks.push({ lag, score: r[lag] });
   }
+  if (peaks.length === 0) return null;
 
-  return bestLag;
+  // Prefer the *fundamental*, not the tallest peak. Real reps carry noise, and
+  // noise can nudge the correlation at 2× the true period a hair above the
+  // correlation at the period itself — the "octave error" of pitch detection.
+  // Taking the tallest peak then halves the rep count and coarsens the
+  // consistency comparison. So: find the best score, then take the shortest
+  // peak lag that comes close to it.
+  const best = peaks.reduce((a, b) => (b.score > a.score ? b : a));
+  const OCTAVE_TOLERANCE = 0.9;
+  for (const peak of peaks) {
+    if (peak.score >= best.score * OCTAVE_TOLERANCE) return peak.lag;
+  }
+  return best.lag;
 }
 
 /** Resample `slice` onto a fixed number of points so cycles can be compared. */
@@ -377,17 +394,19 @@ function cycleSpreadDegrees(signal: number[], period: number): number | null {
 }
 
 /**
- * Consistency — how closely the athlete's repetitions match each other.
+ * Clean every joint series and find the movement's repetition period.
  *
- * `null` when there is nothing to compare: no series (an older app build), no
- * joint tracked well enough, or a movement that does not repeat. A single rep
- * is not inconsistent; it is unmeasured, and saying so is the point.
+ * The period is a property of the whole body, so it is found once — on the
+ * joint that travels furthest, which carries the movement's rhythm most
+ * clearly — and then applied to all joints. Shared by `consistencyScore` and
+ * `detectReps` so the two can never disagree about what a rep is.
  */
-export function consistencyScore(metrics: PoseMetrics): number | null {
+function cleanedSeriesWithPeriod(metrics: PoseMetrics): {
+  cleaned: { key: JointKey; signal: number[]; range: number }[];
+  period: number;
+} | null {
   if (!metrics.series) return null;
 
-  // Clean every joint first — the period is a property of the whole body, so
-  // it is found once on the clearest signal and then applied to all of them.
   const cleaned: { key: JointKey; signal: number[]; range: number }[] = [];
   for (const key of JOINT_KEYS) {
     const raw = metrics.series[key];
@@ -398,14 +417,44 @@ export function consistencyScore(metrics: PoseMetrics): number | null {
   }
   if (cleaned.length === 0) return null;
 
-  // The joint that travels furthest carries the movement's rhythm most clearly.
   const driver = cleaned.reduce((a, b) => (b.range > a.range ? b : a));
   const period = findPeriod(driver.signal);
   if (period === null) return null;
 
+  return { cleaned, period };
+}
+
+/**
+ * How many repetitions the clip contains, or `null` when the movement does
+ * not detectably repeat (a single rep, a hold, or no usable series).
+ *
+ * Derived from the same autocorrelation the consistency score runs on — the
+ * count was always computed and then thrown away. It is honest data with an
+ * obvious home in the UI ("4 REPS"), so it is now surfaced.
+ */
+export function detectReps(metrics: PoseMetrics): number | null {
+  const found = cleanedSeriesWithPeriod(metrics);
+  if (!found) return null;
+
+  const driver = found.cleaned.reduce((a, b) => (b.range > a.range ? b : a));
+  const reps = Math.floor(driver.signal.length / found.period);
+  return reps >= 2 ? reps : null;
+}
+
+/**
+ * Consistency — how closely the athlete's repetitions match each other.
+ *
+ * `null` when there is nothing to compare: no series (an older app build), no
+ * joint tracked well enough, or a movement that does not repeat. A single rep
+ * is not inconsistent; it is unmeasured, and saying so is the point.
+ */
+export function consistencyScore(metrics: PoseMetrics): number | null {
+  const found = cleanedSeriesWithPeriod(metrics);
+  if (!found) return null;
+
   const spreads: number[] = [];
-  for (const { signal } of cleaned) {
-    const spread = cycleSpreadDegrees(signal, period);
+  for (const { signal } of found.cleaned) {
+    const spread = cycleSpreadDegrees(signal, found.period);
     if (spread !== null) spreads.push(spread);
   }
   if (spreads.length === 0) return null;

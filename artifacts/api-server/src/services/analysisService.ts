@@ -18,6 +18,7 @@
 import {
   computeScores,
   deriveRiskFindings,
+  detectReps,
   isScorable,
   JOINT_LABELS,
   type PoseMetrics,
@@ -192,8 +193,9 @@ export async function runPipeline(
 
   const scores = computeScores(metrics);
   const riskFindings = deriveRiskFindings(metrics);
+  const reps = detectReps(metrics);
 
-  await persistMeasurements(analysisId, userId, scores, riskFindings);
+  await persistMeasurements(analysisId, userId, scores, riskFindings, metrics, reps);
 
   let narrative: Narrative;
   try {
@@ -242,12 +244,71 @@ export async function runPipeline(
   );
 }
 
+/**
+ * The factual description a finding carries until (unless) the write-up
+ * upgrades its prose.
+ *
+ * Band-aware, because the previous copy read `riskPercent` alone: a joint that
+ * spent 7% of the clip in the caution band and never entered the risk band was
+ * described as having "spent 0% of the clip outside its typical safe range" —
+ * directly beside a severity stamp that counts both bands and therefore said
+ * BRIEFLY. The sentence and the stamp must agree on what "out of range" means
+ * (see the client's utils/flagSeverity.ts, which settled the same question the
+ * same way).
+ */
+export function fallbackRiskDescription(f: {
+  joint: keyof typeof JOINT_LABELS;
+  riskPercent: number;
+  cautionPercent: number;
+  observedMin: number;
+  observedMax: number;
+}): string {
+  const label = JOINT_LABELS[f.joint];
+  const range = `(observed ${f.observedMin}–${f.observedMax}°)`;
+
+  if (f.riskPercent > 0 && f.cautionPercent > 0) {
+    return (
+      `Your ${label} spent ${f.riskPercent}% of the clip in a high-strain position, ` +
+      `and another ${f.cautionPercent}% close to one ${range}.`
+    );
+  }
+  if (f.riskPercent > 0) {
+    return `Your ${label} spent ${f.riskPercent}% of the clip in a high-strain position ${range}.`;
+  }
+  return (
+    `Your ${label} spent ${f.cautionPercent}% of the clip near the edge of its ` +
+    `typical range — worth watching, not yet a problem ${range}.`
+  );
+}
+
+/**
+ * Prevention copy per joint for the no-write-up path. Generic by necessity —
+ * it has no model behind it — but at least anatomically sensible, which the
+ * previous single string ("reduce the depth or load") was not for an elbow.
+ */
+const FALLBACK_PREVENTION: Record<keyof typeof JOINT_LABELS, string> = {
+  leftKnee:
+    "Control the lowering phase and keep the knee tracking over the foot. Shorten the range until you can hold that line.",
+  rightKnee:
+    "Control the lowering phase and keep the knee tracking over the foot. Shorten the range until you can hold that line.",
+  leftHip:
+    "Sit back into the hips rather than folding forward, and keep your chest up through the deepest part of the movement.",
+  rightHip:
+    "Sit back into the hips rather than folding forward, and keep your chest up through the deepest part of the movement.",
+  leftElbow:
+    "Keep the elbow stacked under the load and avoid letting it flare at the end of the range. Lighten the load if it drifts.",
+  rightElbow:
+    "Keep the elbow stacked under the load and avoid letting it flare at the end of the range. Lighten the load if it drifts.",
+};
+
 /** Scores and risk rows — everything derived from measurement, no model call. */
 async function persistMeasurements(
   analysisId: string,
   userId: string,
   scores: Scores,
   riskFindings: ReturnType<typeof deriveRiskFindings>,
+  metrics: PoseMetrics,
+  detectedReps: number | null,
 ): Promise<void> {
   await updateAnalysisById(analysisId, {
     status: "complete",
@@ -260,6 +321,10 @@ async function persistMeasurements(
     // Explicitly null: not derivable from 2D pose. See lib/scoring.ts.
     powerScore: null,
     speedScore: null,
+    // Enrich the stored metrics with the rep count the consistency pass
+    // already derived — measured provenance the client shows beside the
+    // frame count. jsonb column, so no migration.
+    poseMetrics: { ...metrics, detectedReps },
   });
 
   // Risk rows are measurements too, so they are written whether or not Claude
@@ -272,11 +337,8 @@ async function persistMeasurements(
       cautionPercent: f.cautionPercent,
       observedMin: f.observedMin,
       observedMax: f.observedMax,
-      description:
-        `Your ${JOINT_LABELS[f.joint]} spent ${f.riskPercent}% of the clip outside its ` +
-        `typical safe range (observed ${f.observedMin}–${f.observedMax}°).`,
-      prevention:
-        "Reduce the depth or load of this movement until you can hold the position with control.",
+      description: fallbackRiskDescription(f),
+      prevention: FALLBACK_PREVENTION[f.joint],
     })),
   );
 

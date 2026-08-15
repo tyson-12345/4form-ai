@@ -4,6 +4,7 @@ import {
   techniqueScore,
   balanceScore,
   consistencyScore,
+  detectReps,
   mobilityScore,
   overallScore,
   deriveRiskFindings,
@@ -185,28 +186,31 @@ describe("balanceScore", () => {
   });
 });
 
-describe("consistencyScore", () => {
-  /**
-   * `count` cycles of a smooth movement, each swinging `lo`→`hi`→`lo`.
-   *
-   * `drift` shrinks the amplitude progressively across the clip, the way range
-   * of motion decays under fatigue. Progressive rather than alternating on
-   * purpose: an every-other-rep wobble is not inconsistency at all, it is a
-   * two-rep cycle that repeats perfectly, and the scorer is right to say so.
-   */
-  function reps(count: number, lo: number, hi: number, perRep = 20, drift = 0): number[] {
-    const out: number[] = [];
-    const mid = (hi + lo) / 2;
-    const base = (hi - lo) / 2;
-    for (let c = 0; c < count; c++) {
-      const amp = base - drift * (count > 1 ? c / (count - 1) : 0);
-      for (let i = 0; i < perRep; i++) {
-        out.push(mid - amp * Math.cos((2 * Math.PI * i) / perRep));
-      }
+/**
+ * `count` cycles of a smooth movement, each swinging `lo`→`hi`→`lo`.
+ *
+ * `drift` shrinks the amplitude progressively across the clip, the way range
+ * of motion decays under fatigue. Progressive rather than alternating on
+ * purpose: an every-other-rep wobble is not inconsistency at all, it is a
+ * two-rep cycle that repeats perfectly, and the scorer is right to say so.
+ *
+ * Shared by the consistency and rep-detection suites — both run on the same
+ * period search, and their fixtures should too.
+ */
+function reps(count: number, lo: number, hi: number, perRep = 20, drift = 0): number[] {
+  const out: number[] = [];
+  const mid = (hi + lo) / 2;
+  const base = (hi - lo) / 2;
+  for (let c = 0; c < count; c++) {
+    const amp = base - drift * (count > 1 ? c / (count - 1) : 0);
+    for (let i = 0; i < perRep; i++) {
+      out.push(mid - amp * Math.cos((2 * Math.PI * i) / perRep));
     }
-    return out;
   }
+  return out;
+}
 
+describe("consistencyScore", () => {
   const withSeries = (signal: (number | null)[]) =>
     goodMetrics({ series: { leftKnee: signal, rightKnee: signal } });
 
@@ -273,6 +277,50 @@ describe("consistencyScore", () => {
     const still = consistencyScore(withSeries(new Array(80).fill(120)));
     expect(still).toBeNull();
     expect(moving!).toBeGreaterThan(90);
+  });
+});
+
+describe("detectReps", () => {
+  const withSeries = (signal: (number | null)[]) =>
+    goodMetrics({ series: { leftKnee: signal, rightKnee: signal } });
+
+  it("counts the repetitions in a clean set", () => {
+    expect(detectReps(withSeries(reps(4, 80, 170)))).toBe(4);
+    expect(detectReps(withSeries(reps(6, 80, 170)))).toBe(6);
+  });
+
+  it("is null for a single rep — nothing repeated", () => {
+    expect(detectReps(withSeries(reps(1, 80, 170, 40)))).toBeNull();
+  });
+
+  it("is null for a static hold", () => {
+    expect(detectReps(withSeries(new Array(80).fill(120)))).toBeNull();
+  });
+
+  it("is null without a series", () => {
+    expect(detectReps(goodMetrics())).toBeNull();
+  });
+
+  it("does not halve the count when noise favours the double period", () => {
+    // The octave error: per-rep noise can push the autocorrelation at 2× the
+    // true period a hair above the period itself, and taking the tallest peak
+    // then reports half the reps. Alternate cycles are nudged in opposite
+    // directions here, which makes lag 2T correlate perfectly while lag T
+    // stays merely excellent — the fundamental must still win.
+    const signal = reps(4, 80, 170).map((v, i) => {
+      const cycle = Math.floor(i / 20);
+      return v + (cycle % 2 === 0 ? 1.2 : -1.2);
+    });
+    expect(detectReps(withSeries(signal))).toBe(4);
+  });
+
+  it("agrees with consistencyScore about whether repetition exists", () => {
+    // The two share one period search; a clip must never carry a consistency
+    // score while claiming no reps, or a rep count with no consistency score.
+    const repeating = withSeries(reps(5, 80, 170));
+    const lone = withSeries(reps(1, 80, 170, 40));
+    expect(detectReps(repeating) !== null).toBe(consistencyScore(repeating) !== null);
+    expect(detectReps(lone) !== null).toBe(consistencyScore(lone) !== null);
   });
 });
 
