@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
 import { useColors } from "@/hooks/useColors";
+import { TAB_BAR } from "@/constants/caliper";
 import { REFERENCE_MODELS } from "@/lib/referenceModels";
 import type { ProAthlete } from "@/lib/types";
 
@@ -49,7 +50,9 @@ export default function CompareScreen() {
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<ProAthlete | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 + 84 : insets.bottom + 60;
+  // TAB_BAR.clearance, not a hand-picked number: the floating bar needs
+  // 62 + 26 + 12 = 100, and 60 left the last card sitting under it.
+  const bottomPad = TAB_BAR.clearance + insets.bottom;
 
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },

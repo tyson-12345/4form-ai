@@ -281,7 +281,7 @@ export default function CoachScreen() {
         <View
           style={[
             s.composer,
-            { paddingBottom: TAB_BAR.bottomInset + TAB_BAR.height + 14 },
+            { paddingBottom: TAB_BAR.clearance + 14 },
           ]}
         >
           <TextInput

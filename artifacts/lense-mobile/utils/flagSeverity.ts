@@ -24,14 +24,31 @@ export type FlagSeverity = "OFTEN" | "SOMETIMES" | "BRIEFLY" | "ONCE";
 /** The percentage at which a flag is also shown in the alarm colour. */
 export const FLAG_ALARM_THRESHOLD = 10;
 
-export function flagSeverity(riskPercent: number): FlagSeverity {
-  // Guard against a malformed or absent measurement reading as "OFTEN". A NaN
-  // comparison is false in both directions, so without this it would fall
-  // through to the bottom of the ladder rather than the top — but being
-  // explicit is cheaper than relying on that.
-  if (!Number.isFinite(riskPercent) || riskPercent <= 0) return "ONCE";
-  if (riskPercent >= 25) return "OFTEN";
-  if (riskPercent >= FLAG_ALARM_THRESHOLD) return "SOMETIMES";
+export function flagSeverity(riskPercent: number, cautionPercent = 0): FlagSeverity {
+  // A NaN compares false in both directions, so an unguarded malformed reading
+  // falls past every threshold onto "BRIEFLY" — the bottom of the ladder, which
+  // reads as reassurance we have not earned. A negative percentage is equally
+  // impossible. Both become the faintest *stated* severity rather than silence.
+  if (!Number.isFinite(riskPercent) || riskPercent < 0) return "ONCE";
+  const caution = Number.isFinite(cautionPercent) && cautionPercent > 0 ? cautionPercent : 0;
+
+  // The stamp answers "how much of the clip was this joint out of its range?",
+  // so it counts caution frames as well as risk ones.
+  //
+  // Previously it read `riskPercent` alone, while `deriveRiskFindings` keeps a
+  // finding whenever *either* band was entered (`risk === 0 && caution === 0`
+  // is the only skip). A joint that spent a third of the clip in caution and
+  // never reached the risk band therefore arrived here as 0 and stamped
+  // "ONCE" — describing a single excursion into a band it never entered, on a
+  // row whose text describes a real and sustained one.
+  //
+  // Colour still keys on `riskPercent` alone via `isAlarming`, so a caution-only
+  // finding is described honestly without being painted as an alarm.
+  const outOfRange = riskPercent + caution;
+
+  if (outOfRange <= 0) return "ONCE";
+  if (outOfRange >= 25) return "OFTEN";
+  if (outOfRange >= FLAG_ALARM_THRESHOLD) return "SOMETIMES";
   return "BRIEFLY";
 }
 

@@ -21,6 +21,24 @@ describe("flagSeverity", () => {
     expect(flagSeverity(0)).toBe("ONCE");
   });
 
+  it("counts caution frames, not just risk ones", () => {
+    // deriveRiskFindings keeps a finding when *either* band was entered, so a
+    // joint can arrive with riskPercent 0 and a large cautionPercent. Reading
+    // risk alone stamped that "ONCE" — a single excursion into a band it never
+    // entered — next to text describing a sustained one.
+    expect(flagSeverity(0, 30)).toBe("OFTEN");
+    expect(flagSeverity(0, 12)).toBe("SOMETIMES");
+    expect(flagSeverity(0, 4)).toBe("BRIEFLY");
+
+    // Colour still keys on risk alone, so caution-only is stated, not alarmed.
+    expect(isAlarming(0)).toBe(false);
+  });
+
+  it("adds the two bands together", () => {
+    expect(flagSeverity(6, 6)).toBe("SOMETIMES");
+    expect(flagSeverity(20, 8)).toBe("OFTEN");
+  });
+
   it("changes wording at the same point the colour changes", () => {
     // The stamp and the alarm colour must agree, or a flag reads as mild while
     // being drawn in rust.
@@ -38,6 +56,7 @@ describe("flagSeverity", () => {
     expect(flagSeverity(Number.POSITIVE_INFINITY)).toBe("ONCE");
     expect(flagSeverity(-5)).toBe("ONCE");
   });
+
 });
 
 describe("isAlarming", () => {

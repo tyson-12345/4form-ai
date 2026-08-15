@@ -22,7 +22,7 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -55,7 +55,6 @@ import { flagSeverity, isAlarming } from "@/utils/flagSeverity";
 import { formatBiomechanicsText } from "@/utils/formatBiomechanics";
 
 const HERO_H = 340;
-const { width: SCREEN_W } = Dimensions.get("window");
 
 /**
  * Sub-scores in the order they're presented.
@@ -76,6 +75,10 @@ const DIMENSIONS = [
 export default function AnalysisDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
+  // Read live rather than at module load: a width captured once at import
+  // survives rotation and split view as a stale number, and the hero is laid
+  // out against it.
+  const { width: screenW } = useWindowDimensions();
   const router = useRouter();
 
   const [analysis, setAnalysis] = useState<AnalysisRecord | null>(null);
@@ -174,8 +177,8 @@ export default function AnalysisDetailScreen() {
         {/* ── Hero ── */}
         <Pressable onPress={() => router.push(`/analysis/skeleton/${analysis.id}`)}>
           <View style={s.hero}>
-            <FilmBackdrop />
-            <SkeletonMark flagged={risks.length > 0} />
+            <FilmBackdrop width={screenW} />
+            <SkeletonMark risks={risks} width={screenW} />
 
             <View style={s.heroScrim} />
 
@@ -308,7 +311,7 @@ export default function AnalysisDetailScreen() {
               <FlagRow
                 key={risk.id}
                 first={i === 0}
-                stamp={flagSeverity(risk.riskPercent)}
+                stamp={flagSeverity(risk.riskPercent, risk.cautionPercent ?? 0)}
                 tone={isAlarming(risk.riskPercent) ? color.rust : color.textFaint}
                 text={formatBiomechanicsText(risk.description)}
               />
@@ -377,9 +380,9 @@ export default function AnalysisDetailScreen() {
 // ─── Hero pieces ─────────────────────────────────────────────────────────────
 
 /** Diagonal film-strip texture — the dark ground the reading sits on. */
-function FilmBackdrop() {
+function FilmBackdrop({ width }: { width: number }) {
   return (
-    <Svg width={SCREEN_W} height={HERO_H} style={StyleSheet.absoluteFill}>
+    <Svg width={width} height={HERO_H} style={StyleSheet.absoluteFill}>
       <Defs>
         <Pattern
           id="film"
@@ -392,34 +395,99 @@ function FilmBackdrop() {
           <Rect width={4} height={8} fill="#1C1F21" />
         </Pattern>
       </Defs>
-      <Rect width={SCREEN_W} height={HERO_H} fill="url(#film)" />
+      <Rect width={width} height={HERO_H} fill="url(#film)" />
     </Svg>
   );
 }
 
-/** A stylised figure. Marks a flagged limb in rust when the session has flags. */
-function SkeletonMark({ flagged }: { flagged: boolean }) {
-  const bone = { stroke: color.onInk, strokeOpacity: 0.55, strokeWidth: 2 };
-  const cx = SCREEN_W / 2 - 27;
+/**
+ * A body map of the six joints we measure, with the flagged ones marked.
+ *
+ * ── What this replaced, and why ─────────────────────────────────────────────
+ * The previous mark was fixed artwork: hardcoded limb coordinates, identical
+ * for every athlete, every sport and every session. Its one dynamic element was
+ * a boolean — if the session had *any* flag, one arm turned rust and gained a
+ * ring. Always the same arm. A flagged left knee highlighted the right elbow.
+ *
+ * That is the failure this screen's header argues against three lines up: a
+ * time-axis waveform was rejected as "decoration drawn to look like data", and
+ * the mark was doing exactly that, more prominently, above it. It also read as
+ * a picture of *your* pose, which it never was — and it is the first thing on
+ * the screen, so it set the terms for everything below.
+ *
+ * It is now a schematic, and honest about being one: a diagram of the joints
+ * the tracker measures, with each flagged joint marked in the alarm colour and
+ * the rest left as quiet furniture. Nothing here claims to be the athlete's
+ * posture; the real skeleton, drawn from tracked landmarks, is one tap away.
+ */
+function SkeletonMark({ risks, width }: { risks: RiskRecord[]; width: number }) {
+  const cx = width / 2 - 27;
+
+  // `joint` arrives as the label the server stores — "left knee", "right hip".
+  const flagged = new Set(
+    risks.filter((r) => isAlarming(r.riskPercent)).map((r) => r.joint.toLowerCase().trim()),
+  );
+  const measured = new Set(risks.map((r) => r.joint.toLowerCase().trim()));
+
+  const bone = { stroke: color.onInk, strokeOpacity: 0.35, strokeWidth: 2 } as const;
+
+  /** Segment styling: rust when this joint was flagged, quiet otherwise. */
+  const seg = (joint: string) =>
+    flagged.has(joint)
+      ? { stroke: color.rust, strokeOpacity: 1, strokeWidth: 2.75 }
+      : bone;
+
+  /** The dot sitting on a joint, sized and coloured by whether it was flagged. */
+  const dot = (joint: string, x: number, y: number) => {
+    if (flagged.has(joint)) {
+      return <Circle key={joint} cx={x} cy={y} r={4.5} fill={color.rust} />;
+    }
+    if (measured.has(joint)) {
+      return (
+        <Circle key={joint} cx={x} cy={y} r={3.5} fill={color.onInk} fillOpacity={0.45} />
+      );
+    }
+    return null;
+  };
+
+  // Mirror view: the athlete's left limb is drawn on the viewer's left.
+  //
+  // Anatomical diagrams use the opposite convention — the subject faces you, so
+  // their left is on your right. That is correct for a clinician looking at a
+  // patient and wrong here, where the person reading the screen is the person
+  // in the clip and is used to seeing themselves in a gym mirror. The flag text
+  // beside this says "left knee" in words, so the two must not disagree.
+  const shoulderY = 136;
+  const pelvisY = 192;
+  const elbow = { x: 32, y: 168 };
+  const knee = { x: 22, y: 234 };
+
   return (
-    <Svg width={SCREEN_W} height={HERO_H} style={StyleSheet.absoluteFill}>
+    <Svg width={width} height={HERO_H} style={StyleSheet.absoluteFill}>
+      {/* Head and spine carry no measurement, so they stay furniture. */}
       <Circle cx={cx} cy={104} r={14} {...bone} fill="none" />
-      <Line x1={cx} y1={118} x2={cx} y2={190} {...bone} />
-      <Line x1={cx} y1={136} x2={cx - 36} y2={172} {...bone} />
-      <Line
-        x1={cx}
-        y1={136}
-        x2={cx + 46}
-        y2={160}
-        stroke={flagged ? color.rust : color.onInk}
-        strokeOpacity={flagged ? 1 : 0.55}
-        strokeWidth={flagged ? 2.5 : 2}
-      />
-      <Line x1={cx} y1={190} x2={cx - 26} y2={252} {...bone} />
-      <Line x1={cx} y1={190} x2={cx + 34} y2={248} {...bone} />
-      {flagged && (
-        <Circle cx={cx + 46} cy={160} r={24} stroke={color.rust} strokeWidth={2} fill="none" />
-      )}
+      <Line x1={cx} y1={118} x2={cx} y2={pelvisY} {...bone} />
+      <Line x1={cx - 20} y1={shoulderY} x2={cx + 20} y2={shoulderY} {...bone} />
+      <Line x1={cx - 14} y1={pelvisY} x2={cx + 14} y2={pelvisY} {...bone} />
+
+      {/* Arms: upper arm and forearm meet at the elbow. */}
+      <Line x1={cx - 20} y1={shoulderY} x2={cx - elbow.x} y2={elbow.y} {...seg("left elbow")} />
+      <Line x1={cx - elbow.x} y1={elbow.y} x2={cx - elbow.x - 8} y2={elbow.y + 34} {...seg("left elbow")} />
+      <Line x1={cx + 20} y1={shoulderY} x2={cx + elbow.x} y2={elbow.y} {...seg("right elbow")} />
+      <Line x1={cx + elbow.x} y1={elbow.y} x2={cx + elbow.x + 8} y2={elbow.y + 34} {...seg("right elbow")} />
+
+      {/* Legs: thigh is the hip's segment, shin is the knee's. */}
+      <Line x1={cx - 14} y1={pelvisY} x2={cx - knee.x} y2={knee.y} {...seg("left hip")} />
+      <Line x1={cx - knee.x} y1={knee.y} x2={cx - knee.x - 4} y2={knee.y + 40} {...seg("left knee")} />
+      <Line x1={cx + 14} y1={pelvisY} x2={cx + knee.x} y2={knee.y} {...seg("right hip")} />
+      <Line x1={cx + knee.x} y1={knee.y} x2={cx + knee.x + 4} y2={knee.y + 40} {...seg("right knee")} />
+
+      {dot("left elbow", cx - elbow.x, elbow.y)}
+      {dot("right elbow", cx + elbow.x, elbow.y)}
+      {dot("left hip", cx - 14, pelvisY)}
+      {dot("right hip", cx + 14, pelvisY)}
+      {dot("left knee", cx - knee.x, knee.y)}
+      {dot("right knee", cx + knee.x, knee.y)}
     </Svg>
   );
 }
