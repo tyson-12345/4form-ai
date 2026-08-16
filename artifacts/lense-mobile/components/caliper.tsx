@@ -234,7 +234,9 @@ export function MetricBand({
       {hasReference && <View style={[s.bandReference, { left: pct(reference) }]} />}
 
       <View style={[s.bandMarker, { left: pct(value) }]}>
-        <Text style={s.bandMarkerLabel}>{markerLabel}</Text>
+        <Text style={s.bandMarkerLabel} numberOfLines={1}>
+          {markerLabel}
+        </Text>
         <View style={s.bandMarkerStem} />
       </View>
 
@@ -253,6 +255,188 @@ export function MetricBand({
           ))
         )}
       </View>
+    </View>
+  );
+}
+
+// ─── Mini band (row-scale ruler) ─────────────────────────────────────────────
+
+/**
+ * The band scale at list-row size: a hairline with the athlete's band washed
+ * in and a marker for this row's reading. The redesign's rule taken to its
+ * smallest case — even a number in a list row sits against its band.
+ *
+ * Renders nothing when the value is null (an unmeasured session has no
+ * position on the scale) — never a marker at zero.
+ */
+export function MiniBand({
+  value,
+  min = 40,
+  max = 100,
+  bandLow,
+  bandHigh,
+  width = 34,
+}: {
+  value: number | null;
+  min?: number;
+  max?: number;
+  bandLow?: number | null;
+  bandHigh?: number | null;
+  width?: number;
+}) {
+  if (value === null) return null;
+  const span = Math.max(1, max - min);
+  const pct = (v: number): `${number}%` =>
+    `${Math.min(100, Math.max(0, ((v - min) / span) * 100))}%`;
+  const hasBand = bandLow != null && bandHigh != null;
+
+  return (
+    <View style={[s.miniBand, { width }]}>
+      {hasBand && (
+        <View
+          style={[
+            s.miniBandFill,
+            {
+              left: pct(bandLow),
+              width: `${Math.max(4, ((bandHigh - bandLow) / span) * 100)}%` as `${number}%`,
+            },
+          ]}
+        />
+      )}
+      <View style={[s.miniBandMarker, { left: pct(value) }]} />
+    </View>
+  );
+}
+
+// ─── Micro axis (tile-scale ruler) ───────────────────────────────────────────
+
+/**
+ * The band scale at tile size: baseline, band wash, one marker stem. Sits
+ * under a sub-score or a live joint reading so even the smallest number is an
+ * instrument reading rather than a bare figure.
+ */
+export function MicroAxis({
+  value,
+  min = 40,
+  max = 100,
+  bandLow,
+  bandHigh,
+  tone = color.cobalt,
+}: {
+  value: number;
+  min?: number;
+  max?: number;
+  bandLow?: number | null;
+  bandHigh?: number | null;
+  /** Marker colour — ink for live readings, rust for a flagged one. */
+  tone?: string;
+}) {
+  const span = Math.max(1, max - min);
+  const pct = (v: number): `${number}%` =>
+    `${Math.min(100, Math.max(0, ((v - min) / span) * 100))}%`;
+  const hasBand = bandLow != null && bandHigh != null;
+
+  return (
+    <View style={s.microAxis}>
+      <View style={s.microAxisBase} />
+      {hasBand && (
+        <View
+          style={[
+            s.microAxisFill,
+            {
+              left: pct(bandLow),
+              width: `${Math.max(4, ((bandHigh - bandLow) / span) * 100)}%` as `${number}%`,
+            },
+          ]}
+        />
+      )}
+      <View style={[s.microAxisMarker, { left: pct(value), backgroundColor: tone }]} />
+    </View>
+  );
+}
+
+// ─── Frequency chip ──────────────────────────────────────────────────────────
+
+/**
+ * How often a finding occurred, as the evidence card's leading chip: rust wash
+ * when the finding is alarming, ink wash otherwise. The word comes from
+ * utils/flagSeverity so the chip and the prose can never disagree.
+ */
+export function FrequencyChip({ label, alarming }: { label: string; alarming: boolean }) {
+  return (
+    <View style={[s.freqChip, { backgroundColor: alarming ? "rgba(194,84,46,0.12)" : "rgba(16,19,18,0.06)" }]}>
+      <Text
+        style={[
+          T.label,
+          { fontSize: 9, letterSpacing: 1, color: alarming ? color.rust : color.textMuted },
+        ]}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+// ─── Range ruler (observed vs safe band) ─────────────────────────────────────
+
+/**
+ * The evidence card's ruler: the joint's safe band as a cobalt wash, the
+ * observed range as a line with end stems. One glance answers "how far outside
+ * the band did it actually go?" — the claim and its evidence on one axis.
+ *
+ * The domain is fitted to the data with padding rather than fixed 0–180, so a
+ * 10° excursion is visible rather than a sliver.
+ */
+export function RangeRuler({
+  observedMin,
+  observedMax,
+  safeMin,
+  safeMax,
+  alarming,
+}: {
+  observedMin: number;
+  observedMax: number;
+  safeMin: number | null;
+  safeMax: number | null;
+  alarming: boolean;
+}) {
+  const PAD = 14;
+  const lo = Math.max(0, Math.min(observedMin, safeMin ?? observedMin) - PAD);
+  const hi = Math.min(185, Math.max(observedMax, safeMax ?? observedMax) + PAD);
+  const span = Math.max(1, hi - lo);
+  const pct = (v: number): `${number}%` =>
+    `${Math.min(100, Math.max(0, ((v - lo) / span) * 100))}%`;
+
+  const tone = alarming ? color.rust : color.textFaint;
+  const bandLeft = safeMin ?? lo;
+  const bandRight = safeMax ?? hi;
+
+  return (
+    <View style={s.rangeRuler}>
+      <View style={s.rangeRulerBase} />
+      {(safeMin !== null || safeMax !== null) && (
+        <View
+          style={[
+            s.rangeRulerBand,
+            {
+              left: pct(bandLeft),
+              width: `${Math.max(2, ((bandRight - bandLeft) / span) * 100)}%` as `${number}%`,
+            },
+          ]}
+        />
+      )}
+      <View
+        style={[
+          s.rangeRulerObserved,
+          {
+            left: pct(observedMin),
+            width: `${Math.max(1, ((observedMax - observedMin) / span) * 100)}%` as `${number}%`,
+            backgroundColor: tone,
+          },
+        ]}
+      />
+      <View style={[s.rangeRulerStem, { left: pct(observedMin), backgroundColor: tone }]} />
+      <View style={[s.rangeRulerStem, { left: pct(observedMax), backgroundColor: tone }]} />
     </View>
   );
 }
@@ -827,13 +1011,14 @@ const s = StyleSheet.create({
     marginLeft: -1,
     backgroundColor: "rgba(16,19,18,0.32)",
   },
+  // Wide enough for "THIS CLIP", the longest marker label — 44 wrapped it.
   bandMarker: {
     position: "absolute",
     top: 0,
     alignItems: "center",
     gap: 3,
-    marginLeft: -22,
-    width: 44,
+    marginLeft: -30,
+    width: 60,
   },
   bandMarkerStem: { width: 3, height: 32, backgroundColor: color.cobalt, borderRadius: 2 },
   bandMarkerLabel: {
@@ -874,6 +1059,95 @@ const s = StyleSheet.create({
     fontSize: 12,
     color: color.textPrimary,
     marginTop: 3,
+  },
+
+  // Mini band (row scale)
+  miniBand: {
+    height: 2,
+    backgroundColor: "rgba(16,19,18,0.12)",
+    borderRadius: 1,
+    marginTop: 4,
+  },
+  miniBandFill: {
+    position: "absolute",
+    top: 0,
+    height: 2,
+    backgroundColor: "rgba(36,54,232,0.28)",
+    borderRadius: 1,
+  },
+  miniBandMarker: {
+    position: "absolute",
+    top: -1.5,
+    width: 2,
+    height: 5,
+    marginLeft: -1,
+    backgroundColor: color.cobalt,
+    borderRadius: 1,
+  },
+
+  // Micro axis (tile scale)
+  microAxis: { height: 10, marginTop: 8, position: "relative" },
+  microAxisBase: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 4,
+    height: 1,
+    backgroundColor: "rgba(16,19,18,0.14)",
+  },
+  microAxisFill: {
+    position: "absolute",
+    top: 1,
+    height: 7,
+    backgroundColor: color.cobaltWash,
+    borderRadius: 2,
+  },
+  microAxisMarker: {
+    position: "absolute",
+    top: 0,
+    width: 2,
+    height: 9,
+    marginLeft: -1,
+    borderRadius: 1,
+  },
+
+  // Frequency chip
+  freqChip: {
+    borderRadius: radius.pill,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+
+  // Range ruler (observed vs safe band)
+  rangeRuler: { height: 24, marginTop: 14, position: "relative" },
+  rangeRulerBase: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 11,
+    height: 1,
+    backgroundColor: color.ruleStrong,
+  },
+  rangeRulerBand: {
+    position: "absolute",
+    top: 6,
+    height: 11,
+    backgroundColor: color.cobaltWash,
+    borderRadius: 3,
+  },
+  rangeRulerObserved: {
+    position: "absolute",
+    top: 11,
+    height: 2,
+    borderRadius: 1,
+  },
+  rangeRulerStem: {
+    position: "absolute",
+    top: 7,
+    width: 2,
+    height: 10,
+    marginLeft: -1,
+    borderRadius: 1,
   },
 
   // Metric bar

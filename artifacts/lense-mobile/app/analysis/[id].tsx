@@ -32,8 +32,10 @@ import {
   Screen,
   Card,
   Label,
-  MetricBar,
   MetricBand,
+  MicroAxis,
+  FrequencyChip,
+  RangeRuler,
   Prescription,
   FlagRow,
   Chevron,
@@ -136,6 +138,27 @@ export default function AnalysisDetailScreen() {
       .map((a) => a.overallScore!);
     if (scores.length < 3) return null;
     return { low: Math.min(...scores), high: Math.max(...scores) };
+  }, [history]);
+
+  /**
+   * Per-dimension bands, same derivation as the overall band: the athlete's
+   * own range across measured history, absent until three readings exist. Each
+   * sub-score tile plots its value against its own dimension's band — a
+   * technique reading against the technique range, never the overall one.
+   */
+  const dimensionBands = useMemo(() => {
+    const measured = history.filter(
+      (a) => a.status === "complete" && a.analysisMethod === "pose-measured",
+    );
+    const bands: Record<string, { low: number; high: number } | null> = {};
+    for (const d of DIMENSIONS) {
+      const values = measured
+        .map((a) => (a as unknown as Record<string, number | null>)[`${d.key}Score`])
+        .filter((v): v is number => v !== null && v !== undefined);
+      bands[d.key] =
+        values.length < 3 ? null : { low: Math.min(...values), high: Math.max(...values) };
+    }
+    return bands;
   }, [history]);
 
   /**
@@ -311,7 +334,7 @@ export default function AnalysisDetailScreen() {
           )}
 
           {measured && (
-            <View style={s.bars}>
+            <View style={s.tiles}>
               {DIMENSIONS.map((d) => {
                 const value =
                   (analysis as unknown as Record<string, number | null>)[`${d.key}Score`] ?? null;
@@ -320,10 +343,11 @@ export default function AnalysisDetailScreen() {
                     null)
                   : null;
                 return (
-                  <MetricBar
+                  <SubScoreTile
                     key={d.key}
                     name={d.label}
                     value={value}
+                    band={dimensionBands[d.key] ?? null}
                     // The change since last session — context the athlete had
                     // to hold in their head before. Only shown when both clips
                     // actually measured the dimension.
@@ -371,22 +395,16 @@ export default function AnalysisDetailScreen() {
           </View>
         )}
 
-        {/* ── Flags ── */}
+        {/* ── Findings — evidence cards ── */}
         {risks.length > 0 && (
           <View style={s.section}>
-            <Label style={{ marginBottom: 6 }}>WHAT THE TAPE SHOWS</Label>
-            {risks.map((risk, i) => (
-              <FlagRow
-                key={risk.id}
-                first={i === 0}
-                stamp={flagSeverity(risk.riskPercent, risk.cautionPercent ?? 0)}
-                tone={isAlarming(risk.riskPercent) ? color.rust : color.textFaint}
-                text={formatBiomechanicsText(risk.description)}
-              />
+            <Label style={{ marginBottom: 10 }}>FINDINGS · WHAT THE TAPE SHOWS</Label>
+            {risks.map((risk) => (
+              <FindingCard key={risk.id} risk={risk} />
             ))}
             <Text style={[T.bodySmall, { marginTop: 12, fontStyle: "italic" }]}>
-              These describe joint positions measured from your video. They are not a medical
-              assessment or an injury prediction.
+              Measured joint positions from your video, read against bands for your sport — not
+              a medical assessment or an injury prediction.
             </Text>
           </View>
         )}
@@ -496,6 +514,124 @@ function JointStrip({ risks }: { risks: RiskRecord[] }) {
   );
 }
 
+// ─── Sub-score tile ──────────────────────────────────────────────────────────
+
+/**
+ * One measured dimension as a tile: value, delta, and a micro band axis so
+ * even the smallest number sits against the athlete's own range for that
+ * dimension. `value === null` renders "not measured" rather than an axis with
+ * no marker — an unmeasured dimension has no position on the scale.
+ */
+function SubScoreTile({
+  name,
+  value,
+  band,
+  deltaValue,
+}: {
+  name: string;
+  value: number | null;
+  band: { low: number; high: number } | null;
+  deltaValue: number | null;
+}) {
+  const deltaText = value === null ? null : delta(deltaValue);
+  return (
+    <View style={s.tile}>
+      <Text style={[T.labelTight, { color: color.textMuted }]}>{name.toUpperCase()}</Text>
+      <View style={s.tileRow}>
+        <Text style={[T.metricMedium, value === null && { color: color.textGhost }]}>
+          {value === null ? "–" : Math.round(value)}
+        </Text>
+        {deltaText && (
+          <Text
+            style={[
+              T.measured,
+              { fontSize: 10, color: (deltaValue ?? 0) > 0 ? color.cobalt : color.textFaint },
+            ]}
+          >
+            {deltaText}
+          </Text>
+        )}
+      </View>
+      {value === null ? (
+        <Text style={[T.measuredSmall, { marginTop: 10 }]}>NOT MEASURED</Text>
+      ) : (
+        <MicroAxis value={value} bandLow={band?.low ?? null} bandHigh={band?.high ?? null} />
+      )}
+    </View>
+  );
+}
+
+// ─── Finding card ────────────────────────────────────────────────────────────
+
+/**
+ * One finding as an evidence card: how often it happened, which joint, and the
+ * observed range drawn against the sport's safe band — the claim and its
+ * measurement on one axis. Prose readouts used to carry this alone; the card
+ * makes the evidence visible without the athlete holding numbers in their head.
+ */
+function FindingCard({ risk }: { risk: RiskRecord }) {
+  const alarming = isAlarming(risk.riskPercent);
+  const hasRange = risk.observedMin != null && risk.observedMax != null;
+  const hasBand = risk.safeMin != null || risk.safeMax != null;
+  const tone = alarming ? color.rust : color.textMuted;
+
+  return (
+    <Card style={s.findingCard}>
+      <View style={s.findingHead}>
+        <FrequencyChip
+          label={flagSeverity(risk.riskPercent, risk.cautionPercent ?? 0)}
+          alarming={alarming}
+        />
+        <Text style={[T.measured, { flex: 1, fontSize: 11, letterSpacing: 0.6 }]}>
+          {risk.joint.toUpperCase()}
+        </Text>
+        {hasRange && (
+          <Text style={[T.measured, { color: tone }]}>
+            {Math.round(risk.observedMin!)}–{Math.round(risk.observedMax!)}°
+          </Text>
+        )}
+      </View>
+
+      {hasRange && (
+        <>
+          <RangeRuler
+            observedMin={risk.observedMin!}
+            observedMax={risk.observedMax!}
+            safeMin={risk.safeMin ?? null}
+            safeMax={risk.safeMax ?? null}
+            alarming={alarming}
+          />
+          <View style={s.findingAxis}>
+            <Text style={T.measuredSmall}>
+              {risk.safeMin != null && risk.safeMax != null
+                ? `SAFE BAND ${Math.round(risk.safeMin)}–${Math.round(risk.safeMax)}°`
+                : risk.safeMax != null
+                  ? `SAFE UP TO ${Math.round(risk.safeMax)}°`
+                  : risk.safeMin != null
+                    ? `SAFE FROM ${Math.round(risk.safeMin)}°`
+                    : hasBand
+                      ? ""
+                      : "NO BAND FOR THIS SPORT"}
+            </Text>
+            <Text style={[T.measuredSmall, { color: tone }]}>
+              OBSERVED {Math.round(risk.observedMin!)}–{Math.round(risk.observedMax!)}°
+            </Text>
+          </View>
+        </>
+      )}
+
+      <Text style={[T.body, { fontSize: 13.5, lineHeight: 19, color: color.textPrimary, marginTop: 12 }]}>
+        {formatBiomechanicsText(risk.description)}
+      </Text>
+      {risk.prevention ? (
+        <Text style={[T.bodySmall, { marginTop: 6 }]}>
+          {formatBiomechanicsText(risk.prevention)}
+        </Text>
+      ) : null}
+    </Card>
+  );
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 // The provenance stamp is shared with Home — see utils/provenance.ts.
@@ -538,7 +674,22 @@ const s = StyleSheet.create({
   indexCard: { marginHorizontal: GUTTER, marginTop: -16 },
   indexHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   indexRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 2 },
-  bars: { marginTop: 18, gap: 11 },
+  tiles: { marginTop: 20, flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  tile: {
+    width: "48.5%",
+    backgroundColor: color.paper,
+    borderRadius: 16,
+    padding: 12,
+  },
+  tileRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 4 },
+
+  findingCard: { marginBottom: 10, padding: 16, borderRadius: radius.cardSmall },
+  findingHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+  findingAxis: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 4,
+  },
   legacyNote: {
     backgroundColor: "rgba(194,84,46,0.08)",
     borderRadius: 12,

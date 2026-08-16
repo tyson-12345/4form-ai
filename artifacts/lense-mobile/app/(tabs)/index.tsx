@@ -20,6 +20,7 @@ import {
   Card,
   Label,
   MetricBand,
+  MiniBand,
   Prescription,
   Avatar,
   Chevron,
@@ -162,9 +163,11 @@ export default function HomeScreen() {
             <View style={s.metricRow}>
               <Text style={T.metricHeroXL}>{Math.round(latest.overallScore!)}</Text>
               {change !== null && delta(change) && (
-                <Text style={[T.measured, { fontSize: 13, color: color.cobalt }]}>
-                  {delta(change)}
-                </Text>
+                <View style={s.deltaPill}>
+                  <Text style={[T.measured, { fontSize: 11, color: color.cobalt }]}>
+                    {delta(change)} VS LAST
+                  </Text>
+                </View>
               )}
             </View>
 
@@ -238,6 +241,7 @@ export default function HomeScreen() {
                 key={item.id}
                 item={item}
                 first={i === 0}
+                band={band}
                 onPress={() => router.push(`/analysis/${item.id}`)}
               />
             ))}
@@ -263,10 +267,13 @@ export default function HomeScreen() {
 function SessionRow({
   item,
   first,
+  band,
   onPress,
 }: {
   item: AnalysisRecord;
   first: boolean;
+  /** The athlete's working band, so each row's score sits against it. */
+  band: { low: number; high: number } | null;
   onPress: () => void;
 }) {
   const processing = item.status === "processing" || item.status === "pending";
@@ -294,9 +301,16 @@ function SessionRow({
         </Text>
         <Text style={[T.rowSubtitle, { marginTop: 1, textTransform: "capitalize" }]}>{note}</Text>
       </View>
-      <Text style={T.metricRow}>
-        {item.overallScore === null ? "–" : Math.round(item.overallScore)}
-      </Text>
+      <View style={{ alignItems: "flex-end" }}>
+        <Text style={[T.metricRow, item.overallScore === null && { color: color.textGhost }]}>
+          {item.overallScore === null ? "–" : Math.round(item.overallScore)}
+        </Text>
+        <MiniBand
+          value={item.overallScore}
+          bandLow={band?.low ?? null}
+          bandHigh={band?.high ?? null}
+        />
+      </View>
       <Chevron />
     </Pressable>
   );
@@ -343,6 +357,12 @@ const s = StyleSheet.create({
   block: { marginHorizontal: GUTTER, marginTop: 22 },
   metricHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   metricRow: { flexDirection: "row", alignItems: "baseline", gap: 10, marginTop: 4 },
+  deltaPill: {
+    backgroundColor: color.cobaltWash,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
   sectionHead: {
     flexDirection: "row",
     alignItems: "baseline",

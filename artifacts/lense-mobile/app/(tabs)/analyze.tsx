@@ -30,6 +30,7 @@ import {
   Label,
   Chip,
   Chevron,
+  MiniBand,
   UploadGlyph,
   PrimaryButton,
 } from "@/components/caliper";
@@ -76,6 +77,20 @@ export default function SessionsScreen() {
   // Poll only while something is actually being measured.
   const measuring = list.filter((a) => a.status === "processing" || a.status === "pending");
   const measured = list.filter((a) => a.status === "complete" || a.status === "failed");
+
+  // The athlete's working band — same derivation as Home, so a row's mini
+  // scale here and the hero scale there can never disagree.
+  const scores = measured
+    .filter((a) => a.analysisMethod === "pose-measured" && a.overallScore !== null)
+    .map((a) => a.overallScore!);
+  const band =
+    scores.length < 3 ? null : { low: Math.min(...scores), high: Math.max(...scores) };
+  const bestId =
+    scores.length < 2
+      ? null
+      : measured
+          .filter((a) => a.analysisMethod === "pose-measured" && a.overallScore !== null)
+          .reduce((a, b) => (b.overallScore! > a.overallScore! ? b : a)).id;
 
   useFocusEffect(
     useCallback(() => {
@@ -259,6 +274,8 @@ export default function SessionsScreen() {
             <MeasuredRow
               key={item.id}
               item={item}
+              band={band}
+              best={item.id === bestId}
               onPress={() => router.push(`/analysis/${item.id}`)}
               onDelete={async () => {
                 await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -360,10 +377,16 @@ export default function SessionsScreen() {
 
 function MeasuredRow({
   item,
+  band,
+  best,
   onPress,
   onDelete,
 }: {
   item: AnalysisRecord;
+  /** The athlete's working band, for the row's mini scale. */
+  band: { low: number; high: number } | null;
+  /** True on the athlete's highest measured reading. */
+  best: boolean;
   onPress: () => void;
   onDelete: () => void;
 }) {
@@ -378,7 +401,7 @@ function MeasuredRow({
       ? "NOT TRACKABLE"
       : legacy
         ? "UNVERIFIED"
-        : item.sport.toUpperCase();
+        : `${item.sport.toUpperCase()}${best ? " · BEST" : ""}`;
 
   const noteTone = failed || unscored ? color.rust : legacy ? color.textFaint : color.textFaint;
 
@@ -402,9 +425,16 @@ function MeasuredRow({
         <Text style={[T.measuredSmall, { color: noteTone, marginTop: 3 }]}>{note}</Text>
       </View>
 
-      <Text style={[T.metricRow, item.overallScore === null && { color: color.textGhost }]}>
-        {item.overallScore === null ? "–" : Math.round(item.overallScore)}
-      </Text>
+      <View style={{ alignItems: "flex-end" }}>
+        <Text style={[T.metricRow, item.overallScore === null && { color: color.textGhost }]}>
+          {item.overallScore === null ? "–" : Math.round(item.overallScore)}
+        </Text>
+        <MiniBand
+          value={item.analysisMethod === "pose-measured" ? item.overallScore : null}
+          bandLow={band?.low ?? null}
+          bandHigh={band?.high ?? null}
+        />
+      </View>
     </Pressable>
   );
 }

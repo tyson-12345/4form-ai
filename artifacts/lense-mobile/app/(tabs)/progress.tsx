@@ -7,19 +7,31 @@
  */
 
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  Pressable,
+  useWindowDimensions,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 
-import { Screen, Card, Label, Sparkline, MonoChip, Check } from "@/components/caliper";
+import { Screen, Card, Label, Sparkline, Check } from "@/components/caliper";
 import { color, type as T, GUTTER, TAB_BAR, delta } from "@/constants/caliper";
 import { progress as progressApi, analyses as analysesApi, type ProgressRecord, type AnalysisRecord } from "@/lib/api";
 
 type Range = "12W" | "ALL";
 
-/** Sub-scores that can actually be measured from 2D pose. */
-const METRICS = [
-  { key: "overallScore", label: "OVERALL" },
+/**
+ * Sub-scores that can actually be measured from 2D pose, shown as small
+ * multiples under the overall trend. The redesign replaces the metric filter
+ * with four always-visible tiles: comparing dimensions is the point, and a
+ * filter only ever showed one at a time.
+ */
+const SUB_METRICS = [
   { key: "techniqueScore", label: "TECHNIQUE" },
   { key: "balanceScore", label: "BALANCE" },
   { key: "consistencyScore", label: "CONSISTENCY" },
@@ -32,9 +44,9 @@ export default function ProgressScreen() {
   const [entries, setEntries] = useState<ProgressRecord[]>([]);
   const [sessions, setSessions] = useState<AnalysisRecord[]>([]);
   const [range, setRange] = useState<Range>("12W");
-  const [metric, setMetric] = useState<(typeof METRICS)[number]["key"]>("overallScore");
   const [refreshing, setRefreshing] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const { width: screenW } = useWindowDimensions();
 
   const load = useCallback(async () => {
     const [p, a] = await Promise.allSettled([progressApi.list(), analysesApi.list()]);
@@ -51,20 +63,26 @@ export default function ProgressScreen() {
   );
 
   // ── Series ──
-  const series = useMemo(() => {
+  const scoped = useMemo(() => {
     const sorted = [...entries].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
     );
     const cutoff = Date.now() - 12 * 7 * 24 * 60 * 60 * 1000;
-    const scoped = range === "12W" ? sorted.filter((e) => new Date(e.date).getTime() >= cutoff) : sorted;
+    return range === "12W" ? sorted.filter((e) => new Date(e.date).getTime() >= cutoff) : sorted;
+  }, [entries, range]);
 
-    return scoped
-      .map((e) => ({
-        date: e.date,
-        value: (e as unknown as Record<string, number | null>)[metric],
-      }))
-      .filter((p): p is { date: string; value: number } => typeof p.value === "number");
-  }, [entries, range, metric]);
+  const seriesFor = useCallback(
+    (key: string) =>
+      scoped
+        .map((e) => ({
+          date: e.date,
+          value: (e as unknown as Record<string, number | null>)[key],
+        }))
+        .filter((p): p is { date: string; value: number } => typeof p.value === "number"),
+    [scoped],
+  );
+
+  const series = useMemo(() => seriesFor("overallScore"), [seriesFor]);
 
   const values = series.map((p) => p.value);
   const current = values.at(-1) ?? null;
@@ -134,10 +152,7 @@ export default function ProgressScreen() {
         <Card style={s.block}>
           <View style={s.trendHead}>
             <View>
-              <Label>
-                {METRICS.find((m) => m.key === metric)?.label} ·{" "}
-                {range === "12W" ? "12 WEEKS" : "ALL TIME"}
-              </Label>
+              <Label>OVERALL · {range === "12W" ? "12 WEEKS" : "ALL TIME"}</Label>
               <View style={s.trendRow}>
                 <Text style={[T.metricLarge, current === null && { color: color.textGhost }]}>
                   {current === null ? "–" : Math.round(current)}
@@ -191,14 +206,14 @@ export default function ProgressScreen() {
           )}
         </Card>
 
-        {/* ── Metric selector ── */}
-        <View style={s.chips}>
-          {METRICS.map((m) => (
-            <MonoChip
+        {/* ── Small multiples — every dimension, side by side ── */}
+        <View style={s.tiles}>
+          {SUB_METRICS.map((m) => (
+            <SparkTile
               key={m.key}
               label={m.label}
-              selected={metric === m.key}
-              onPress={() => setMetric(m.key)}
+              points={seriesFor(m.key).map((p) => p.value)}
+              width={(screenW - GUTTER * 2 - 8) / 2 - 28}
             />
           ))}
         </View>
@@ -255,6 +270,59 @@ export default function ProgressScreen() {
         )}
       </ScrollView>
     </Screen>
+  );
+}
+
+// ─── Spark tile ──────────────────────────────────────────────────────────────
+
+/**
+ * One dimension as a small multiple: label, latest value, change across the
+ * scoped window, and the trend line. Fewer than two points renders the label
+ * with an en dash — a tile that vanished would make the grid lie about which
+ * dimensions exist.
+ */
+function SparkTile({
+  label,
+  points,
+  width,
+}: {
+  label: string;
+  points: number[];
+  width: number;
+}) {
+  const current = points.at(-1) ?? null;
+  const first = points[0] ?? null;
+  const change =
+    current !== null && first !== null && points.length > 1 ? current - first : null;
+
+  return (
+    <View style={s.tile}>
+      <View style={s.tileHead}>
+        <Text style={[T.labelTight, { color: color.textMuted }]}>{label}</Text>
+        {change !== null && delta(change) && (
+          <Text
+            style={[
+              T.measured,
+              { fontSize: 10, color: change > 0 ? color.cobalt : color.textFaint },
+            ]}
+          >
+            {delta(change)}
+          </Text>
+        )}
+      </View>
+      <Text style={[T.metricMedium, current === null && { color: color.textGhost }, { marginTop: 3 }]}>
+        {current === null ? "–" : Math.round(current)}
+      </Text>
+      {points.length >= 2 ? (
+        <View style={{ marginTop: 6 }}>
+          <Sparkline values={points} width={Math.max(60, width)} height={30} />
+        </View>
+      ) : (
+        <Text style={[T.measuredSmall, { marginTop: 10 }]}>
+          {points.length === 1 ? "ONE READING" : "NOT MEASURED"}
+        </Text>
+      )}
+    </View>
   );
 }
 
@@ -355,12 +423,23 @@ const s = StyleSheet.create({
   trendRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 2 },
   axis: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
 
-  chips: {
+  tiles: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 7,
+    gap: 8,
     paddingHorizontal: GUTTER,
     paddingTop: 14,
+  },
+  tile: {
+    width: "48.5%",
+    backgroundColor: color.card,
+    borderRadius: 20,
+    padding: 14,
+  },
+  tileHead: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
   },
 
   weekHead: {
