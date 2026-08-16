@@ -244,8 +244,12 @@ export default function OnboardingScreen() {
 
 function subtitleFor(step: number): string {
   switch (step) {
+    // The measurement is the same instrument for every sport — what your
+    // sport changes is the coaching: what Atlas emphasises and the vocabulary
+    // it uses. Say that, rather than promising a per-sport joint model the
+    // engine does not have.
     case 0:
-      return "Each sport has its own joint model. Pick as many as you train — you can change this later.";
+      return "Your coaching is framed around your sport. Pick as many as you train — you can change this later.";
     case 1:
       return "This only changes how we phrase feedback. The measurements are the same either way.";
     case 2:

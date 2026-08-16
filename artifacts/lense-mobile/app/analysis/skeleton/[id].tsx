@@ -76,9 +76,19 @@ function jointInsight(key: string, deg: number): { title: string; body: string }
       body: "A very deep hip hinge tends to round the lower back. Brace your core, keep a neutral spine, and hinge from the hips rather than collapsing the torso.",
     };
   }
+  if (key.includes("Elbow")) {
+    return {
+      title: `${side} elbow — locked out`,
+      body: "The elbow reaches full extension under load. Keep a slight bend through the movement to protect the joint and surrounding tendons.",
+    };
+  }
+  // A joint this build doesn't know by name. Describe the reading without
+  // guessing the anatomy — the old fallthrough confidently explained an
+  // "elbow" for anything unrecognised, which becomes a lie the day a
+  // shoulder or ankle joins the tracker.
   return {
-    title: `${side} elbow — locked out`,
-    body: "The elbow reaches full extension under load. Keep a slight bend through the movement to protect the joint and surrounding tendons.",
+    title: `${side} joint — extreme position`,
+    body: `This joint reached ${Math.round(deg)}° during the clip — the most extreme position we measured for it. Review the frame on the player above to see the position it describes.`,
   };
 }
 
@@ -202,7 +212,10 @@ export default function SkeletonScreen() {
           for (const key of Object.keys(msg.risk) as JointKey[]) {
             const lvl = msg.risk[key];
             const deg = msg.data[key];
-            if (lvl < 1 || !deg) continue;
+            // null-check, not falsiness: 0° is a real reading — the fully
+            // closed joint, the most extreme measurement there is — and the
+            // old `!deg` silently dropped it as missing.
+            if (lvl < 1 || deg == null || !Number.isFinite(deg)) continue;
             const cur = next[key];
             if (!cur || lvl > cur.lvl || (lvl === cur.lvl && moreExtreme(key, deg, cur.deg))) {
               next[key] = { lvl, deg };
@@ -362,8 +375,9 @@ export default function SkeletonScreen() {
                 </View>
               </View>
               <View style={ss.grid}>
+                {/* >= 0, not > 0 — a genuine 0° reading must render. */}
                 {angleCards
-                  .filter((a) => a.deg > 0)
+                  .filter((a) => a.deg != null && a.deg >= 0)
                   .map(({ label, deg, key }) => {
                     const lvl = Math.max(0, Math.min(2, risk?.[key] ?? 0));
                     const c = RISK_COLORS[lvl];

@@ -70,8 +70,32 @@ export type PoseMessage =
   | { type: "metrics"; metrics: PoseMetrics }
   | { type: "error"; message: string };
 
-/** How many timestamps scan mode samples. Bounded so long clips stay quick. */
-export const SCAN_SAMPLES = 90;
+/**
+ * How many timestamps scan mode samples, at most.
+ *
+ * The target rate is 12 samples/second (see the WebView script), so clips up
+ * to 12.5s are sampled at full rate and longer clips spread the budget across
+ * their duration. Raised from 90 on 2026-08-15: at 90, a 60-second clip was
+ * sampled at 1.5 fps, sparse enough that a half-second knee collapse — the
+ * exact event the risk flags exist to catch — could fall entirely between
+ * samples. 150 doubles the fidelity of long clips at the cost of a slower
+ * measurement (the progress bar is honest about it); the server's request
+ * schema accepts up to 600 per joint, so this can rise again without a
+ * protocol change.
+ *
+ * The floor lives server-side too: MIN_FRAMES_FOR_SCORING = 20 tracked frames.
+ * MIN_CLIP_SECONDS below keeps clips that cannot mathematically clear that
+ * floor from ever starting a measurement.
+ */
+export const SCAN_SAMPLES = 150;
+
+/**
+ * Shortest clip worth measuring. `max(10, dur × 12)` samples must comfortably
+ * exceed the server's 20-tracked-frame floor even with imperfect tracking —
+ * below this, the clip was guaranteed to fail with a message that blamed
+ * lighting and camera angle for what was actually a length problem.
+ */
+export const MIN_CLIP_SECONDS = 3;
 
 const MEDIAPIPE_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404";
 

@@ -138,12 +138,35 @@ export default function AnalysisDetailScreen() {
     return { low: Math.min(...scores), high: Math.max(...scores) };
   }, [history]);
 
-  // Poll while the write-up is still being generated.
+  /**
+   * Poll while the write-up is still being generated — with a spine.
+   *
+   * Quick polls while the result is genuinely imminent, then a slower cadence,
+   * then stop: an analysis wedged in `processing` used to poll every three
+   * seconds for as long as the screen stayed open, forever. After ~5 minutes
+   * the realistic outcomes are "the server marked it failed" or "it is stuck",
+   * and neither is improved by another thousand requests. `stalled` lets the
+   * copy say so honestly.
+   */
+  const [stalled, setStalled] = useState(false);
   useEffect(() => {
     if (!analysis || analysis.status === "complete" || analysis.status === "failed") return;
-    const timer = setInterval(load, 3000);
-    return () => clearInterval(timer);
-  }, [analysis, load]);
+
+    let polls = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      polls += 1;
+      if (polls > 60) {
+        // ~5 minutes on the schedule below.
+        setStalled(true);
+        return;
+      }
+      void load();
+      timer = setTimeout(tick, polls < 20 ? 3000 : 8000);
+    };
+    timer = setTimeout(tick, 3000);
+    return () => clearTimeout(timer);
+  }, [analysis?.status, load]);
 
   if (state === "loading") {
     return (
@@ -320,7 +343,7 @@ export default function AnalysisDetailScreen() {
           </View>
         )}
 
-        {processing && (
+        {processing && !stalled && (
           <View style={s.section}>
             <View style={s.processingRow}>
               <ActivityIndicator size="small" color={color.cobalt} />
@@ -328,6 +351,15 @@ export default function AnalysisDetailScreen() {
                 Writing up your coaching notes. Your measurements are already saved.
               </Text>
             </View>
+          </View>
+        )}
+
+        {processing && stalled && (
+          <View style={s.section}>
+            <Text style={T.bodySmall}>
+              This is taking longer than it should. Your measurements are saved — come back
+              to this session in a little while for the coaching notes.
+            </Text>
           </View>
         )}
 

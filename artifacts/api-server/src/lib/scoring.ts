@@ -478,17 +478,32 @@ const ROM_REFERENCE: Record<JointKey, number> = {
   rightElbow: 100,
 };
 
+/**
+ * Below this much total travel on every joint, the clip is a hold, not a
+ * movement — a plank, an isometric, a balance drill. Range of motion is not a
+ * property of a position, so mobility reports "not measured" rather than
+ * scoring the athlete near zero for doing exactly what the drill asks.
+ * A squat's driving joints travel 80–110°; camera jitter sits under ~8°.
+ */
+const MIN_TRAVEL_FOR_MOBILITY_DEG = 15;
+
 export function mobilityScore(metrics: PoseMetrics): number | null {
   const ratios: number[] = [];
+  let maxTravel = 0;
 
   for (const key of JOINT_KEYS) {
     const stats = metrics.joints[key];
     if (!stats) continue;
     const rom = stats.max - stats.min;
+    maxTravel = Math.max(maxTravel, rom);
     ratios.push(Math.min(1, rom / ROM_REFERENCE[key]));
   }
 
   if (ratios.length === 0) return null;
+
+  // A static hold has no range of motion to measure — the previous behaviour
+  // scored it ~4 and left the athlete reading a meaningless number as damning.
+  if (maxTravel < MIN_TRAVEL_FOR_MOBILITY_DEG) return null;
 
   const meanRatio = ratios.reduce((a, b) => a + b, 0) / ratios.length;
   return round(clamp(meanRatio * 100));

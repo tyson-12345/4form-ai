@@ -154,8 +154,9 @@ export async function startAnalysis(
 // ─── Pipeline ────────────────────────────────────────────────────────────────
 
 const UNSCORABLE_SUMMARY =
-  "We couldn't track your body reliably enough in this clip to measure joint angles. " +
-  "Film again with your whole body in frame, good lighting, and the camera steady side-on.";
+  "We couldn't get enough reliable readings from this clip to measure joint angles. " +
+  "Film at least ten seconds with your whole body in frame, good lighting, and the " +
+  "camera steady side-on.";
 
 const NO_NARRATIVE_SUMMARY =
   "Your movement was measured and scored. The written coaching notes " +

@@ -325,6 +325,33 @@ describe("detectReps", () => {
 });
 
 describe("mobilityScore", () => {
+  it("is null for a static hold — a position has no range of motion", () => {
+    // A plank used to score ~4, indistinguishable from terrible mobility.
+    const still = goodMetrics({
+      joints: {
+        leftKnee: { min: 175, max: 179, mean: 177, stdDev: 1 },
+        rightKnee: { min: 174, max: 179, mean: 177, stdDev: 1 },
+        leftHip: { min: 168, max: 174, mean: 171, stdDev: 1.5 },
+        rightHip: { min: 169, max: 175, mean: 172, stdDev: 1.5 },
+      },
+    });
+    expect(mobilityScore(still)).toBeNull();
+  });
+
+  it("still scores a real movement whose range is merely poor", () => {
+    // 30° of knee travel is shallow, not static — it must keep its low score
+    // rather than escaping into "not measured".
+    const shallow = goodMetrics({
+      joints: {
+        leftKnee: { min: 140, max: 170, mean: 155, stdDev: 8 },
+        rightKnee: { min: 141, max: 171, mean: 156, stdDev: 8 },
+      },
+    });
+    const score = mobilityScore(shallow);
+    expect(score).not.toBeNull();
+    expect(score!).toBeLessThan(50);
+  });
+
   it("is 100 when range of motion meets the reference", () => {
     const m = goodMetrics({ joints: {} });
     m.joints.leftKnee = { min: 60, max: 160, mean: 110, stdDev: 20 }; // 100° vs 90° ref

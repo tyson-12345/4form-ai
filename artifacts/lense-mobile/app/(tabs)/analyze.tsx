@@ -35,6 +35,7 @@ import {
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
 import { analyses as analysesApi, type AnalysisRecord, type UsageRecord } from "@/lib/api";
+import { MIN_CLIP_SECONDS } from "@/lib/poseTracker";
 import { deleteVideo } from "@/lib/videoStore";
 import { useAuth } from "@/lib/authContext";
 import { SPORTS } from "@/constants/sports";
@@ -102,8 +103,24 @@ export default function SessionsScreen() {
       });
       if (result.canceled) return;
 
-      const uri = result.assets[0]?.uri;
+      const asset = result.assets[0];
+      const uri = asset?.uri;
       if (!uri) return;
+
+      // Refuse clips that cannot mathematically clear the server's
+      // 20-tracked-frame floor. Without this gate a 2-second clip ran the
+      // whole measurement, failed, and got a message blaming lighting and
+      // camera angle for what was a length problem. The picker reports
+      // duration in milliseconds.
+      const durationSec = asset.duration != null ? asset.duration / 1000 : null;
+      if (durationSec !== null && durationSec < MIN_CLIP_SECONDS) {
+        alert(
+          "That clip is too short",
+          `We need at least ${MIN_CLIP_SECONDS} seconds of footage to measure joint angles — ` +
+            "aim for ten seconds or more of the movement.",
+        );
+        return;
+      }
 
       setPendingUri(uri);
       setTitle("");

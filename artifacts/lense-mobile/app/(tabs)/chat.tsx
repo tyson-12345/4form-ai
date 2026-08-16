@@ -35,6 +35,7 @@ import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/cal
 import {
   chat as chatApi,
   analyses as analysesApi,
+  subscriptions as subscriptionsApi,
   type ChatRecord,
   type AnalysisRecord,
   ApiError,
@@ -74,6 +75,27 @@ export default function CoachScreen() {
    */
   const tier = subscription?.tier ?? "free";
   const locked = serverLocked || !(tier === "pro" || tier === "elite");
+
+  /**
+   * Whether purchases actually work right now. Drives the lock card's copy so
+   * a free user is told "not on sale yet" before tapping through, not after.
+   * Defaults to false (billing assumed on) so if the plans call fails we show
+   * the normal upsell rather than wrongly announcing the store is closed.
+   */
+  const [billingOff, setBillingOff] = useState(false);
+  useEffect(() => {
+    if (!locked) return;
+    let cancelled = false;
+    subscriptionsApi
+      .plans()
+      .then(({ billingEnabled }) => {
+        if (!cancelled) setBillingOff(!billingEnabled);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [locked]);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -171,11 +193,21 @@ export default function CoachScreen() {
               Ask about any session and Atlas answers from your measurements — which joint,
               which angle, which clip. Included with Pro.
             </Text>
+            {/* When billing is off, say so here — before the tap. The old card
+                sent every free user to Pricing to discover that nothing can be
+                purchased: a dead end walked in full, one screen at a time. */}
+            {billingOff && (
+              <Text style={[T.bodySmall, { marginTop: 8, color: color.textMuted }]}>
+                Pro isn't on sale quite yet — here's what it will include.
+              </Text>
+            )}
             <Pressable
               onPress={() => router.push("/pricing")}
               style={({ pressed }) => [s.lockCta, pressed && { opacity: 0.85 }]}
             >
-              <Text style={[T.button, { color: color.onCobalt }]}>See plans</Text>
+              <Text style={[T.button, { color: color.onCobalt }]}>
+                {billingOff ? "See what's coming" : "See plans"}
+              </Text>
             </Pressable>
           </Card>
         </View>
