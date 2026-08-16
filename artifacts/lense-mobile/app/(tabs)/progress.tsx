@@ -22,6 +22,7 @@ import { useFocusEffect } from "expo-router";
 import { Screen, Card, Label, Sparkline, Check } from "@/components/caliper";
 import { color, type as T, GUTTER, TAB_BAR, delta } from "@/constants/caliper";
 import { progress as progressApi, analyses as analysesApi, type ProgressRecord, type AnalysisRecord } from "@/lib/api";
+import { parseLocalDate } from "@/utils/localDate";
 
 type Range = "12W" | "ALL";
 
@@ -65,10 +66,10 @@ export default function ProgressScreen() {
   // ── Series ──
   const scoped = useMemo(() => {
     const sorted = [...entries].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+      (a, b) => parseLocalDate(a.date).getTime() - parseLocalDate(b.date).getTime(),
     );
     const cutoff = Date.now() - 12 * 7 * 24 * 60 * 60 * 1000;
-    return range === "12W" ? sorted.filter((e) => new Date(e.date).getTime() >= cutoff) : sorted;
+    return range === "12W" ? sorted.filter((e) => parseLocalDate(e.date).getTime() >= cutoff) : sorted;
   }, [entries, range]);
 
   const seriesFor = useCallback(
@@ -168,7 +169,7 @@ export default function ProgressScreen() {
                 <Text style={[T.measured, { marginTop: 3 }]}>
                   {Math.round(best)}
                   {bestEntry
-                    ? ` · ${new Date(bestEntry.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" }).toUpperCase()}`
+                    ? ` · ${parseLocalDate(bestEntry.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" }).toUpperCase()}`
                     : ""}
                 </Text>
               </View>
@@ -185,13 +186,13 @@ export default function ProgressScreen() {
               <View style={s.axis}>
                 <Text style={T.measuredSmall}>
                   {series[0] &&
-                    new Date(series[0].date)
+                    parseLocalDate(series[0].date)
                       .toLocaleDateString("en-GB", { month: "short" })
                       .toUpperCase()}
                 </Text>
                 <Text style={T.measuredSmall}>
                   {series.at(-1) &&
-                    new Date(series.at(-1)!.date)
+                    parseLocalDate(series.at(-1)!.date)
                       .toLocaleDateString("en-GB", { month: "short" })
                       .toUpperCase()}
                 </Text>
