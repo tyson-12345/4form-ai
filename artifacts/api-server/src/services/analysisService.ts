@@ -160,7 +160,7 @@ const UNSCORABLE_SUMMARY =
 
 const NO_NARRATIVE_SUMMARY =
   "Your movement was measured and scored. The written coaching notes " +
-  "couldn't be generated this time — pull to refresh in a moment, or open " +
+  "couldn't be generated this time. Pull to refresh in a moment, or open " +
   "the skeleton overlay to review your joint angles directly.";
 
 /**
@@ -187,7 +187,7 @@ export async function runPipeline(
     });
     logger.info(
       { analysisId, event: "analysis_unscored" },
-      "Completed without scores — clip not trackable",
+      "Completed without scores; clip not trackable",
     );
     return;
   }
@@ -278,7 +278,7 @@ export function fallbackRiskDescription(f: {
   }
   return (
     `Your ${label} spent ${f.cautionPercent}% of the clip near the edge of its ` +
-    `typical range — worth watching, not yet a problem ${range}.`
+    `typical range. Worth watching, not yet a problem ${range}.`
   );
 }
 

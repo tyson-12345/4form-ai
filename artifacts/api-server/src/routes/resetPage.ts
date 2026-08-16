@@ -152,7 +152,7 @@ ${
   </form>
   <div class="msg" id="m" role="status" aria-live="polite"></div>`
 }
-  <p class="foot">If you didn't ask for this, you can close this page — your password hasn't changed.</p>
+  <p class="foot">If you didn't ask for this, you can close this page. Your password hasn't changed.</p>
 </main>
 ${
   missing

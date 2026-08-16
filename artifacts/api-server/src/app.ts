@@ -92,7 +92,7 @@ const selfOrigin = (() => {
   } catch {
     logger.warn(
       { event: "app_public_url_invalid" },
-      "APP_PUBLIC_URL is not a valid URL — the reset page will be blocked by CORS",
+      "APP_PUBLIC_URL is not a valid URL; the reset page will be blocked by CORS",
     );
     return null;
   }

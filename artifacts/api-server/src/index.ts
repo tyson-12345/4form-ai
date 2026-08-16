@@ -84,7 +84,7 @@ process.on("unhandledRejection", (reason) => {
 });
 
 process.on("uncaughtException", (err) => {
-  logger.fatal({ err, event: "uncaught_exception" }, "Uncaught exception — exiting");
+  logger.fatal({ err, event: "uncaught_exception" }, "Uncaught exception; exiting");
   reportError(err, { kind: "uncaughtException" });
   // Give the reporter a moment to flush, then exit non-zero so the platform
   // restarts rather than leaving a half-dead process serving requests.

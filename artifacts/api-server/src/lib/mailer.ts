@@ -72,7 +72,7 @@ export function warnOnPartialMailConfig(): void {
   if (hasCredential && !process.env.MAIL_FROM) {
     logger.error(
       { event: "mail_config_incomplete" },
-      "A mail provider credential is set but MAIL_FROM is not — no mail will be sent. " +
+      "A mail provider credential is set but MAIL_FROM is not; no mail will be sent. " +
         "Set MAIL_FROM to a verified sender on your authenticated domain.",
     );
     return;
@@ -82,7 +82,7 @@ export function warnOnPartialMailConfig(): void {
     logger.error(
       { event: "mail_not_configured" },
       "No mail provider is configured in production. Password reset cannot complete " +
-        "and lockout notifications will not arrive — see docs/EMAIL-SETUP.md.",
+        "and lockout notifications will not arrive; see docs/EMAIL-SETUP.md.",
     );
   }
 }
@@ -100,7 +100,7 @@ export async function sendEmail(email: Email): Promise<void> {
     if (provider === "none") {
       logger.warn(
         { to: redactEmail(email.to), subject: email.subject, event: "email_not_sent" },
-        "Email provider not configured — message logged but NOT delivered",
+        "Email provider not configured; message logged but NOT delivered",
       );
       return;
     }
@@ -402,7 +402,7 @@ export function passwordResetEmail(to: string, resetUrl: string, expiresMinutes:
     `Reset it here: ${resetUrl}`,
     "",
     `This link expires in ${expiresMinutes} minutes and can only be used once.`,
-    "If you didn't request this, you can ignore this email — your password will not change.",
+    "If you didn't request this, you can ignore this email. Your password will not change.",
   ].join("\n");
 
   const html = htmlShell(
@@ -410,7 +410,7 @@ export function passwordResetEmail(to: string, resetUrl: string, expiresMinutes:
     `<p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#44403c;">We received a request to reset your AthleteAI password. Tap below to choose a new one.</p>
 ${button(resetUrl, "Reset password")}
 <p style="margin:0;font-size:14px;line-height:1.6;color:#44403c;">This link expires in ${expiresMinutes} minutes and can only be used once.</p>`,
-    "If you didn't request this, you can safely ignore this email — your password will not change.",
+    "If you didn't request this, you can safely ignore this email. Your password will not change.",
   );
 
   return { to, subject: "Reset your AthleteAI password", text, html };
@@ -431,7 +431,7 @@ export function accountLockedEmail(to: string, resetUrl: string, lockMinutes: nu
   const html = htmlShell(
     "Unusual sign-in activity",
     `<p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#44403c;">We detected several failed sign-in attempts on your account. As a precaution, sign-in is paused for ${lockMinutes} minutes.</p>
-<p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#44403c;">If this was you and you've forgotten your password, you can reset it now — that also lifts the pause immediately.</p>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#44403c;">If this was you and you've forgotten your password, you can reset it now. That also lifts the pause immediately.</p>
 ${button(resetUrl, "Reset password")}`,
     "If this wasn't you, someone may be trying to access your account. We recommend resetting your password using the link above.",
   );

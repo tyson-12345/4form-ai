@@ -45,7 +45,7 @@ function getClient(): RedisLike | null {
     state = "unavailable";
     logger.info(
       { event: "redis_not_configured" },
-      "REDIS_URL not set — rate limits are per-instance. Fine for one instance; " +
+      "REDIS_URL not set; rate limits are per-instance. Fine for one instance; " +
         "set REDIS_URL before scaling out.",
     );
     return null;
@@ -61,13 +61,13 @@ function getClient(): RedisLike | null {
       lazyConnect: false,
     });
     state = "ready";
-    logger.info({ event: "redis_connected" }, "Redis connected — rate limits are shared");
+    logger.info({ event: "redis_connected" }, "Redis connected; rate limits are shared");
     return client;
   } catch (err) {
     state = "unavailable";
     logger.warn(
       { err, event: "redis_unavailable" },
-      "REDIS_URL is set but ioredis could not be loaded — falling back to in-memory limits",
+      "REDIS_URL is set but ioredis could not be loaded; falling back to in-memory limits",
     );
     return null;
   }

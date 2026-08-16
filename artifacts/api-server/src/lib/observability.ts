@@ -46,7 +46,7 @@ export function initObservability(): void {
   if (!sentryEnabled()) {
     logger.info(
       { event: "sentry_disabled" },
-      "SENTRY_DSN not set — error reporting is off",
+      "SENTRY_DSN not set; error reporting is off",
     );
     return;
   }

@@ -29,7 +29,7 @@ const RESEARCH: Record<string, SportResearch> = {
     performance:
       "Moore (2016, Sports Med) on modifiable biomechanical factors in running economy; Saunders et al. (2004, Sports Med) on factors affecting running economy; Cavanagh & Williams (1982, Med Sci Sports Exerc) on stride length and oxygen uptake",
     emphasis:
-      "Knee and hip angles through stance matter most. Left/right symmetry is a strong signal — asymmetry in a cyclic movement is more meaningful than in a one-off lift.",
+      "Knee and hip angles through stance matter most. Left/right symmetry is a strong signal: asymmetry in a cyclic movement is more meaningful than in a one-off lift.",
   },
   weightlifting: {
     injury:
@@ -45,7 +45,7 @@ const RESEARCH: Record<string, SportResearch> = {
     performance:
       "Swinton et al. (2012, J Strength Cond Res) on deadlift kinematics; Kompf & Arandjelović (2016, Sports Med) on sticking points in maximal lifts",
     emphasis:
-      "Consistency and joint position under load matter most. Mobility is often genuinely limited in trained powerlifters — a low mobility score is frequently a sport adaptation rather than a fault.",
+      "Consistency and joint position under load matter most. Mobility is often genuinely limited in trained powerlifters; a low mobility score is frequently a sport adaptation rather than a fault.",
   },
   basketball: {
     injury:
@@ -61,7 +61,7 @@ const RESEARCH: Record<string, SportResearch> = {
     performance:
       "Lees et al. (2010, J Sports Sci) on the biomechanics of kicking; Nunome et al. (2006, Med Sci Sports Exerc) on instep kick mechanics",
     emphasis:
-      "Hip range of motion and cutting/landing knee position matter most. Kicking is inherently one-sided — asymmetry is expected and should be read as dominance, not dysfunction.",
+      "Hip range of motion and cutting/landing knee position matter most. Kicking is inherently one-sided; asymmetry is expected and should be read as dominance, not dysfunction.",
   },
   swimming: {
     injury:
@@ -85,7 +85,7 @@ const RESEARCH: Record<string, SportResearch> = {
     performance:
       "Reid et al. (2013, Sports Biomech) on serve kinematics; Kovacs & Ellenbecker (2011, Sports Health) on the kinetic chain in serving",
     emphasis:
-      "Shoulder and elbow range of motion dominate. Tennis is strongly one-sided — asymmetry is expected and is not itself a finding.",
+      "Shoulder and elbow range of motion dominate. Tennis is strongly one-sided; asymmetry is expected and is not itself a finding.",
   },
 };
 
@@ -95,7 +95,7 @@ const DEFAULT_RESEARCH: SportResearch = {
   performance:
     "General motor-control literature: Schmidt & Lee on motor learning and performance; Bartlett (2007) on sports biomechanics and movement analysis",
   emphasis:
-    "Weigh the measured dimensions evenly — there is no sport-specific profile for this activity, so do not assume which joint matters most.",
+    "Weigh the measured dimensions evenly; there is no sport-specific profile for this activity, so do not assume which joint matters most.",
 };
 
 /**

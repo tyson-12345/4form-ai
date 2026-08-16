@@ -397,7 +397,7 @@ function resetLinkBase(): string {
   if (process.env.NODE_ENV === "production") {
     throw new Error(
       "APP_PUBLIC_URL is not set. Refusing to build a password reset link " +
-        "against a default domain — reset tokens must only ever point at a host " +
+        "against a default domain; reset tokens must only ever point at a host " +
         "we control.",
     );
   }

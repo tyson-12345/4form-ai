@@ -141,7 +141,7 @@ export const PLANS = [
     unavailableReason:
       "Elite is still in development. We're not selling it until the features behind it are real.",
     revenueCatProductId: "com.athleteai.elite.monthly",
-    features: ["Everything in Pro", "Pro athlete comparisons — in development"],
+    features: ["Everything in Pro", "Pro athlete comparisons (in development)"],
     limits: TIER_LIMITS.elite,
   },
 ];

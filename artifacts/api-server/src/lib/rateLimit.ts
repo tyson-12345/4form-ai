@@ -140,7 +140,7 @@ export function rateLimit({ max, windowMs = 60_000, name }: RateLimitOptions) {
         recordAlert("rate_limit_backend_failed");
         logger.error(
           { err, limiter: name, path: req.path, event: "rate_limit_backend_failed" },
-          "Rate limit backend unavailable — failing closed",
+          "Rate limit backend unavailable; failing closed",
         );
         res.setHeader("Retry-After", 5);
         res.status(503).json({

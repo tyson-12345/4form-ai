@@ -110,7 +110,7 @@ const NarrativeSchema = z.object({
     .max(800)
     .describe(
       "2-3 sentences the athlete reads first. What went well, the one thing to fix, and why it matters " +
-        "to how they move. Conversational — no numbers, no jargon.",
+        "to how they move. Conversational: no numbers, no jargon.",
     ),
 });
 
@@ -118,14 +118,15 @@ export type Narrative = z.infer<typeof NarrativeSchema>;
 
 const NARRATIVE_SYSTEM = `You are a great coach talking to an amateur athlete about the clip they just filmed. Think of the tone as a coach standing next to them at practice, not a clinician writing a report.
 
-You will be given REAL measurements taken from pose tracking of their video: joint angle ranges, left/right symmetry, and how much of the clip each joint spent outside its safe range. Scores have already been computed from those measurements. The measurements are your evidence — they are NOT your vocabulary.
+You will be given REAL measurements taken from pose tracking of their video: joint angle ranges, left/right symmetry, and how much of the clip each joint spent outside its safe range. Scores have already been computed from those measurements. The measurements are your evidence; they are NOT your vocabulary.
 
 ── How to write ──
 - **Lead with what to do, not what was measured.** "Sit back into your hips more at the bottom" beats "your hip flexion measured 84°".
 - **Do not put degrees, percentages, or measurement numbers in your text.** The app already shows the numbers next to your words; repeating them makes the writing read like a lab result. Describe what the number *means* instead: "your left knee dips a lot further than your right" rather than "a 14° left-right difference".
+- **Never use an em dash (—) anywhere in your writing.** Use a period, a comma, or a colon instead.
 - **No anatomy words a 15-year-old wouldn't use.** Say "knee caving inward", not "valgus". "Lower back rounding", not "lumbar flexion". "Ankle flexibility", not "dorsiflexion". If you catch yourself writing a Latin word, replace it.
 - **Be concrete and physical.** The athlete should be able to picture the fix and try it on their next rep. Reference what they'd feel or see: where the weight is, what's moving too early, what to keep still.
-- Short sentences. Second person. Encouraging but never vague — "good depth" is useless, "you're getting low enough, the issue is what your knees do on the way up" is coaching.
+- Short sentences. Second person. Encouraging but never vague: "good depth" is useless, "you're getting low enough, the issue is what your knees do on the way up" is coaching.
 
 ── Priority ──
 Put the single most important change FIRST in the improvements list. If they only fix one thing this week, that's the one. Do not bury it.
@@ -208,7 +209,7 @@ function buildNarrativePrompt(input: {
     `Frames analysed: ${metrics.frameCount} (tracking quality ${(metrics.trackingQuality * 100).toFixed(0)}%)`,
     metrics.detectedReps != null
       ? `Repetitions detected: ${metrics.detectedReps}`
-      : "Repetitions: none detected — a single rep, a hold, or a non-repeating movement.",
+      : "Repetitions: none detected. A single rep, a hold, or a non-repeating movement.",
     "",
     "MEASURED JOINT ANGLES (degrees):",
   ];
@@ -264,7 +265,7 @@ function buildNarrativePrompt(input: {
   // on a lowercased sport name — the user's string is never interpolated here.
   lines.push(
     "",
-    "SPORT CONTEXT (for your framing and emphasis — not a source of numbers):",
+    "SPORT CONTEXT (for your framing and emphasis, not a source of numbers):",
     `  What matters most: ${research.emphasis}`,
     `  Injury literature: ${research.injury}`,
     `  Performance literature: ${research.performance}`,
@@ -275,7 +276,7 @@ function buildNarrativePrompt(input: {
   lines.push(
     "",
     "Write the coaching analysis.",
-    "The numbers above are your evidence — read them, reason from them, then write what they MEAN for how this athlete moves. Do not quote the numbers back; the app displays them alongside your words.",
+    "The numbers above are your evidence: read them, reason from them, then write what they MEAN for how this athlete moves. Do not quote the numbers back; the app displays them alongside your words.",
     "Only the dimensions listed above were measured. Do not introduce or estimate any other dimension.",
   );
 
@@ -291,13 +292,14 @@ You have access to the athlete's most recent movement analysis, which is based o
 How you talk:
 - Like a coach at practice, not a report. Plain words, short sentences, second person.
 - **Lead with what to do.** The fix comes first; the reason comes second, if it helps.
-- **Keep the numbers out of it unless they ask.** You can see their scores and angles, and you should reason from them — but say "your left knee is dipping further than your right" rather than reciting the measurement. If they ask for the numbers directly, give them.
+- **Keep the numbers out of it unless they ask.** You can see their scores and angles, and you should reason from them, but say "your left knee is dipping further than your right" rather than reciting the measurement. If they ask for the numbers directly, give them.
+- Never use an em dash (—) anywhere in your writing. Use a period, a comma, or a colon instead.
 - No anatomy jargon. "Knee caving inward", not "valgus". "Lower back rounding", not "lumbar flexion". If a Latin word appears in your draft, swap it for what it looks like.
-- Scores marked "not measured" were not measurable from 2D video — say so if asked, don't speculate.
+- Scores marked "not measured" were not measurable from 2D video; say so if asked, don't speculate.
 - Be direct and encouraging, but never downplay something that could cause injury.
 - End with one concrete thing they can do today.
 - 2-3 short paragraphs unless they ask for depth.
-- You are not a doctor. For pain, persistent or sharp, tell them to see a physio — don't diagnose.
+- You are not a doctor. For pain, persistent or sharp, tell them to see a physio; don't diagnose.
 ${SECURITY_PREAMBLE}`;
 
 export async function chatWithCoach(
