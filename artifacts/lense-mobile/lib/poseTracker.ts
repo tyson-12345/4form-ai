@@ -502,11 +502,31 @@ ${
   });
   pose.onResults(onResults);
 
+  // The scan may only start once BOTH the pose model and the video's metadata
+  // are ready. planScan() reads video.duration, and which of the two arrives
+  // first is a race the model usually loses only while the MediaPipe WASM is
+  // a cold download — with a warm cache it initialises before loadedmetadata
+  // fires, duration reads NaN, and a perfectly good clip failed with
+  // "Couldn't read this video's length."
+  var modelReady = false, metaReady = false, scanStarted = false;
+  function maybeStartScan(){
+    if (!IS_SCAN || scanStarted || !modelReady || !metaReady) return;
+    scanStarted = true;
+    if (planScan()) { armWatchdog(); seekTo(scanTimes[0]); }
+  }
+
+  // If metadata truly never arrives (a corrupt file), fail honestly rather
+  // than hanging the loading screen forever.
+  setTimeout(function(){
+    if (IS_SCAN && modelReady && !scanStarted) fail("Couldn't read this video's length.");
+  }, 20000);
+
   pose.initialize().then(function(){
     clearTimeout(initTimeout);
     post({ type:"ready" });
     if (IS_SCAN) {
-      if (planScan()) { armWatchdog(); seekTo(scanTimes[0]); }
+      modelReady = true;
+      maybeStartScan();
     } else {
       loading.classList.add("hide");
       if (btxt) btxt.textContent = "Ready — press play";
@@ -546,6 +566,8 @@ ${
 
   video.addEventListener("loadedmetadata", function(){
     post({ type:"meta", vw: video.videoWidth, vh: video.videoHeight, dur: video.duration });
+    metaReady = true;
+    maybeStartScan();
     if (!IS_SCAN) {
       var scrub = document.getElementById("scrub");
       if (scrub) scrub.max = video.duration;
