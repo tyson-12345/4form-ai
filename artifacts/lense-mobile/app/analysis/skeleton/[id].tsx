@@ -304,7 +304,11 @@ export default function SkeletonScreen() {
         mediaPlaybackRequiresUserAction={false}
         javaScriptEnabled
         domStorageEnabled
-        originWhitelist={["*", "file://*"]}
+        // Only our local file:// page is a legitimate top-level document; the
+        // MediaPipe CDN loads as a subresource, which this prop does not gate.
+        // Narrowed from ["*"] so a navigation to any other origin is handed to the
+        // OS browser rather than loaded inside this file://-privileged WebView.
+        originWhitelist={["file://*"]}
         scrollEnabled={false}
         onMessage={handleMessage}
       />

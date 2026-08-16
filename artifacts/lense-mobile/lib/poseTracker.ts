@@ -118,6 +118,32 @@ export const MIN_CLIP_SECONDS = 3;
 
 const MEDIAPIPE_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404";
 
+/**
+ * Subresource Integrity hash for `pose.js`, pinned to the exact version above.
+ *
+ * ── Why this matters ────────────────────────────────────────────────────────
+ * This document runs from a `file://` origin, and both measurement screens grant
+ * the WebView `allowFileAccessFromFileURLs` + `allowUniversalAccessFromFileURLs`
+ * (needed so a file:// page can fetch the model cross-origin). That is a
+ * privileged context: any script that runs here can read local files and POST
+ * them anywhere. Loading the tracker entry script from a third-party CDN into
+ * that context means a CDN compromise would run attacker code with exactly those
+ * privileges. SRI makes the WebView refuse to execute `pose.js` unless its bytes
+ * match this hash, so a tampered CDN response fails closed (the onerror handler
+ * fires and measurement reports "unavailable") instead of executing.
+ *
+ * Regenerate on a version bump:
+ *   curl -s https://cdn.jsdelivr.net/npm/@mediapipe/pose@<version>/pose.js \
+ *     | openssl dgst -sha384 -binary | openssl base64 -A
+ *
+ * KNOWN GAP: the WASM/model assets `pose.js` pulls at runtime via `locateFile`
+ * are not SRI-covered (they are fetched by the wasm loader, not <script> tags).
+ * The complete fix is to bundle all MediaPipe assets in the app and load them
+ * from the local file system, which also lets both screens drop
+ * `allowUniversalAccessFromFileURLs`. Tracked in docs/TODO-PRODUCTION.md.
+ */
+const MEDIAPIPE_POSE_SRI = "sha384-qcJQ+n/ZcF15Xu2EoRupB4Av+GEAGeW0Td1mp2A90u0NdNLzLYQVMUq1Ax1YAHqk";
+
 export function buildPoseHtml(options: {
   videoUri?: string;
   mode: PoseMode;
@@ -241,6 +267,7 @@ ${
 </div>
 
 <script src="${MEDIAPIPE_BASE}/pose.js" crossorigin="anonymous"
+  integrity="${MEDIAPIPE_POSE_SRI}"
   onerror="window.__poseScriptFailed = true"></script>
 <script>
 (function(){

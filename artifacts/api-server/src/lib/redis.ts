@@ -93,9 +93,23 @@ export async function incrementWindow(
   if (!redis) throw new Error("Redis unavailable");
 
   const count = await redis.incr(key);
-  if (count === 1) await redis.pexpire(key, windowMs);
 
-  const ttl = await redis.pttl(key);
+  // Fixed-window: the key gets its TTL when first created. The condition is
+  // `ttl < 0` rather than `count === 1` because those can disagree, and the
+  // disagreement fails dangerous. If an earlier request incremented the key but
+  // the process died before PEXPIRE landed — or the PEXPIRE itself errored — the
+  // counter would live forever with no expiry, holding that key's window open
+  // permanently and locking a legitimate IP out until someone deletes the key by
+  // hand. Re-applying the TTL whenever it is missing self-heals that on the next
+  // request. It does not slide the window under normal load: a key that already
+  // has a TTL is left untouched. (pttl: -1 = key exists but has no expiry set,
+  // -2 = key no longer exists.)
+  let ttl = await redis.pttl(key);
+  if (ttl < 0) {
+    await redis.pexpire(key, windowMs);
+    ttl = windowMs;
+  }
+
   return { count, resetInMs: ttl > 0 ? ttl : windowMs };
 }
 

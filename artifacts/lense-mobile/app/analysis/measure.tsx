@@ -272,7 +272,12 @@ export default function MeasureScreen() {
           mediaPlaybackRequiresUserAction={false}
           javaScriptEnabled
           domStorageEnabled
-          originWhitelist={["*", "file://*"]}
+          // The only legitimate top-level document here is our local file:// page;
+          // the MediaPipe CDN is loaded as a subresource, which this prop does not
+          // gate. Narrowed from ["*"] so a navigation to any other origin (e.g. one
+          // triggered by tampered script) is handed to the OS browser rather than
+          // loaded inside this file://-privileged WebView.
+          originWhitelist={["file://*"]}
           scrollEnabled={false}
           onError={() => fail("The analysis engine failed to start.")}
         />
