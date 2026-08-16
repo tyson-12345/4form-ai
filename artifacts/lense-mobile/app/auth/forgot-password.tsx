@@ -80,7 +80,7 @@ export default function ForgotPasswordScreen() {
                 minutes and can only be used once.
               </Text>
               <Text style={[T.bodySmall, { marginTop: 16 }]}>
-                Nothing arrived? Check spam, then try again — and make sure you used the address
+                Nothing arrived? Check spam, then try again, and make sure you used the address
                 you signed up with.
               </Text>
 

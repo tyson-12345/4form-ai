@@ -241,7 +241,7 @@ export default function ProfileScreen() {
               onPress={() =>
                 alert(
                   "How measurement works",
-                  "We track 33 body landmarks in your clip using on-device pose detection, then measure the angle at each joint across evenly-spaced frames.\n\nScores are calculated from those angles — the same clip always produces the same numbers.\n\nWe only score what a single camera can actually measure: technique, balance, consistency and mobility. Things like power and speed need your body mass and the camera's distance, so we don't guess at them.",
+                  "We track 33 body landmarks in your clip using on-device pose detection, then measure the angle at each joint across evenly-spaced frames.\n\nScores are calculated from those angles, so the same clip always produces the same numbers.\n\nWe only score what a single camera can actually measure: technique, balance, consistency and mobility. Things like power and speed need your body mass and the camera's distance, so we don't guess at them.",
                 )
               }
             />
@@ -250,7 +250,7 @@ export default function ProfileScreen() {
               onPress={() =>
                 alert(
                   "Your data",
-                  "Your videos never leave your device — only the measured joint angles are sent to our server.\n\nDeleting a session removes its clip from your phone. Deleting your account removes everything.",
+                  "Your videos never leave your device. Only the measured joint angles are sent to our server.\n\nDeleting a session removes its clip from your phone. Deleting your account removes everything.",
                 )
               }
             />
@@ -407,7 +407,7 @@ export default function ProfileScreen() {
           <View style={{ padding: GUTTER, alignItems: "center" }}>
             <Avatar name={displayName} uri={avatarUri} size={120} />
             <Text style={[T.bodySmall, { marginTop: 16, textAlign: "center", maxWidth: 280 }]}>
-              Your photo stays on this phone — it's never uploaded.
+              Your photo stays on this phone. It's never uploaded.
             </Text>
 
             <View style={{ alignSelf: "stretch", marginTop: 28, gap: 10 }}>

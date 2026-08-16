@@ -329,10 +329,10 @@ export const TAB_BAR = {
  * Render a measured value, or the explicit "not measured" mark.
  *
  * A null score means the dimension could not be measured — never zero. The em
- * dash is the system's single, consistent way of saying so.
+ * dash (en dash, not em) is the system's single, consistent way of saying so.
  */
 export function measured(value: number | null | undefined, suffix = ""): string {
-  return value === null || value === undefined ? "—" : `${Math.round(value)}${suffix}`;
+  return value === null || value === undefined ? "–" : `${Math.round(value)}${suffix}`;
 }
 
 /** Signed delta against a previous session, e.g. `+6` / `−3`. */

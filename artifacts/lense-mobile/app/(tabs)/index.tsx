@@ -202,7 +202,7 @@ export default function HomeScreen() {
         ) : (
           <Card style={s.block}>
             <Label>FORM INDEX</Label>
-            <Text style={[T.metricHero, { color: color.textGhost, marginTop: 2 }]}>—</Text>
+            <Text style={[T.metricHero, { color: color.textGhost, marginTop: 2 }]}>–</Text>
             <Text style={[T.body, { marginTop: 8 }]}>
               {loaded
                 ? "Film a clip and we'll measure your joint angles frame by frame. Your Form Index is calculated from those measurements, so it means the same thing every time."
@@ -295,7 +295,7 @@ function SessionRow({
         <Text style={[T.rowSubtitle, { marginTop: 1, textTransform: "capitalize" }]}>{note}</Text>
       </View>
       <Text style={T.metricRow}>
-        {item.overallScore === null ? "—" : Math.round(item.overallScore)}
+        {item.overallScore === null ? "–" : Math.round(item.overallScore)}
       </Text>
       <Chevron />
     </Pressable>

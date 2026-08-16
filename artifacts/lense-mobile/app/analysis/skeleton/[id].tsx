@@ -61,24 +61,24 @@ function jointInsight(key: string, deg: number): { title: string; body: string }
   if (key.includes("Knee")) {
     if (deg <= 95) {
       return {
-        title: `${side} knee — deep bend`,
+        title: `${side} knee: deep bend`,
         body: "The knee flexes very deep under load, which loads the patellar tendon and ACL. Control the descent, keep the knee tracking over your toes rather than caving inward, and build quad and glute strength.",
       };
     }
     return {
-      title: `${side} knee — locked out`,
+      title: `${side} knee: locked out`,
       body: "The knee reaches near-full extension. Keep a soft micro-bend at lockout so the muscles absorb load instead of the joint.",
     };
   }
   if (key.includes("Hip")) {
     return {
-      title: `${side} hip — deep flexion`,
+      title: `${side} hip: deep flexion`,
       body: "A very deep hip hinge tends to round the lower back. Brace your core, keep a neutral spine, and hinge from the hips rather than collapsing the torso.",
     };
   }
   if (key.includes("Elbow")) {
     return {
-      title: `${side} elbow — locked out`,
+      title: `${side} elbow: locked out`,
       body: "The elbow reaches full extension under load. Keep a slight bend through the movement to protect the joint and surrounding tendons.",
     };
   }
@@ -87,8 +87,8 @@ function jointInsight(key: string, deg: number): { title: string; body: string }
   // "elbow" for anything unrecognised, which becomes a lie the day a
   // shoulder or ankle joins the tracker.
   return {
-    title: `${side} joint — extreme position`,
-    body: `This joint reached ${Math.round(deg)}° during the clip — the most extreme position we measured for it. Review the frame on the player above to see the position it describes.`,
+    title: `${side} joint: extreme position`,
+    body: `This joint reached ${Math.round(deg)}° during the clip, the most extreme position we measured for it. Review the frame on the player above to see the position it describes.`,
   };
 }
 
@@ -292,7 +292,7 @@ export default function SkeletonScreen() {
             <Text style={ss.slotTitle}>This clip is no longer on your device</Text>
             <Text style={ss.slotText}>
               Videos are stored on your phone, not on our servers. This one was removed or the app
-              was reinstalled. Your scores and coaching notes are safe — only playback is gone.
+              was reinstalled. Your scores and coaching notes are safe. Only playback is gone.
             </Text>
             <TouchableOpacity
               style={ss.slotBtn}

@@ -116,8 +116,8 @@ export default function SessionsScreen() {
       if (durationSec !== null && durationSec < MIN_CLIP_SECONDS) {
         alert(
           "That clip is too short",
-          `We need at least ${MIN_CLIP_SECONDS} seconds of footage to measure joint angles — ` +
-            "aim for ten seconds or more of the movement.",
+          `We need at least ${MIN_CLIP_SECONDS} seconds of footage to measure joint angles. ` +
+            "Aim for ten seconds or more of the movement.",
         );
         return;
       }
@@ -403,7 +403,7 @@ function MeasuredRow({
       </View>
 
       <Text style={[T.metricRow, item.overallScore === null && { color: color.textGhost }]}>
-        {item.overallScore === null ? "—" : Math.round(item.overallScore)}
+        {item.overallScore === null ? "–" : Math.round(item.overallScore)}
       </Text>
     </Pressable>
   );

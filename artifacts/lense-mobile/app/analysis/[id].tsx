@@ -272,7 +272,7 @@ export default function AnalysisDetailScreen() {
             <View style={s.legacyNote}>
               <Text style={[T.bodySmall, { color: color.rust }]}>
                 This session predates pose measurement. Its numbers were generated text, not
-                measurements — re-upload the clip for a real reading.
+                measurements. Re-upload the clip for a real reading.
               </Text>
             </View>
           )}
@@ -291,7 +291,7 @@ export default function AnalysisDetailScreen() {
                 analysis.overallScore === null && { color: color.textGhost },
               ]}
             >
-              {analysis.overallScore === null ? "—" : Math.round(analysis.overallScore)}
+              {analysis.overallScore === null ? "–" : Math.round(analysis.overallScore)}
             </Text>
           </View>
 
@@ -365,7 +365,7 @@ export default function AnalysisDetailScreen() {
         {processing && stalled && (
           <View style={s.section}>
             <Text style={T.bodySmall}>
-              This is taking longer than it should. Your measurements are saved — come back
+              This is taking longer than it should. Your measurements are saved. Come back
               to this session in a little while for the coaching notes.
             </Text>
           </View>

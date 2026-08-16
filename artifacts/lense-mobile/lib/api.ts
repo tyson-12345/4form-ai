@@ -52,7 +52,7 @@ const API_URL = resolveApiUrl();
  */
 if (!__DEV__ && API_URL.startsWith("http://")) {
   throw new Error(
-    "EXPO_PUBLIC_API_URL must use https in a release build — the bearer token " +
+    "EXPO_PUBLIC_API_URL must use https in a release build; the bearer token " +
       "would otherwise be sent in cleartext.",
   );
 }

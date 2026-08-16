@@ -161,7 +161,7 @@ export default function CoachScreen() {
         "Atlas is unavailable",
         err instanceof ApiError
           ? err.message
-          : "Something went wrong. Your message wasn't sent — try again in a moment.",
+          : "Something went wrong. Your message wasn't sent. Try again in a moment.",
       );
     } finally {
       setSending(false);
@@ -190,7 +190,7 @@ export default function CoachScreen() {
               Atlas reads your whole history
             </Text>
             <Text style={[T.body, { marginTop: 10 }]}>
-              Ask about any session and Atlas answers from your measurements — which joint,
+              Ask about any session and Atlas answers from your measurements: which joint,
               which angle, which clip. Included with Pro.
             </Text>
             {/* When billing is off, say so here — before the tap. The old card
@@ -198,7 +198,7 @@ export default function CoachScreen() {
                 purchased: a dead end walked in full, one screen at a time. */}
             {billingOff && (
               <Text style={[T.bodySmall, { marginTop: 8, color: color.textMuted }]}>
-                Pro isn't on sale quite yet — here's what it will include.
+                Pro isn't on sale quite yet. Here's what it will include.
               </Text>
             )}
             <Pressable
@@ -270,7 +270,7 @@ export default function CoachScreen() {
               </Text>
               <Text style={[T.body, { textAlign: "center", marginTop: 10 }]}>
                 {measuredCount > 0
-                  ? "Atlas has your measurements — joint angles, bands, and every flag."
+                  ? "Atlas has your measurements: joint angles, bands, and every flag."
                   : "Measure a clip first and Atlas will have something to work from."}
               </Text>
             </View>

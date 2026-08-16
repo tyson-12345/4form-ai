@@ -277,7 +277,7 @@ export default function SignupScreen() {
 
           <Text style={s.legal}>
             AthleteAI measures how you move. It is not medical advice and does not diagnose
-            injuries — see a professional about pain or injury.
+            injuries. See a professional about pain or injury.
           </Text>
 
           <Pressable

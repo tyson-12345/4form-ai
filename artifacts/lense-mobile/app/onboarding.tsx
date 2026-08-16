@@ -249,7 +249,7 @@ function subtitleFor(step: number): string {
     // it uses. Say that, rather than promising a per-sport joint model the
     // engine does not have.
     case 0:
-      return "Your coaching is framed around your sport. Pick as many as you train — you can change this later.";
+      return "Your coaching is framed around your sport. Pick as many as you train. You can change this later.";
     case 1:
       return "This only changes how we phrase feedback. The measurements are the same either way.";
     case 2:
@@ -257,7 +257,7 @@ function subtitleFor(step: number): string {
     case 3:
       return "We'll watch these joints more closely and flag them earlier.";
     default:
-      return "Used for your weekly target. Nothing is locked — measure whenever you train.";
+      return "Used for your weekly target. Nothing is locked. Measure whenever you train.";
   }
 }
 

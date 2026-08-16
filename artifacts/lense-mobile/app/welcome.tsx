@@ -57,7 +57,7 @@ export default function WelcomeScreen() {
         </Text>
 
         <Text style={[T.body, s.sub]}>
-          Film a set. We track your joints frame by frame and show you the angles — with the
+          Film a set. We track your joints frame by frame and show you the angles, with the
           range each one should sit in. Same clip, same numbers, every time.
         </Text>
 

@@ -167,7 +167,7 @@ export default function CompareScreen() {
             <View style={s.simBar}>
               <View style={s.simBarLabel}>
                 <Text style={s.simBarLabelText}>Overall Similarity</Text>
-                <Text style={s.simBarValue}>{getSimilarityForAthlete(selected.id) ?? "—"}%</Text>
+                <Text style={s.simBarValue}>{getSimilarityForAthlete(selected.id) ?? "–"}%</Text>
               </View>
               {getSimilarityForAthlete(selected.id) !== null && (
                 <View style={s.simBarBg}>
@@ -177,7 +177,7 @@ export default function CompareScreen() {
               {getSimilarityForAthlete(selected.id) === null && (
                 <Text style={{ color: colors.mutedForeground, fontSize: 12, fontFamily: "InstrumentSans_400Regular" }}>
                   Measured comparison isn&apos;t available yet. The attributes below are what
-                  this movement is judged on — use them as a checklist against your own clips.
+                  this movement is judged on. Use them as a checklist against your own clips.
                 </Text>
               )}
             </View>

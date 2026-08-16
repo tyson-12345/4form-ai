@@ -83,7 +83,7 @@ export default function PricingScreen() {
 
     alert(
       "Not available yet",
-      `${plan.name} isn't available to buy yet — we're still setting up payments. Nothing has been charged and your plan hasn't changed.`,
+      `${plan.name} isn't available to buy yet. We're still setting up payments. Nothing has been charged and your plan hasn't changed.`,
       [{ text: "Got it" }],
     );
   }
@@ -222,7 +222,7 @@ export default function PricingScreen() {
         <Text style={s.footnote}>
           {billingEnabled
             ? "Cancel any time in Settings. Your measured sessions stay readable on the free plan."
-            : "When plans go on sale, purchases will be handled entirely by the App Store or Google Play — AthleteAI will never see or store your card details."}
+            : "When plans go on sale, purchases will be handled entirely by the App Store or Google Play. AthleteAI will never see or store your card details."}
         </Text>
       </ScrollView>
     </Screen>

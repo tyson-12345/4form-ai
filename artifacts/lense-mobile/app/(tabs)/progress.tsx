@@ -140,7 +140,7 @@ export default function ProgressScreen() {
               </Label>
               <View style={s.trendRow}>
                 <Text style={[T.metricLarge, current === null && { color: color.textGhost }]}>
-                  {current === null ? "—" : Math.round(current)}
+                  {current === null ? "–" : Math.round(current)}
                 </Text>
                 {change !== null && delta(change) && (
                   <Text style={[T.measured, { color: color.cobalt }]}>{delta(change)}</Text>

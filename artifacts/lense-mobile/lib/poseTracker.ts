@@ -529,7 +529,7 @@ ${
       maybeStartScan();
     } else {
       loading.classList.add("hide");
-      if (btxt) btxt.textContent = "Ready — press play";
+      if (btxt) btxt.textContent = "Ready. Press play";
       sizeWrap();
       setTimeout(detect, 100);
     }
