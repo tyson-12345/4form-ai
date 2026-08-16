@@ -2,28 +2,17 @@
 
 Written so a session with no prior context can pick up and be useful in one read.
 
-> ⚠️ **Deploy debt (2026-08-15).** A large working session landed on `main`
-> that production has not seen. Before or with the next `railway up`:
+> ✅ **Deployed (late 2026-08-15).** Migrations 0005 + 0006 are applied to
+> Supabase and the API redeployed twice — production runs the quota-integrity,
+> rep-detection, prose, and audit-closeout changes. Verified live end to end
+> with a throwaway account (walkthrough-prod-1@example.com, free tier): signup
+> → 148/150-frame measurement → deterministic scores → real coaching write-up
+> with drills. The cousin's 25-finding defect audit is fully reconciled: all
+> fixed except 07 (unweighted overall — documented open decision) and the
+> Caliper-migration polish tier (14–17, 21), tracked as item 20 below.
 >
-> 1. Apply `lib/db/migrations/0005_analysis_soft_delete.sql` **and**
->    `0006_progress_entry_provenance.sql` to Supabase (`psql -f`, or
->    `drizzle-kit push`). The new server code reads `analyses.deleted_at`
->    and writes `progress_entries.analysis_id` — deploying without the
->    columns breaks list/delete/quota paths.
-> 2. Redeploy the API (`railway up`, CLI-only as ever). Server changes:
->    quota integrity (delete no longer refunds; failed/unscored no longer
->    charge), rep detection stored into `poseMetrics.detectedReps`,
->    band-aware fallback risk prose, per-joint fallback prevention.
-> 3. The mobile app changes are JS-only except `app.json`'s photo-library
->    usage strings (native rebuild required before the store submission).
->
-> What shipped in that session, in one line each: sign-out fixed (route
-> collision — `/` is now a dispatcher, landing moved to `/welcome`, tabs
-> guarded); every Alert works on web (`lib/alert.ts`); device-local profile
-> photos; the hero body map replaced with the caliper-language measure
-> figure; chat paywall shows before typing; DOB row fits phone-width web;
-> rep counts + session deltas on the readout; quota loopholes closed both
-> directions; deleted sessions leave the Progress trend.
+> The mobile changes are JS-only except app.json's photo-library usage
+> strings (native rebuild needed before store submission).
 
 ---
 

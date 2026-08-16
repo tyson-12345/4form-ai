@@ -149,8 +149,16 @@ export default function AnalysisDetailScreen() {
    * copy say so honestly.
    */
   const [stalled, setStalled] = useState(false);
+  // Measurements persist first and flip status to "complete"; the coaching
+  // prose lands seconds later. Keep the (bounded) poll alive through that gap
+  // or the athlete is stranded on fallback text until they reopen the screen.
+  const awaitingNarrative =
+    analysis?.status === "complete" &&
+    analysis.analysisMethod === "pose-measured" &&
+    !analysis.summary;
   useEffect(() => {
-    if (!analysis || analysis.status === "complete" || analysis.status === "failed") return;
+    if (!analysis || analysis.status === "failed") return;
+    if (analysis.status === "complete" && !awaitingNarrative) return;
 
     let polls = 0;
     let timer: ReturnType<typeof setTimeout>;
@@ -166,7 +174,7 @@ export default function AnalysisDetailScreen() {
     };
     timer = setTimeout(tick, 3000);
     return () => clearTimeout(timer);
-  }, [analysis?.status, load]);
+  }, [analysis?.status, awaitingNarrative, load]);
 
   if (state === "loading") {
     return (
