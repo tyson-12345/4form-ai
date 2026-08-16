@@ -296,10 +296,13 @@ const FALLBACK_PREVENTION: Record<keyof typeof JOINT_LABELS, string> = {
     "Sit back into the hips rather than folding forward, and keep your chest up through the deepest part of the movement.",
   rightHip:
     "Sit back into the hips rather than folding forward, and keep your chest up through the deepest part of the movement.",
+  // Elbow findings only arise in sports whose profile flags full extension —
+  // ballistic strikes and weight-bearing on a locked arm — so the copy coaches
+  // the finish, not the load path.
   leftElbow:
-    "Keep the elbow stacked under the load and avoid letting it flare at the end of the range. Lighten the load if it drifts.",
+    "Finish the movement just short of a fully locked elbow — a soft final few degrees absorbs the snap instead of the joint taking it.",
   rightElbow:
-    "Keep the elbow stacked under the load and avoid letting it flare at the end of the range. Lighten the load if it drifts.",
+    "Finish the movement just short of a fully locked elbow — a soft final few degrees absorbs the snap instead of the joint taking it.",
 };
 
 /** Scores and risk rows — everything derived from measurement, no model call. */

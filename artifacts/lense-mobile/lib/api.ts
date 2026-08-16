@@ -341,6 +341,13 @@ export interface RiskRecord {
   cautionPercent?: number | null;
   observedMin?: number | null;
   observedMax?: number | null;
+  /**
+   * The caution boundaries this finding was classified against — the sport's
+   * safe band, attached by the server from the profile stored with the
+   * analysis. `null` on a side that sport leaves unflagged.
+   */
+  safeMin?: number | null;
+  safeMax?: number | null;
   description: string;
   prevention: string;
 }

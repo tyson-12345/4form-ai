@@ -35,10 +35,17 @@ import { defineConfig } from "vitest/config";
  * and fails silently at measurement time. `lib/poseTracker.test.ts` parses the
  * emitted script so that blind spot is covered by CI rather than by a user
  * filming a squat.
+ *
+ * ── Why `constants/` is included too, from 2026-08-16 ───────────────────────
+ * `constants/riskProfiles.ts` holds the per-sport risk zones — pure data with
+ * invariants (zone ordering, which sports flag a straight limb) that decide
+ * what gets flagged as an injury pattern. Wrong zones are invisible on screen
+ * until an athlete gets a nonsense flag, which is exactly the class of bug the
+ * rule of thumb above says to test.
  */
 export default defineConfig({
   test: {
-    include: ["utils/**/*.test.ts", "lib/**/*.test.ts"],
+    include: ["utils/**/*.test.ts", "lib/**/*.test.ts", "constants/**/*.test.ts"],
     environment: "node",
   },
 });

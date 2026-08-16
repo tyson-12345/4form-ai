@@ -68,7 +68,7 @@ export default function MeasureScreen() {
         const htmlPath = `${FileSystem.cacheDirectory}pose-scan.html`;
         await FileSystem.writeAsStringAsync(
           htmlPath,
-          buildPoseHtml({ videoUri: staged, mode: "scan" }),
+          buildPoseHtml({ videoUri: staged, mode: "scan", sport: params.sport }),
           { encoding: FileSystem.EncodingType.UTF8 },
         );
         if (cancelled) return;

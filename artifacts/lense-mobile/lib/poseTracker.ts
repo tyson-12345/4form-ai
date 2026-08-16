@@ -20,6 +20,14 @@
  * measurements out, same scores out.
  */
 
+// Relative, not aliased: this module is exercised by vitest, which does not
+// resolve the app's `@/` path alias.
+import {
+  profileForSport,
+  RISK_PROFILE_VERSION,
+  type RiskZones,
+} from "../constants/riskProfiles";
+
 export type PoseMode = "interactive" | "scan";
 
 export const JOINT_KEYS = [
@@ -60,6 +68,17 @@ export interface PoseMetrics {
    * left/right symmetry score, which profile footage cannot support.
    */
   facingRatio?: number | null;
+  /**
+   * The sport risk profile the frames were classified against — provenance for
+   * every `riskFrames` count in this payload. Absent on clips measured by app
+   * builds that predate per-sport profiles; those used the legacy fixed bands
+   * (see constants/riskProfiles.ts `LEGACY_ZONES`).
+   */
+  riskProfile?: {
+    id: string;
+    version: number;
+    zones: RiskZones;
+  };
 }
 
 export type PoseMessage =
@@ -99,9 +118,21 @@ export const MIN_CLIP_SECONDS = 3;
 
 const MEDIAPIPE_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404";
 
-export function buildPoseHtml(options: { videoUri?: string; mode: PoseMode }): string {
-  const { videoUri, mode } = options;
+export function buildPoseHtml(options: {
+  videoUri?: string;
+  mode: PoseMode;
+  /**
+   * The athlete's sport, used to select the risk-classification bands. What
+   * counts as a flag-worthy joint position differs by sport — a locked elbow
+   * overhead is required in weightlifting and a caution sign in gymnastics —
+   * so the bands travel with the clip's sport. Omitted or unrecognised sports
+   * classify against the conservative generic profile.
+   */
+  sport?: string;
+}): string {
+  const { videoUri, mode, sport } = options;
   const isScan = mode === "scan";
+  const profile = profileForSport(sport);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -217,6 +248,12 @@ ${
   var VIDEO_URI = ${videoUri ? JSON.stringify(videoUri) : "null"};
   var IS_SCAN = ${isScan ? "true" : "false"};
   var SCAN_SAMPLES = ${SCAN_SAMPLES};
+  // Sport-specific classification bands (see constants/riskProfiles.ts).
+  // Serialized into the document so the WebView classifies frames against
+  // exactly the profile this build selected — and reports it back as
+  // provenance alongside the counts it produced.
+  var ZONES = ${JSON.stringify(profile.zones)};
+  var RISK_PROFILE = ${JSON.stringify({ id: profile.id, version: RISK_PROFILE_VERSION, zones: profile.zones })};
 
   function post(msg){
     try { window.ReactNativeWebView.postMessage(JSON.stringify(msg)); } catch(e){}
@@ -256,11 +293,12 @@ ${
     var ab={x:a.x-b.x,y:a.y-b.y}, cb={x:c.x-b.x,y:c.y-b.y};
     return Math.round(Math.atan2(Math.abs(ab.x*cb.y-ab.y*cb.x), ab.x*cb.x+ab.y*cb.y)*180/Math.PI);
   }
-  // Risk banding. Knees fail at both extremes (deep flexion / hyperextension);
-  // hips only on deep flexion; elbows only on hyperextension.
-  function lvl(a,loRisk,loWarn,hiWarn,hiRisk){
-    if(a<=loRisk||a>=hiRisk) return 2;
-    if(a<=loWarn||a>=hiWarn) return 1;
+  // Risk banding against the sport's zones. Which extremes matter — and
+  // whether a fully straight limb is a finding at all — depends on the sport;
+  // the zones were selected by buildPoseHtml and injected above.
+  function lvl(a,z){
+    if(a<=z.loRisk||a>=z.hiRisk) return 2;
+    if(a<=z.loWarn||a>=z.hiWarn) return 1;
     return 0;
   }
 
@@ -354,7 +392,8 @@ ${
       joints: joints,
       riskFrames: riskFrames,
       series: out,
-      facingRatio: medianFacing()
+      facingRatio: medianFacing(),
+      riskProfile: RISK_PROFILE
     };
   }
 
@@ -373,12 +412,12 @@ ${
     var pt  = function(i){ return { x: lm[i].x * W, y: lm[i].y * H }; };
 
     var jr = {};
-    if(vis(23)&&vis(25)&&vis(27)){var a1=ang(pt(23),pt(25),pt(27));jr[25]={deg:a1,lvl:lvl(a1,70,90,175,178),key:"leftKnee"};}
-    if(vis(24)&&vis(26)&&vis(28)){var a2=ang(pt(24),pt(26),pt(28));jr[26]={deg:a2,lvl:lvl(a2,70,90,175,178),key:"rightKnee"};}
-    if(vis(11)&&vis(23)&&vis(25)){var a3=ang(pt(11),pt(23),pt(25));jr[23]={deg:a3,lvl:lvl(a3,55,80,999,999),key:"leftHip"};}
-    if(vis(12)&&vis(24)&&vis(26)){var a4=ang(pt(12),pt(24),pt(26));jr[24]={deg:a4,lvl:lvl(a4,55,80,999,999),key:"rightHip"};}
-    if(vis(11)&&vis(13)&&vis(15)){var a5=ang(pt(11),pt(13),pt(15));jr[13]={deg:a5,lvl:lvl(a5,-1,-1,160,172),key:"leftElbow"};}
-    if(vis(12)&&vis(14)&&vis(16)){var a6=ang(pt(12),pt(14),pt(16));jr[14]={deg:a6,lvl:lvl(a6,-1,-1,160,172),key:"rightElbow"};}
+    if(vis(23)&&vis(25)&&vis(27)){var a1=ang(pt(23),pt(25),pt(27));jr[25]={deg:a1,lvl:lvl(a1,ZONES.knee),key:"leftKnee"};}
+    if(vis(24)&&vis(26)&&vis(28)){var a2=ang(pt(24),pt(26),pt(28));jr[26]={deg:a2,lvl:lvl(a2,ZONES.knee),key:"rightKnee"};}
+    if(vis(11)&&vis(23)&&vis(25)){var a3=ang(pt(11),pt(23),pt(25));jr[23]={deg:a3,lvl:lvl(a3,ZONES.hip),key:"leftHip"};}
+    if(vis(12)&&vis(24)&&vis(26)){var a4=ang(pt(12),pt(24),pt(26));jr[24]={deg:a4,lvl:lvl(a4,ZONES.hip),key:"rightHip"};}
+    if(vis(11)&&vis(13)&&vis(15)){var a5=ang(pt(11),pt(13),pt(15));jr[13]={deg:a5,lvl:lvl(a5,ZONES.elbow),key:"leftElbow"};}
+    if(vis(12)&&vis(14)&&vis(16)){var a6=ang(pt(12),pt(14),pt(16));jr[14]={deg:a6,lvl:lvl(a6,ZONES.elbow),key:"rightElbow"};}
 
     var measured = Object.keys(jr);
     if (measured.length > 0) {

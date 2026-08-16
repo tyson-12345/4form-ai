@@ -242,15 +242,27 @@ function buildNarrativePrompt(input: {
   }
 
   if (riskFindings.length > 0) {
-    lines.push("", "TIME SPENT IN HIGH-STRAIN JOINT POSITIONS:");
+    lines.push(
+      "",
+      "TIME SPENT OUTSIDE THE SPORT'S CLASSIFICATION BANDS:",
+      `  (bands are specific to ${metrics.riskProfile ? "this sport's risk profile" : "the legacy generic profile"} — a position outside its band is a flagged position for this sport, not a universal fault)`,
+    );
     for (const f of riskFindings) {
+      const band =
+        f.safeMin !== null && f.safeMax !== null
+          ? `band ${f.safeMin}–${f.safeMax}°`
+          : f.safeMax !== null
+            ? `band up to ${f.safeMax}°`
+            : f.safeMin !== null
+              ? `band from ${f.safeMin}°`
+              : "band open";
       lines.push(
         `  ${JOINT_LABELS[f.joint]}: ${f.riskPercent}% of frames in the risk band, ` +
-          `${f.cautionPercent}% in the caution band (observed ${f.observedMin}–${f.observedMax}°)`,
+          `${f.cautionPercent}% in the caution band (observed ${f.observedMin}–${f.observedMax}°, ${band})`,
       );
     }
   } else {
-    lines.push("", "No joint spent measurable time outside its safe range.");
+    lines.push("", "No joint spent measurable time outside this sport's classification bands.");
   }
 
   if (input.goals?.length) {

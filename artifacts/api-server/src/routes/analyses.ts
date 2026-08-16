@@ -28,6 +28,14 @@ import {
   runPipeline,
   markFailed,
 } from "../services/analysisService.js";
+import {
+  JOINT_KEYS,
+  JOINT_LABELS,
+  jointKind,
+  safeBandOf,
+  zonesForMetrics,
+  type PoseMetrics,
+} from "../lib/scoring.js";
 
 const router = Router();
 
@@ -43,6 +51,13 @@ const jointStatsSchema = z.object({
 const riskFramesSchema = z.object({
   caution: z.number().int().min(0).max(1_000_000),
   risk: z.number().int().min(0).max(1_000_000),
+});
+
+const jointZonesSchema = z.object({
+  loRisk: z.number().min(-1).max(999),
+  loWarn: z.number().min(-1).max(999),
+  hiWarn: z.number().min(-1).max(999),
+  hiRisk: z.number().min(-1).max(999),
 });
 
 const JOINT_ENUM = z.enum([
@@ -81,6 +96,24 @@ const poseMetricsSchema = z.object({
    * and optional for the same backward-compatibility reason as `series`.
    */
   facingRatio: z.number().min(0).max(10).nullable().optional(),
+  /**
+   * The sport risk profile the client classified frames against. Optional so
+   * app builds predating per-sport profiles are still accepted — their frames
+   * were classified against the legacy fixed bands, which the server knows.
+   * The zone bounds allow the sentinels the profiles use (-1 = no low flags,
+   * 999 = no high flags).
+   */
+  riskProfile: z
+    .object({
+      id: safeText(1, 40),
+      version: z.number().int().min(1).max(1000),
+      zones: z.object({
+        knee: jointZonesSchema,
+        hip: jointZonesSchema,
+        elbow: jointZonesSchema,
+      }),
+    })
+    .optional(),
 });
 
 const createAnalysisSchema = z.object({
@@ -174,10 +207,22 @@ router.get("/analyses/:id", authenticate, async (req: AuthRequest, res) => {
     return;
   }
 
-  const [tips, injuryRisks] = await Promise.all([
+  const [tips, risks] = await Promise.all([
     findTipsByAnalysis(analysis.id),
     findRisksByAnalysis(analysis.id),
   ]);
+
+  // Attach the safe band each finding was classified against, derived at read
+  // time from the profile stored inside the analysis's own metrics (legacy
+  // clips fall back to the fixed bands that were in force when they were
+  // measured). Derived rather than stored: the band is a property of the
+  // stored profile, and duplicating it into rows could let the two disagree.
+  const zones = zonesForMetrics((analysis.poseMetrics ?? {}) as PoseMetrics);
+  const injuryRisks = risks.map((r) => {
+    const key = JOINT_KEYS.find((k) => JOINT_LABELS[k] === r.joint.toLowerCase());
+    if (!key) return { ...r, safeMin: null, safeMax: null };
+    return { ...r, ...safeBandOf(zones[jointKind(key)]) };
+  });
 
   res.json({ analysis, tips, injuryRisks });
 });

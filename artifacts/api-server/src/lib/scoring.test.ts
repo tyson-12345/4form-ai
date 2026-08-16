@@ -460,4 +460,53 @@ describe("deriveRiskFindings", () => {
     m.riskFrames.leftKnee = { caution: 1, risk: 1 };
     expect(deriveRiskFindings(m)).toEqual([]);
   });
+
+  it("captions a finding with the sport profile's safe band when one is embedded", () => {
+    const m = goodMetrics({
+      frameCount: 100,
+      riskProfile: {
+        id: "cycling",
+        version: 1,
+        zones: {
+          knee: { loRisk: 50, loWarn: 65, hiWarn: 160, hiRisk: 170 },
+          hip: { loRisk: 25, loWarn: 35, hiWarn: 999, hiRisk: 999 },
+          elbow: { loRisk: -1, loWarn: -1, hiWarn: 999, hiRisk: 999 },
+        },
+      },
+    });
+    m.riskFrames.leftKnee = { caution: 10, risk: 0 };
+    const [finding] = deriveRiskFindings(m);
+    expect(finding.safeMin).toBe(65);
+    expect(finding.safeMax).toBe(160);
+  });
+
+  it("reports an open-ended band side as null, never a sentinel", () => {
+    // A hip band with no upper flag must not caption "safe up to 999°".
+    const m = goodMetrics({
+      frameCount: 100,
+      riskProfile: {
+        id: "generic",
+        version: 1,
+        zones: {
+          knee: { loRisk: 55, loWarn: 75, hiWarn: 999, hiRisk: 999 },
+          hip: { loRisk: 50, loWarn: 70, hiWarn: 999, hiRisk: 999 },
+          elbow: { loRisk: -1, loWarn: -1, hiWarn: 999, hiRisk: 999 },
+        },
+      },
+    });
+    m.riskFrames.rightHip = { caution: 8, risk: 0 };
+    const [finding] = deriveRiskFindings(m);
+    expect(finding.safeMin).toBe(70);
+    expect(finding.safeMax).toBeNull();
+  });
+
+  it("falls back to the legacy bands for clips measured before profiles existed", () => {
+    // Those clips really were classified against the old fixed bands, so the
+    // caption must show the band that produced the counts — not today's.
+    const m = goodMetrics({ frameCount: 100 });
+    m.riskFrames.leftElbow = { caution: 5, risk: 0 };
+    const [finding] = deriveRiskFindings(m);
+    expect(finding.safeMin).toBeNull();
+    expect(finding.safeMax).toBe(160);
+  });
 });

@@ -59,6 +59,37 @@ export const JOINT_KEYS: readonly JointKey[] = [
  */
 export type JointSeries = Partial<Record<JointKey, (number | null)[]>>;
 
+/**
+ * Classification zones for one joint kind, in degrees. A frame is "risk" at or
+ * below `loRisk` / at or above `hiRisk`, "caution" at or below `loWarn` / at or
+ * above `hiWarn`. `-1` disables the low side, `999` the high side.
+ */
+export interface JointZones {
+  loRisk: number;
+  loWarn: number;
+  hiWarn: number;
+  hiRisk: number;
+}
+
+/** Zones per joint kind; symmetric left/right. */
+export interface RiskZones {
+  knee: JointZones;
+  hip: JointZones;
+  elbow: JointZones;
+}
+
+/**
+ * The bands the tracker used before sport profiles existed. Clips whose
+ * metrics carry no `riskProfile` were classified against these — kept verbatim
+ * (mirroring the client's constants/riskProfiles.ts) so legacy findings can
+ * still be captioned with the band that actually produced them.
+ */
+export const LEGACY_ZONES: RiskZones = {
+  knee: { loRisk: 70, loWarn: 90, hiWarn: 175, hiRisk: 178 },
+  hip: { loRisk: 55, loWarn: 80, hiWarn: 999, hiRisk: 999 },
+  elbow: { loRisk: -1, loWarn: -1, hiWarn: 160, hiRisk: 172 },
+};
+
 export interface PoseMetrics {
   /** Frames on which a pose was detected with acceptable confidence. */
   frameCount: number;
@@ -68,6 +99,18 @@ export interface PoseMetrics {
   joints: Partial<Record<JointKey, JointStats>>;
   /** Frames where each joint sat in a caution (lvl 1) or risk (lvl 2) range. */
   riskFrames: Partial<Record<JointKey, { caution: number; risk: number }>>;
+  /**
+   * The sport risk profile the client classified frames against — provenance
+   * for every `riskFrames` count. Sport-specific because what counts as a
+   * flag-worthy position differs by sport: a locked elbow overhead is required
+   * technique in weightlifting and a caution sign in gymnastics. Absent on
+   * clips from app builds predating profiles; those used `LEGACY_ZONES`.
+   */
+  riskProfile?: {
+    id: string;
+    version: number;
+    zones: RiskZones;
+  };
   /** Ordered angle readings per joint. Absent on clips from older app builds. */
   series?: JointSeries;
   /**
@@ -569,12 +612,44 @@ export interface RiskFinding {
   cautionPercent: number;
   observedMin: number;
   observedMax: number;
+  /**
+   * The caution boundaries the frames were classified against — the "safe
+   * band" a finding is read against in the UI. `null` on a side the profile
+   * leaves unflagged (an open-ended band has no boundary to print).
+   */
+  safeMin: number | null;
+  safeMax: number | null;
+}
+
+/** Joint kind ("knee") from a joint key ("leftKnee"). */
+export function jointKind(key: JointKey): keyof RiskZones {
+  if (key.includes("Knee")) return "knee";
+  if (key.includes("Hip")) return "hip";
+  return "elbow";
+}
+
+/**
+ * The classification zones in force for these metrics — the embedded profile
+ * when present, the legacy fixed bands otherwise. Never invents: a legacy clip
+ * really was classified against `LEGACY_ZONES`.
+ */
+export function zonesForMetrics(metrics: PoseMetrics): RiskZones {
+  return metrics.riskProfile?.zones ?? LEGACY_ZONES;
+}
+
+/** Display boundaries of a zone set: null on a side with no flags. */
+export function safeBandOf(zones: JointZones): { safeMin: number | null; safeMax: number | null } {
+  return {
+    safeMin: zones.loWarn >= 0 ? zones.loWarn : null,
+    safeMax: zones.hiWarn <= 360 ? zones.hiWarn : null,
+  };
 }
 
 export function deriveRiskFindings(metrics: PoseMetrics): RiskFinding[] {
   if (!isScorable(metrics)) return [];
 
   const findings: RiskFinding[] = [];
+  const zones = zonesForMetrics(metrics);
 
   for (const key of JOINT_KEYS) {
     const rf = metrics.riskFrames[key];
@@ -588,6 +663,7 @@ export function deriveRiskFindings(metrics: PoseMetrics): RiskFinding[] {
       cautionPercent: round((rf.caution / metrics.frameCount) * 100),
       observedMin: round(stats.min),
       observedMax: round(stats.max),
+      ...safeBandOf(zones[jointKind(key)]),
     });
   }
 
