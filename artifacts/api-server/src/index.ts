@@ -8,6 +8,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { warnOnPartialMailConfig } from "./lib/mailer";
 import { startResetTokenCleanup } from "./lib/tokenCleanup";
+import { runMigrations } from "./lib/migrate";
 
 // ── Environment validation ────────────────────────────────────────────────────
 // Without these the server cannot serve a single authenticated request, so
@@ -58,18 +59,44 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
+/**
+ * Bring the schema up to date, then serve.
+ *
+ * Ordered deliberately: this process is the only thing that applies migrations,
+ * so it must finish before the first request can arrive. A failure here aborts
+ * the boot rather than degrading, because the alternative is serving writes
+ * against a schema this build does not agree with. Railway's restart policy
+ * retries, and a deploy that never becomes healthy is a visible failure — which
+ * is the correct outcome for a migration that cannot be applied.
+ */
+async function start(): Promise<void> {
+  const { applied, baselined, skipped } = await runMigrations();
+  logger.info(
+    { applied: applied.length, baselined: baselined.length, skipped, event: "migrations_ready" },
+    applied.length > 0
+      ? `Applied ${applied.length} migration(s): ${applied.join(", ")}`
+      : "Schema already up to date",
+  );
 
-  logger.info({ port }, "Server listening");
+  app.listen(port, (err) => {
+    if (err) {
+      logger.error({ err }, "Error listening on port");
+      process.exit(1);
+    }
 
-  // Spent reset tokens are deleted on a timer rather than accumulating forever.
-  // Started after listen so a database hiccup here can never stop the server
-  // coming up.
-  startResetTokenCleanup();
+    logger.info({ port }, "Server listening");
+
+    // Spent reset tokens are deleted on a timer rather than accumulating forever.
+    // Started after listen so a database hiccup here can never stop the server
+    // coming up.
+    startResetTokenCleanup();
+  });
+}
+
+start().catch((err) => {
+  logger.fatal({ err, event: "boot_failed" }, "Startup failed; not serving");
+  reportError(err, { kind: "bootFailure" });
+  setTimeout(() => process.exit(1), 2000).unref();
 });
 
 // ── Last-resort handlers ──────────────────────────────────────────────────────
