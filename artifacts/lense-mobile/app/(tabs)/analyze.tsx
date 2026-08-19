@@ -40,6 +40,7 @@ import { MIN_CLIP_SECONDS } from "@/lib/poseTracker";
 import { deleteVideo } from "@/lib/videoStore";
 import { useAuth } from "@/lib/authContext";
 import { SPORTS } from "@/constants/sports";
+import { SportScience } from "@/components/SportScience";
 import { alert } from "@/lib/alert";
 
 export default function SessionsScreen() {
@@ -339,6 +340,19 @@ export default function SessionsScreen() {
                 />
               ))}
             </View>
+
+            {/* The science behind the pick, shown the moment a sport is chosen —
+                the athlete sees what this sport's bands and tips are grounded in
+                before the clip is measured against them. Picking the RIGHT sport
+                matters: every band and every tip comes from this literature. */}
+            {sport !== "" && (
+              <>
+                <Label style={{ marginTop: 26, marginBottom: 8 }}>
+                  THE SCIENCE · {sport.toUpperCase()}
+                </Label>
+                <SportScience sport={sport} />
+              </>
+            )}
 
             <Label style={{ marginTop: 26, marginBottom: 8 }}>LABEL · OPTIONAL</Label>
             <TextInput
