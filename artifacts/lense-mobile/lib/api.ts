@@ -178,8 +178,16 @@ async function request<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}) as Record<string, unknown>);
+    // A gateway or proxy error (502/503 while the API restarts, a captive
+    // portal, an HTML error page) has no JSON body, so `body.error` is empty
+    // and the athlete used to get the generic "Something went wrong" for what
+    // is really a connectivity problem. Say what actually happened.
+    const fallback =
+      res.status >= 502 && res.status <= 504
+        ? "The server is briefly unreachable. Give it a moment and try again."
+        : "Something went wrong. Please try again.";
     throw new ApiError(
-      (body.error as string) ?? "Something went wrong. Please try again.",
+      (body.error as string) ?? fallback,
       res.status,
       body.code as string | undefined,
     );
@@ -290,6 +298,17 @@ export interface AnalysisRecord {
   sport: string;
   status: "pending" | "processing" | "complete" | "failed";
   analysisMethod: AnalysisMethod;
+  /**
+   * Present only when the measured movement contradicted the sport picked for
+   * this clip. Absent or null means "not assessed" — which covers every clip
+   * measured before this check existed, and every clip the coach declined to
+   * judge. That is not the same as a verdict that the sport was right.
+   */
+  sportMismatch?: {
+    suggestedSport: string;
+    confidence: "medium" | "high";
+    message: string;
+  } | null;
   videoUrl?: string;
   duration?: number;
   /** `null` means "not measured" — never render a null score as 0. */
@@ -306,11 +325,10 @@ export interface AnalysisRecord {
   /**
    * The raw pose measurements the scores were computed from.
    *
-   * Only the frame count and tracking quality are read on the client — they are
-   * the provenance shown next to a reading ("148 FRAMES MEASURED"), which is
-   * what separates an instrument from a scoreboard. The joint statistics are
-   * present in the payload but typed loosely here; the analysis screen reads
-   * them through its own narrower type.
+   * The client reads the provenance fields ("148 FRAMES MEASURED" next to a
+   * reading — what separates an instrument from a scoreboard) and, since the
+   * muscle map, the per-joint statistics and band time that tint the body
+   * figure. Typed to what is read; the payload carries more.
    *
    * Null for legacy or unscored analyses.
    */
@@ -320,6 +338,10 @@ export interface AnalysisRecord {
     durationSec?: number;
     /** Server-derived at scoring time; null when the movement didn't repeat. */
     detectedReps?: number | null;
+    /** Per-joint angle statistics, keyed leftKnee … rightElbow. */
+    joints?: Partial<Record<string, { min: number; max: number; mean: number; stdDev: number }>>;
+    /** Frames each joint spent in the caution and risk bands. */
+    riskFrames?: Partial<Record<string, { caution: number; risk: number }>>;
   } | null;
   uploadedAt: string;
 }

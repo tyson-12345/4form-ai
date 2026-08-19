@@ -25,7 +25,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import Svg, { Defs, Pattern, Rect } from "react-native-svg";
 
 import {
@@ -50,6 +50,10 @@ import {
 } from "@/lib/api";
 import { displaySport } from "@/constants/sports";
 import { flagSeverity, isAlarming } from "@/utils/flagSeverity";
+import { MuscleMap, MuscleMapLegend } from "@/components/MuscleMap";
+import { deriveMuscleLoad } from "@/utils/muscleLoad";
+import { resolveVideo } from "@/lib/videoStore";
+import { alert } from "@/lib/alert";
 // Safety net for the coaching text. The prompt already asks for plain
 // language, but that is an instruction, not a guarantee — one generation that
 // says "valgus" reaches a 15-year-old otherwise. Chat has always done this;
@@ -109,18 +113,21 @@ export default function AnalysisDetailScreen() {
     }
   }, [id]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    void analysesApi
-      .list()
-      .then(({ analyses }) => setHistory(analyses))
-      .catch(() => {
-        /* band is optional context — a failure here must not blank the screen */
-      });
-  }, []);
+  // Refetch on every focus, not just mount. The athlete can delete a session
+  // from this same screen, or measure a new clip, and come back — a band drawn
+  // from the history as it stood at first mount would quietly plot this clip
+  // against a range that no longer exists.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+      void analysesApi
+        .list()
+        .then(({ analyses }) => setHistory(analyses))
+        .catch(() => {
+          /* band is optional context — a failure here must not blank the screen */
+        });
+    }, [load]),
+  );
 
   /**
    * The athlete's working range across their measured history — the same
@@ -199,6 +206,33 @@ export default function AnalysisDetailScreen() {
     return () => clearTimeout(timer);
   }, [analysis?.status, awaitingNarrative, load]);
 
+  /**
+   * Re-run this clip under the sport the coach thinks it actually is. The
+   * video never left the device, so "upload it again" is unnecessary — resolve
+   * the stored file and walk back into the measure flow with the corrected
+   * sport. A missing file (reinstall, cleared storage) degrades to an honest
+   * explanation instead of a broken push. Declared before the early returns:
+   * hooks must run on every render.
+   */
+  const remeasureAs = useCallback(
+    async (suggestedSport: string) => {
+      if (!analysis) return;
+      const video = await resolveVideo(analysis.id);
+      if (video.status !== "ready") {
+        alert(
+          "This clip isn't on this phone anymore",
+          "Videos stay on your device, not our servers, and this one is gone — likely a reinstall or cleared storage. Film or upload it again from Analyze.",
+        );
+        return;
+      }
+      router.push({
+        pathname: "/analysis/measure",
+        params: { uri: video.uri, sport: suggestedSport.toLowerCase(), title: analysis.title },
+      });
+    },
+    [analysis, router],
+  );
+
   if (state === "loading") {
     return (
       <Screen style={s.centre}>
@@ -221,6 +255,16 @@ export default function AnalysisDetailScreen() {
   const measured = analysis.analysisMethod === "pose-measured";
   const legacy = analysis.analysisMethod === "legacy-unverified";
   const processing = analysis.status === "processing" || analysis.status === "pending";
+
+  // Muscle-group tints for the muscle map. Cheap pure derivation, recomputed
+  // per render rather than memoised: the input is a small stats object.
+  const muscleLoad = analysis.poseMetrics?.joints
+    ? deriveMuscleLoad({
+        frameCount: analysis.poseMetrics.frameCount ?? 0,
+        joints: analysis.poseMetrics.joints,
+        riskFrames: analysis.poseMetrics.riskFrames,
+      })
+    : null;
 
   const prescription = tips[0] ?? null;
 
@@ -288,6 +332,39 @@ export default function AnalysisDetailScreen() {
             </View>
           </View>
         </Pressable>
+
+        {/* ── Wrong sport ──
+            Sits above the scores because it changes how to read them: every band
+            this clip was judged against belongs to the sport that was picked, so
+            if that pick was wrong the numbers below are measured against the
+            wrong ruler. Written as a question, not a correction: the sport is
+            chosen per clip and training outside your sport is a legitimate,
+            supported thing to do. */}
+        {analysis.sportMismatch && (
+          <View style={s.section}>
+            <View style={s.mismatchNote}>
+              <Label style={{ color: color.cobalt }}>CHECK THE SPORT</Label>
+              <Text style={[T.body, { marginTop: 8 }]}>{analysis.sportMismatch.message}</Text>
+              <Text style={[T.bodySmall, { marginTop: 10, color: color.textMuted }]}>
+                Scored against {displaySport(analysis.sport) || analysis.sport}. Re-measuring
+                creates a new session and uses one analysis from your monthly allowance.
+              </Text>
+              {/* The instruction used to end here, telling the athlete to
+                  re-upload with no way to do it — a dead end walked in full.
+                  The clip is still on the device; offer the action itself. */}
+              <Pressable
+                onPress={() => void remeasureAs(analysis.sportMismatch!.suggestedSport)}
+                style={({ pressed }) => [s.mismatchCta, pressed && { opacity: 0.85 }]}
+              >
+                <Text style={[T.buttonSmall, { color: color.onCobalt }]}>
+                  Measure again as{" "}
+                  {displaySport(analysis.sportMismatch.suggestedSport) ||
+                    analysis.sportMismatch.suggestedSport}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         {/* ── Form Index ── */}
         <Card style={s.indexCard}>
@@ -366,6 +443,29 @@ export default function AnalysisDetailScreen() {
             </Text>
           )}
         </Card>
+
+        {/* ── Muscle load ──
+            The measured joints, drawn on a body. A joint is moved by the
+            muscles that cross it, so each measured joint tints its muscle
+            groups: knees the thigh and calf, hips the glutes and lower back,
+            elbows the arm. Inference from measurement, and labelled as such —
+            the untinted muscles are the ones nothing measured crosses. */}
+        {measured && muscleLoad?.assessed && (
+          <View style={s.section}>
+            <Card>
+              <View style={s.indexHead}>
+                <Label>MUSCLE LOAD</Label>
+                <Text style={T.measuredSmall}>FROM MEASURED JOINTS</Text>
+              </View>
+              <MuscleMap load={muscleLoad} />
+              <MuscleMapLegend />
+              <Text style={[T.bodySmall, { marginTop: 12, color: color.textMuted }]}>
+                Tint depth is how far each joint travelled. Rust means the joint a muscle
+                crosses spent real time outside this sport's band.
+              </Text>
+            </Card>
+          </View>
+        )}
 
         {/* ── Summary ── */}
         {analysis.summary && (
@@ -695,6 +795,24 @@ const s = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,
+  },
+
+  // Cobalt, not rust: this is a "check this" prompt, not a finding about the
+  // athlete's movement, and it should not compete with a flagged joint.
+  mismatchNote: {
+    backgroundColor: "rgba(36,54,232,0.07)",
+    borderLeftWidth: 3,
+    borderLeftColor: color.cobalt,
+    borderRadius: 0,
+    padding: 14,
+  },
+  mismatchCta: {
+    marginTop: 12,
+    alignSelf: "flex-start",
+    backgroundColor: color.cobalt,
+    borderRadius: radius.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
   },
 
   section: { paddingHorizontal: GUTTER, paddingTop: 24 },
