@@ -209,6 +209,7 @@ canvas{pointer-events:none}
 #legend{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:5px;
   background:rgba(16,19,18,.82);border:1px solid rgba(255,255,255,.08);border-radius:11px;padding:8px 11px}
 .lg{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;color:#EDECE7;letter-spacing:.3px}
+.lgsep{margin-top:3px;padding-top:5px;border-top:1px solid rgba(255,255,255,.10)}
 .ld{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 </style>
 </head>
@@ -223,9 +224,10 @@ canvas{pointer-events:none}
            ? ""
            : `<div id="badge"><div id="dot"></div><span id="btxt">Loading AI…</span></div>
        <div id="legend">
-         <div class="lg"><span class="ld" style="background:#EDECE7"></span>IN RANGE</div>
-         <div class="lg"><span class="ld" style="background:#8A8D89"></span>CAUTION</div>
-         <div class="lg"><span class="ld" style="background:#C2542E"></span>FLAGGED</div>
+         <div class="lg"><span class="ld" style="background:#5B8DEF"></span>LEFT</div>
+         <div class="lg"><span class="ld" style="background:#4CAF82"></span>RIGHT</div>
+         <div class="lg lgsep"><span class="ld" style="background:#E8A33D"></span>CAUTION</div>
+         <div class="lg"><span class="ld" style="background:#D63A2F"></span>FLAGGED</div>
        </div>`
        }`
       : `<div id="empty"><p>No video available</p></div>`
@@ -312,9 +314,79 @@ ${
   var busy = false, playing = false, showSkel = true;
 
   // ── Skeleton topology ──
-  var CONN=[[11,12],[11,23],[12,24],[23,24],[11,13],[13,15],[15,17],[15,19],[17,19],[12,14],[14,16],[16,18],[16,20],[18,20],[23,25],[25,27],[27,29],[27,31],[29,31],[24,26],[26,28],[28,30],[28,32],[30,32]];
-  var KJ=[0,11,12,13,14,15,16,23,24,25,26,27,28];
-  var RL=["#EDECE7","#8A8D89","#C2542E"];
+  //
+  // Drawn as a body, not a wire diagram. Three things make the difference:
+  //
+  //  1. **Segments taper.** A humerus is thicker than a forearm and a thigh is
+  //     thicker than a shin. Uniform strokes are what made the old overlay read
+  //     as a stick figure — real limbs have mass, and mass is what lets you see
+  //     which way a joint is rotated.
+  //  2. **Every width is a fraction of the athlete's own shoulder width**, so
+  //     the figure keeps human proportions whether the clip is a close-up or
+  //     shot from across the gym.
+  //  3. **Left and right carry different hues.** Asymmetry is the thing an
+  //     athlete most needs to see, and it is invisible when both sides are the
+  //     same colour.
+  // Traffic-light risk colours, matching the muscle map on the analysis
+  // screen: amber = caution, red = flagged. One vocabulary everywhere.
+  var RL=["#EDECE7","#E8A33D","#D63A2F"];
+
+  // Body-part identity. These are the base colours; a flagged joint overrides
+  // them so a finding still outranks anatomy. Right is green rather than the
+  // earlier amber, which the caution colour now owns.
+  var PART={
+    left:  "#5B8DEF",
+    right: "#4CAF82",
+    trunk: "rgba(237,236,231,0.42)",
+    head:  "rgba(237,236,231,0.70)"
+  };
+
+  // [proximal, distal, proximalWidth, distalWidth, side] — widths in shoulder
+  // widths. Ratios follow segment-girth anthropometry closely enough to read
+  // correctly; they are for legibility, not for measurement.
+  var LIMBS=[
+    [11,13,0.115,0.085,"left"],  [13,15,0.085,0.060,"left"],
+    [12,14,0.115,0.085,"right"], [14,16,0.085,0.060,"right"],
+    [23,25,0.165,0.115,"left"],  [25,27,0.115,0.072,"left"],
+    [24,26,0.165,0.115,"right"], [26,28,0.115,0.072,"right"]
+  ];
+
+  // Hands and feet, drawn thin so they read as extremities rather than limbs.
+  var EXTREM=[
+    [15,19,0.050,0.030,"left"],  [15,17,0.045,0.026,"left"],
+    [16,20,0.050,0.030,"right"], [16,18,0.045,0.026,"right"],
+    [27,31,0.060,0.034,"left"],  [27,29,0.055,0.038,"left"],
+    [28,32,0.060,0.034,"right"], [28,30,0.055,0.038,"right"]
+  ];
+
+  // Joints worth a marker. The measured six get a ring; the rest stay quiet so
+  // the flagged joints are the ones the eye lands on.
+  var KJ=[11,12,13,14,15,16,23,24,25,26,27,28];
+
+  // A limb segment drawn as a muscle, not a strut: the sides bow outward to a
+  // belly just proximal of centre — where the muscle mass actually sits on a
+  // human — and taper into both joints. Round caps fuse consecutive segments
+  // at the joint instead of showing a seam. Straight tapered quads were the
+  // last thing keeping the figure looking like scaffolding.
+  function limb(pA,pB,wA,wB,col,glow){
+    var dx=pB.x-pA.x, dy=pB.y-pA.y, L=Math.sqrt(dx*dx+dy*dy);
+    if(L<0.5) return;
+    var nx=-dy/L, ny=dx/L;
+    var mx=pA.x+dx*0.42, my=pA.y+dy*0.42;
+    var belly=Math.max(wA,wB)*1.28;
+    ctx.save();
+    ctx.fillStyle=col;
+    if(glow){ ctx.shadowBlur=glow; ctx.shadowColor=col; }
+    ctx.beginPath();
+    ctx.moveTo(pA.x+nx*wA*0.9, pA.y+ny*wA*0.9);
+    ctx.quadraticCurveTo(mx+nx*belly, my+ny*belly, pB.x+nx*wB*0.85, pB.y+ny*wB*0.85);
+    ctx.lineTo(pB.x-nx*wB*0.85, pB.y-ny*wB*0.85);
+    ctx.quadraticCurveTo(mx-nx*belly, my-ny*belly, pA.x-nx*wA*0.9, pA.y-ny*wA*0.9);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(pA.x,pA.y,wA*0.9,0,6.2832); ctx.fill();
+    ctx.beginPath(); ctx.arc(pB.x,pB.y,wB*0.85,0,6.2832); ctx.fill();
+    ctx.restore();
+  }
 
   function ang(a,b,c){
     var ab={x:a.x-b.x,y:a.y-b.y}, cb={x:c.x-b.x,y:c.y-b.y};
@@ -464,30 +536,111 @@ ${
     var maxLvl = 0;
     measured.forEach(function(i){ if (jr[i].lvl > maxLvl) maxLvl = jr[i].lvl; });
 
-    CONN.forEach(function(pair){
-      var a = pair[0], b = pair[1];
-      if (!vis(a) || !vis(b)) return;
-      var pA = pt(a), pB = pt(b);
+    // Everything scales off the athlete's shoulder span, so proportions survive
+    // any framing. Falls back to hip span, then to a constant, so a partially
+    // visible athlete still draws something sane rather than collapsing to zero.
+    var S = 0;
+    if (vis(11) && vis(12)) { var s1=pt(11), s2=pt(12); S=Math.sqrt((s1.x-s2.x)*(s1.x-s2.x)+(s1.y-s2.y)*(s1.y-s2.y)); }
+    if (S < 8 && vis(23) && vis(24)) { var h1=pt(23), h2=pt(24); S=Math.sqrt((h1.x-h2.x)*(h1.x-h2.x)+(h1.y-h2.y)*(h1.y-h2.y))*1.15; }
+    if (S < 8) S = 90;
+
+    // Colour for a segment: a flagged joint at either end wins, otherwise the
+    // limb keeps its side's hue.
+    function segColor(a,b,side){
       var rm = Math.max(jr[a] ? jr[a].lvl : -1, jr[b] ? jr[b].lvl : -1);
-      var col = rm >= 1 ? RL[rm] : "rgba(237,236,231,0.55)";
+      if (rm >= 1) return { col: RL[rm], glow: rm >= 2 ? 18 : 10 };
+      return { col: PART[side], glow: 0 };
+    }
+
+    ctx.save();
+    ctx.globalAlpha = 0.94;
+
+    // ── Trunk ──
+    // A filled torso between the shoulders and hips, with the sides bowed
+    // inward at the waist — a straight-sided box read as a crate. The old
+    // overlay drew the torso as four separate lines around an empty middle,
+    // which is most of why the figure read as a wireframe instead of a person.
+    if (vis(11) && vis(12) && vis(23) && vis(24)) {
+      var sL=pt(11), sR=pt(12), hL=pt(23), hR=pt(24);
+      var mSp={x:(sL.x+sR.x+hL.x+hR.x)/4, y:(sL.y+sR.y+hL.y+hR.y)/4};
+      function waistCtl(a,b){
+        var p={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+        return {x:p.x+(mSp.x-p.x)*0.30, y:p.y+(mSp.y-p.y)*0.30};
+      }
+      var cR=waistCtl(sR,hR), cL=waistCtl(hL,sL);
+      ctx.fillStyle = PART.trunk;
+      ctx.beginPath();
+      ctx.moveTo(sL.x,sL.y); ctx.lineTo(sR.x,sR.y);
+      ctx.quadraticCurveTo(cR.x,cR.y,hR.x,hR.y);
+      ctx.lineTo(hL.x,hL.y);
+      ctx.quadraticCurveTo(cL.x,cL.y,sL.x,sL.y);
+      ctx.closePath(); ctx.fill();
+
+      // Spine, shoulder girdle and pelvis as solid bars: the three structures a
+      // coach actually reads posture from.
+      var mS={x:(sL.x+sR.x)/2,y:(sL.y+sR.y)/2}, mH={x:(hL.x+hR.x)/2,y:(hL.y+hR.y)/2};
+      limb(mS,mH,S*0.075,S*0.065,"rgba(237,236,231,0.80)",0);
+      limb(sL,sR,S*0.055,S*0.055,"rgba(237,236,231,0.62)",0);
+      limb(hL,hR,S*0.058,S*0.058,"rgba(237,236,231,0.62)",0);
+    }
+
+    // ── Head ──
+    // An actual skull, sized from the ears when they are visible and estimated
+    // from the neck when they are not. A single dot on the nose was the least
+    // anatomical thing on screen.
+    if (vis(7) && vis(8)) {
+      var eL=pt(7), eR=pt(8);
+      var ew=Math.sqrt((eL.x-eR.x)*(eL.x-eR.x)+(eL.y-eR.y)*(eL.y-eR.y));
+      var hc={x:(eL.x+eR.x)/2,y:(eL.y+eR.y)/2};
+      var hr=Math.max(ew*0.78, S*0.26);
       ctx.save();
-      ctx.strokeStyle = col; ctx.lineWidth = rm >= 1 ? 4.5 : 3.5; ctx.lineCap = "round";
-      ctx.shadowBlur = rm >= 2 ? 17 : 10; ctx.shadowColor = col; ctx.globalAlpha = .92;
-      ctx.beginPath(); ctx.moveTo(pA.x, pA.y); ctx.lineTo(pB.x, pB.y); ctx.stroke();
+      ctx.fillStyle=PART.head;
+      ctx.beginPath(); ctx.ellipse(hc.x,hc.y,hr,hr*1.22,Math.atan2(eR.y-eL.y,eR.x-eL.x),0,6.2832); ctx.fill();
       ctx.restore();
+      // Neck, joining skull to the shoulder girdle.
+      if (vis(11)&&vis(12)) { var mS2={x:(pt(11).x+pt(12).x)/2,y:(pt(11).y+pt(12).y)/2}; limb(hc,mS2,S*0.10,S*0.13,"rgba(237,236,231,0.55)",0); }
+    } else if (vis(0) && vis(11) && vis(12)) {
+      var n=pt(0), mS3={x:(pt(11).x+pt(12).x)/2,y:(pt(11).y+pt(12).y)/2};
+      ctx.save();
+      ctx.fillStyle=PART.head;
+      ctx.beginPath(); ctx.arc(n.x,n.y,S*0.28,0,6.2832); ctx.fill();
+      ctx.restore();
+      limb(n,mS3,S*0.10,S*0.13,"rgba(237,236,231,0.55)",0);
+    }
+
+    // ── Limbs, then extremities ──
+    LIMBS.forEach(function(seg){
+      if (!vis(seg[0]) || !vis(seg[1])) return;
+      var c = segColor(seg[0], seg[1], seg[4]);
+      limb(pt(seg[0]), pt(seg[1]), S*seg[2], S*seg[3], c.col, c.glow);
+    });
+    EXTREM.forEach(function(seg){
+      if (!vis(seg[0]) || !vis(seg[1])) return;
+      var c = segColor(seg[0], seg[1], seg[4]);
+      limb(pt(seg[0]), pt(seg[1]), S*seg[2], S*seg[3], c.col, 0);
     });
 
+    ctx.restore();
+
+    // ── Joint markers ──
+    // Only the measured joints get a ring; the rest get a small stud. A flagged
+    // joint is the brightest thing in the frame, which is the whole point.
     var seen = 0;
     KJ.forEach(function(i){
       if (!vis(i)) return;
       seen++;
       var p = pt(i), risk = jr[i];
-      var col = risk ? RL[risk.lvl] : "#EDECE7";
-      var r = risk && risk.lvl === 2 ? 9 : risk && risk.lvl === 1 ? 7.5 : 6.5;
+      var isMeasured = !!risk;
+      var col = risk ? RL[risk.lvl] : "rgba(237,236,231,0.85)";
+      var r = risk ? (risk.lvl === 2 ? S*0.075 : risk.lvl === 1 ? S*0.065 : S*0.055) : S*0.030;
       ctx.save();
-      ctx.shadowBlur = 14; ctx.shadowColor = col;
-      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = "#101312"; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill();
+      if (isMeasured) { ctx.shadowBlur = risk.lvl >= 2 ? 16 : 10; ctx.shadowColor = col; }
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.2832); ctx.fill();
+      if (isMeasured) {
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#101312";
+        ctx.beginPath(); ctx.arc(p.x, p.y, r*0.42, 0, 6.2832); ctx.fill();
+      }
       ctx.restore();
     });
     if (btxt) btxt.textContent = seen > 0 ? seen + " joints tracked" : "No pose detected";
