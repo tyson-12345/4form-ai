@@ -25,6 +25,7 @@ import {
   type Scores,
 } from "../lib/scoring.js";
 import { generateNarrative, CoachUnavailableError, type Narrative } from "../lib/claude.js";
+import { SPORTS_WITH_RESEARCH } from "../lib/sportResearch.js";
 import { logger } from "../lib/logger.js";
 import { recordAlert } from "../lib/alerting.js";
 import {
@@ -35,6 +36,7 @@ import {
   createTips,
   createProgressEntry,
   updateRiskProse,
+  findAnalysesByUserId,
   type NewAnalysis,
   type AnalysisRow,
 } from "../repositories/analysisRepository.js";
@@ -198,6 +200,25 @@ export async function runPipeline(
 
   await persistMeasurements(analysisId, userId, scores, riskFindings, metrics, reps);
 
+  // What the coach told this athlete after their last sessions of this sport.
+  // Handed to the model so it builds on previous advice instead of reissuing
+  // it — the difference between a coach who remembers you and a template.
+  // Best-effort: a failure here costs continuity, not the analysis.
+  const priorSessions = await findAnalysesByUserId(userId)
+    .then((rows) =>
+      rows
+        .filter(
+          (r) =>
+            r.id !== analysisId &&
+            r.status === "complete" &&
+            r.sport.toLowerCase() === input.sport.toLowerCase() &&
+            r.summary,
+        )
+        .slice(0, 2)
+        .map((r) => ({ summary: r.summary as string, improvements: r.improvements })),
+    )
+    .catch(() => undefined);
+
   let narrative: Narrative;
   try {
     narrative = await generateNarrative({
@@ -209,6 +230,7 @@ export async function runPipeline(
       riskFindings,
       goals: profile?.goals,
       injuryConcerns: profile?.injuryConcerns,
+      priorSessions,
     });
   } catch (err) {
     const unavailable = err instanceof CoachUnavailableError;
@@ -232,7 +254,7 @@ export async function runPipeline(
     return;
   }
 
-  await persistNarrative(analysisId, narrative, riskFindings);
+  await persistNarrative(analysisId, narrative, riskFindings, input.sport);
 
   logger.info(
     {
@@ -368,11 +390,13 @@ async function persistNarrative(
   analysisId: string,
   narrative: Narrative,
   riskFindings: ReturnType<typeof deriveRiskFindings>,
+  selectedSport: string,
 ): Promise<void> {
   await updateAnalysisById(analysisId, {
     strengths: narrative.strengths,
     improvements: narrative.improvements,
     summary: narrative.summary,
+    sportMismatch: validateSportMismatch(narrative.sportMismatch, selectedSport),
   });
 
   await createTips(
@@ -407,6 +431,37 @@ async function persistNarrative(
       prevention: explanation.prevention,
     });
   }
+}
+
+/**
+ * Gate Claude's sport-mismatch verdict before it reaches the athlete.
+ *
+ * This is the one field in the narrative that contradicts something the user
+ * typed, so it gets checked rather than trusted. Three ways a verdict is
+ * discarded:
+ *
+ *  - It names a sport we do not know. A suggestion the app cannot offer is
+ *    worse than silence.
+ *  - It names the sport the athlete already picked, which is a contradiction in
+ *    terms and reads as a bug.
+ *  - Anything below high confidence. Sport is chosen per clip and cross-training
+ *    is supported, so a wrong warning costs more than a missed one.
+ *
+ * Returns null in every rejected case, which the column reads as "not assessed".
+ */
+export function validateSportMismatch(
+  verdict: Narrative["sportMismatch"],
+  selectedSport: string,
+): { suggestedSport: string; confidence: "medium" | "high"; message: string } | null {
+  if (!verdict) return null;
+
+  const suggested = verdict.suggestedSport.trim();
+  const known = SPORTS_WITH_RESEARCH.find((s) => s.toLowerCase() === suggested.toLowerCase());
+  if (!known) return null;
+  if (known.toLowerCase() === selectedSport.trim().toLowerCase()) return null;
+  if (verdict.confidence !== "high") return null;
+
+  return { suggestedSport: known, confidence: verdict.confidence, message: verdict.message };
 }
 
 /** Mark an analysis failed after an unrecoverable pipeline error. */

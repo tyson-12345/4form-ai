@@ -485,6 +485,118 @@ export function detectReps(metrics: PoseMetrics): number | null {
 }
 
 /**
+ * The shape of the clip's effort, measured — not which sport it is.
+ *
+ * Angle ranges alone cannot tell a running stride from a volleyball rally: both
+ * take the knee through similar arcs. What separates them is *rhythm* — a gait
+ * cycles without pause for the whole clip, while court sports come in bursts
+ * with stiller frames between. That rhythm is sitting in the series data the
+ * client already sends; this reads it out so the narrative model reasons from
+ * measured tempo instead of guessing from angles.
+ *
+ * Deliberately descriptive, never conclusive: it reports "continuous-cyclic at
+ * 1.4 cycles/sec", not "this is running". Naming the sport is a judgement that
+ * belongs where the sport context lives, with the model.
+ */
+export interface MovementSignature {
+  /** The joint that travels furthest — the one carrying the movement. */
+  driverJoint: JointKey;
+  /** Degrees of travel on that joint. */
+  driverRange: number;
+  /** Repetition rate, when the movement repeats. Null for a single effort. */
+  cyclesPerSec: number | null;
+  /** Fraction of sampled frames where the driver joint is meaningfully away from its rest position. */
+  activeFraction: number;
+  pattern: "continuous-cyclic" | "repeated-efforts" | "single-effort-or-hold" | "mostly-still";
+}
+
+/** Degrees a reading must deviate from the joint's mean to count as "moving". */
+const ACTIVE_DEVIATION_DEG = 10;
+
+export function movementSignature(metrics: PoseMetrics): MovementSignature | null {
+  if (!metrics.series || metrics.durationSec <= 0) return null;
+
+  let driver: { key: JointKey; signal: number[]; rawLength: number } | null = null;
+  let driverRange = 0;
+  for (const key of JOINT_KEYS) {
+    const raw = metrics.series[key];
+    if (!raw || raw.length === 0) continue;
+    const signal = cleanSeries(raw);
+    if (!signal || signal.length < MIN_PERIOD_FRAMES * 2) continue;
+    const range = Math.max(...signal) - Math.min(...signal);
+    if (range > driverRange) {
+      driverRange = range;
+      driver = { key, signal, rawLength: raw.length };
+    }
+  }
+  if (!driver) return null;
+
+  const { signal } = driver;
+  const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
+  const activeFraction =
+    signal.filter((v) => Math.abs(v - mean) > ACTIVE_DEVIATION_DEG).length / signal.length;
+
+  // Sample rate comes from the raw series: samples are spread evenly across the
+  // clip, so rawLength / duration is the rate even after cleaning trimmed the ends.
+  const samplesPerSec = driver.rawLength / metrics.durationSec;
+  const period = findPeriod(signal);
+  const cycles = period === null ? 0 : Math.floor(signal.length / period);
+  const cyclesPerSec = period === null || cycles < 2 ? null : samplesPerSec / period;
+
+  // A still clip has no tempo worth reporting: sensor flicker of a degree or
+  // two "repeats" as far as autocorrelation is concerned, and reporting it as
+  // 3.75 cycles/sec would hand the model a rhythm that does not exist.
+  if (driverRange < 15) {
+    return {
+      driverJoint: driver.key,
+      driverRange,
+      cyclesPerSec: null,
+      activeFraction,
+      pattern: "mostly-still",
+    };
+  }
+
+  let pattern: MovementSignature["pattern"];
+  if (cyclesPerSec !== null && cycles >= 3 && activeFraction >= 0.5) {
+    // Repeats, keeps repeating, and is in motion most of the time: a gait or a
+    // continuous drill, not a sequence of separate efforts.
+    pattern = "continuous-cyclic";
+  } else if (cyclesPerSec !== null) {
+    pattern = "repeated-efforts";
+  } else {
+    pattern = "single-effort-or-hold";
+  }
+
+  return { driverJoint: driver.key, driverRange, cyclesPerSec, activeFraction, pattern };
+}
+
+/**
+ * The bottom angle of every repetition, in clip order — this clip's
+ * fingerprint. Two videos of the same sport can share a mean and a range;
+ * they cannot share a rep-by-rep sequence. Handing this to the narrative
+ * model is what lets it write "rep four was your shallowest" instead of prose
+ * that would fit any session of the sport.
+ *
+ * Same period detection as `detectReps` and the consistency score, so the
+ * reps referenced in coaching prose are the same reps those numbers counted.
+ */
+export function repDepths(metrics: PoseMetrics): { joint: JointKey; depths: number[] } | null {
+  const found = cleanedSeriesWithPeriod(metrics);
+  if (!found) return null;
+
+  const driver = found.cleaned.reduce((a, b) => (b.range > a.range ? b : a));
+  const cycles = Math.floor(driver.signal.length / found.period);
+  if (cycles < 2) return null;
+
+  const depths: number[] = [];
+  for (let c = 0; c < cycles; c++) {
+    const slice = driver.signal.slice(c * found.period, (c + 1) * found.period);
+    depths.push(Math.round(Math.min(...slice)));
+  }
+  return { joint: driver.key, depths };
+}
+
+/**
  * Consistency — how closely the athlete's repetitions match each other.
  *
  * `null` when there is nothing to compare: no series (an older app build), no

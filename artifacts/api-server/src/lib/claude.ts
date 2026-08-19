@@ -23,6 +23,8 @@ import { z } from "zod/v4";
 import { logger } from "./logger.js";
 import {
   JOINT_LABELS,
+  movementSignature,
+  repDepths,
   type PoseMetrics,
   type RiskFinding,
   type Scores,
@@ -32,7 +34,7 @@ import {
   wrapUntrusted,
   wrapUntrustedList,
 } from "./promptSafety.js";
-import { researchForSport } from "./sportResearch.js";
+import { researchForSport, SPORTS_WITH_RESEARCH } from "./sportResearch.js";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -112,6 +114,27 @@ const NarrativeSchema = z.object({
       "2-3 sentences the athlete reads first. What went well, the one thing to fix, and why it matters " +
         "to how they move. Conversational: no numbers, no jargon.",
     ),
+  sportMismatch: z
+    .object({
+      suggestedSport: z
+        .string()
+        .max(40)
+        .describe("The sport the movement actually looks like. Must be one of the listed sports."),
+      confidence: z.enum(["medium", "high"]),
+      message: z
+        .string()
+        .max(280)
+        .describe(
+          "One or two sentences telling the athlete the clip does not look like the sport they " +
+            "picked, and what it looks like instead. Friendly and non-accusing: they may have " +
+            "simply tapped the wrong entry. Never scold.",
+        ),
+    })
+    .nullable()
+    .describe(
+      "Set ONLY when the measured movement clearly contradicts the stated sport. Null in every " +
+        "other case, including anything you are unsure about.",
+    ),
 });
 
 export type Narrative = z.infer<typeof NarrativeSchema>;
@@ -131,6 +154,19 @@ You will be given REAL measurements taken from pose tracking of their video: joi
 ── Priority ──
 Put the single most important change FIRST in the improvements list. If they only fix one thing this week, that's the one. Do not bury it.
 
+── Specificity ──
+The paste test: if a sentence could be pasted into a different athlete's report without anyone noticing, it does not belong in this one. Delete it and write what THIS clip shows.
+- Every strength, improvement, and tip must be traceable to one specific measurement above. Name the pattern in plain words: which side, which joint, what it does, and when in the movement it happens.
+- Use the rhythm data. "Your left knee gives a little more on every landing, and it shows up on each of your 6 jumps" is coaching; "work on landing mechanics" is a poster on a gym wall.
+- Banned outright: warm up more, stay consistent, focus on form, engage your core, listen to your body, and every sentence like them.
+- Thin data means FEWER tips, not vaguer ones. One tip the athlete can feel on the next rep beats three they have read a hundred times.
+
+── Unique to this clip ──
+This athlete may upload three videos of the same sport in one afternoon, and each write-up must be identifiably about its own clip. Two videos of the same sport can share a sport; they cannot share a rep-by-rep sequence, a duration, or a rhythm.
+- Anchor the write-up in this clip's own events: the REP-BY-REP data (which rep was deepest, where form drifted as reps went on), the tempo, the clip's length. "Your last two reps lost the depth of your first four" belongs to one video only; "keep your depth consistent" belongs to every video ever filmed.
+- When WHAT YOU TOLD THIS ATHLETE is present, do not repeat any of it in substance or wording. If the same fault is still there, say it is STILL there and escalate or narrow the fix; if it improved, say so and move to the next thing. Coaching that never acknowledges the last session reads as a machine that forgot them.
+- The final test before you answer: if this summary could be pasted onto the athlete's previous session without anyone noticing, it fails. Rewrite it around what happened in THIS clip.
+
 ── Hard rules ──
 - Ground every statement in the measurements you were given. You may describe them in plain words, but never invent one.
 - If something was not measured, do not discuss it as though it was.
@@ -139,6 +175,28 @@ Put the single most important change FIRST in the improvements list. If they onl
 - Every tip must name a real drill with sets, reps, and one coaching cue.
 
 If the measurements are limited (few joints tracked, short clip), say so plainly in the summary and keep the advice narrow rather than padding it with generic tips.
+
+── Wrong sport ──
+The athlete picks a sport for each clip, and that pick can be a mistake: a mistap, or a leftover from the previous upload. When it is wrong, every band this clip was judged against is the wrong band, so the scores mislead. Set \`sportMismatch\` to say so.
+
+Set it ONLY when the movement plainly contradicts the stated sport. The bar is "this is obviously not that", not "this is unusual for that":
+- A barbell squat pattern labelled Swimming: set it.
+- A running gait labelled Weightlifting: set it.
+- A sloppy, unusual, or simply bad rep of the stated sport: leave it null. Bad form is not the wrong sport, and calling it one is worse than saying nothing.
+
+The MOVEMENT RHYTHM block is your best evidence here, because angle ranges overlap between sports and rhythm does not:
+- continuous-cyclic driven by a knee at roughly 0.7–2 cycles per second, in motion nearly the whole clip, is a gait: running or sprinting. A clip like that labelled as a court, net, or bat sport (volleyball, basketball, tennis, baseball, golf) is exactly the clear contradiction this field exists for.
+- repeated-efforts with still frames between them is what court and net sports measure as. That pattern labelled Running is the same contradiction in the other direction.
+- single-effort-or-hold with deep knee and hip flexion is a lift or a squat pattern.
+Rhythm and angles must BOTH point at the same other sport before you set the field. Rhythm alone, on a short or poorly tracked clip, is not enough.
+
+Leave it null in all of these cases:
+- Anything you are unsure about. Null is always the safe answer.
+- Cross-training. Athletes deliberately train outside their sport, and the sport is chosen per clip precisely so they can. A weightlifting clip from a runner is a correct label, not an error.
+- Sports whose joint angles genuinely overlap. Do not try to separate Running from Track & Field, or Weightlifting from CrossFit or Powerlifting, on joint angles alone.
+- Thin measurements. If few joints tracked or the clip is short, you do not have the evidence.
+
+\`suggestedSport\` must be one of: ${SPORTS_WITH_RESEARCH.join(", ")}. Write \`message\` as a friendly heads-up that assumes an honest mistake, and mention that the scores were judged against the sport they picked.
 ${SECURITY_PREAMBLE}`;
 
 export async function generateNarrative(input: {
@@ -150,6 +208,8 @@ export async function generateNarrative(input: {
   riskFindings: RiskFinding[];
   goals?: string[];
   injuryConcerns?: string[];
+  /** What the coach said about this athlete's recent sessions — so it cannot say it again. */
+  priorSessions?: { summary: string; improvements: string[] }[];
 }): Promise<Narrative> {
   if (!claudeConfigured()) throw new CoachUnavailableError();
 
@@ -192,6 +252,7 @@ function buildNarrativePrompt(input: {
   riskFindings: RiskFinding[];
   goals?: string[];
   injuryConcerns?: string[];
+  priorSessions?: { summary: string; improvements: string[] }[];
 }): string {
   const { sport, title, level, metrics, scores, riskFindings } = input;
 
@@ -210,9 +271,54 @@ function buildNarrativePrompt(input: {
     metrics.detectedReps != null
       ? `Repetitions detected: ${metrics.detectedReps}`
       : "Repetitions: none detected. A single rep, a hold, or a non-repeating movement.",
-    "",
-    "MEASURED JOINT ANGLES (degrees):",
   ];
+
+  // The measured tempo of the clip. This is what lets the model distinguish a
+  // gait from a rally from a lift — angle ranges overlap between sports, but
+  // rhythm rarely does — and it is what turns "bend your knees more" into
+  // advice about the actual movement in the actual clip.
+  const signature = movementSignature(metrics);
+  if (signature) {
+    lines.push(
+      "",
+      "MOVEMENT RHYTHM (measured from the joint-angle series):",
+      `  Pattern: ${signature.pattern}`,
+      `  Driven by: ${JOINT_LABELS[signature.driverJoint]} (${Math.round(signature.driverRange)}° of travel)`,
+      signature.cyclesPerSec !== null
+        ? `  Tempo: ~${signature.cyclesPerSec.toFixed(1)} cycles per second`
+        : "  Tempo: does not repeat — one effort or a hold",
+      `  In motion for ${Math.round(signature.activeFraction * 100)}% of sampled frames`,
+    );
+  }
+
+  // This clip's fingerprint: the bottom angle of every rep, in order. This is
+  // the data that cannot describe any other video, and the write-up is
+  // required to use it — see the uniqueness rules in the system prompt.
+  const reps = repDepths(metrics);
+  if (reps && reps.depths.length >= 2) {
+    const deepest = reps.depths.indexOf(Math.min(...reps.depths)) + 1;
+    const shallowest = reps.depths.indexOf(Math.max(...reps.depths)) + 1;
+    lines.push(
+      "",
+      `REP-BY-REP (bottom angle of ${JOINT_LABELS[reps.joint]}, in clip order):`,
+      `  ${reps.depths.map((d, i) => `rep ${i + 1}: ${d}°`).join(", ")}`,
+      `  Deepest: rep ${deepest}. Shallowest: rep ${shallowest}.`,
+    );
+  }
+
+  // What the coach already told this athlete, so this write-up can build on it
+  // instead of repeating it. Their own stored coaching prose, not user input.
+  if (input.priorSessions?.length) {
+    lines.push("", "WHAT YOU TOLD THIS ATHLETE AFTER THEIR RECENT SESSIONS:");
+    input.priorSessions.forEach((p, i) => {
+      lines.push(`  Session ${i + 1} ago — summary: ${p.summary}`);
+      if (p.improvements.length) {
+        lines.push(`  Session ${i + 1} ago — fixes given: ${p.improvements.join(" | ")}`);
+      }
+    });
+  }
+
+  lines.push("", "MEASURED JOINT ANGLES (degrees):");
 
   for (const [key, stats] of Object.entries(metrics.joints)) {
     if (!stats) continue;

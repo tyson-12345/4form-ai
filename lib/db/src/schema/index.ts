@@ -216,6 +216,20 @@ export const analysesTable = pgTable("analyses", {
    * tracked well enough to score.
    */
   analysisMethod: text("analysis_method").notNull().default("pose-measured"),
+  /**
+   * Set only when the measured movement contradicts the sport chosen for this
+   * clip. Sport is picked per clip and cross-training is supported, so this is
+   * a note to the athlete, never a correction to the data.
+   *
+   * NULL means "not assessed": every analysis from before this column existed,
+   * and any clip tracked too poorly to judge. That is deliberately distinct
+   * from a verdict that the sport matches.
+   */
+  sportMismatch: jsonb("sport_mismatch").$type<{
+    suggestedSport: string;
+    confidence: "medium" | "high";
+    message: string;
+  }>(),
   comparedToAthlete: text("compared_to_athlete"),
   similarityScore: real("similarity_score"),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
