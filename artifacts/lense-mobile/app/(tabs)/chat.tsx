@@ -23,6 +23,7 @@ import {
   Pressable,
   ActivityIndicator,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -63,6 +64,15 @@ export default function CoachScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [serverLocked, setServerLocked] = useState(false);
+
+  /**
+   * The composer is `multiline`, so on iOS the return key inserts a newline and
+   * never closes the keyboard. Without an explicit way out, a focused composer
+   * trapped the user: the only exits were sending a message or leaving the tab.
+   * Tracking focus lets us show a Done affordance for exactly as long as the
+   * keyboard is up.
+   */
+  const [inputFocused, setInputFocused] = useState(false);
 
   /**
    * The wall must come from the tier, not from a server error. GET /api/chat
@@ -259,6 +269,10 @@ export default function CoachScreen() {
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: 16 }}
           keyboardShouldPersistTaps="handled"
+          // Dragging the transcript puts the keyboard away, which is the gesture
+          // people already expect from every other chat app. Without this the
+          // composer had no dismiss gesture at all.
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           showsVerticalScrollIndicator={false}
         >
           {loading ? (
@@ -320,6 +334,22 @@ export default function CoachScreen() {
           </ScrollView>
         )}
 
+        {/* A multiline field has no return-key dismiss, so give the keyboard an
+            explicit exit. Shown only while focused: it costs nothing when the
+            composer is idle, and it is the one control that always works even
+            if the dismiss gesture is missed. */}
+        {inputFocused && (
+          <Pressable
+            onPress={() => Keyboard.dismiss()}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss keyboard"
+            style={({ pressed }) => [s.dismissBar, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={[T.bodySmall, { color: color.textMuted }]}>Done</Text>
+          </Pressable>
+        )}
+
         {/* The tab bar floats at a fixed offset from the screen bottom, so the
             composer clears its top edge rather than the safe-area inset. */}
         <View
@@ -332,6 +362,8 @@ export default function CoachScreen() {
             style={s.input}
             value={input}
             onChangeText={setInput}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
             placeholder="Ask about any session…"
             placeholderTextColor={color.textGhost}
             multiline
@@ -577,6 +609,16 @@ const s = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: 15,
     paddingVertical: 9,
+  },
+
+  dismissBar: {
+    alignSelf: "flex-end",
+    marginRight: GUTTER,
+    marginBottom: 2,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: color.card,
   },
 
   composer: {

@@ -392,8 +392,32 @@ export default function SkeletonScreen() {
 
       {isLandscape ? (
         <>
-          {mediaBlock}
-          <Pressable onPress={toggleOrientation} style={s.portraitBtn}>
+          {/* Rotated, the notch and Dynamic Island move to whichever side is now
+              "up", and the home indicator keeps the bottom. Full-bleed video put
+              the skeleton straight underneath them, so the overlay was clipped by
+              hardware exactly where the athlete's head usually sits. Inset the
+              media on every edge the OS reports as occluded; the frame stays ink,
+              so the letterboxing reads as intentional. */}
+          <View
+            style={[
+              s.landscapeMedia,
+              {
+                paddingTop: insets.top,
+                paddingLeft: insets.left,
+                paddingRight: insets.right,
+                paddingBottom: insets.bottom,
+              },
+            ]}
+          >
+            {mediaBlock}
+          </View>
+          <Pressable
+            onPress={toggleOrientation}
+            style={[
+              s.portraitBtn,
+              { top: insets.top + 14, right: insets.right + 14 },
+            ]}
+          >
             <Text style={[T.buttonSmall, { color: color.onInk }]}>Portrait</Text>
           </Pressable>
         </>
@@ -581,6 +605,10 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
+
+  // Landscape fills the screen, so the ink frame is what shows through wherever
+  // a safe-area inset holds the video back off a hardware cutout.
+  landscapeMedia: { flex: 1, backgroundColor: color.ink },
 
   // The dark media block reads as one piece with the ink WebView background.
   mediaFrame: { backgroundColor: color.ink, overflow: "hidden" },
