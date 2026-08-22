@@ -10,21 +10,29 @@
  */
 
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from "react-native";
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  Pressable,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router";
 
 import {
-  Screen,
+  Avatar,
   Card,
+  Chevron,
   Label,
   MetricBand,
   MiniBand,
   Prescription,
-  Avatar,
-  Chevron,
   ReferenceRow,
+  Screen,
+  StatusBarScrim,
+  Text,
 } from "@/components/caliper";
 import { color, type as T, GUTTER, TAB_BAR, delta, stampDate, stampDay } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
@@ -39,13 +47,19 @@ export default function HomeScreen() {
   const [list, setList] = useState<AnalysisRecord[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [stale, setStale] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const { analyses } = await analysesApi.list();
       setList(analyses);
+      setStale(false);
     } catch {
-      /* offline — keep whatever we already have */
+      // Keeping the last-known sessions is right — a blank screen would be
+      // worse. Doing it *silently* was not: the athlete had no way to tell a
+      // screen that failed to refresh from one that is up to date, on the
+      // screen whose entire job is reporting the current reading.
+      setStale(true);
     } finally {
       setLoaded(true);
       setRefreshing(false);
@@ -134,6 +148,24 @@ export default function HomeScreen() {
           />
         }
       >
+        {stale && (
+          <View style={s.staleBar}>
+            <Text style={[T.bodySmall, { color: color.textSecondary, flex: 1 }]}>
+              {list.length > 0
+                ? "Showing your last saved sessions. We couldn't reach the server."
+                : "We couldn't reach the server, so your sessions haven't loaded."}
+            </Text>
+            <Pressable
+              onPress={() => void load()}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading your sessions"
+              style={s.retryBtn}
+            >
+              <Text style={[T.buttonSmall, { color: color.cobalt }]}>Retry</Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* ── Header ── */}
         <View style={s.header}>
           <View style={{ flex: 1, paddingRight: 14 }}>
@@ -141,9 +173,16 @@ export default function HomeScreen() {
               {stampDate(new Date())}
               {measuredSessions.length > 0 ? ` · SESSION ${measuredSessions.length}` : ""}
             </Label>
-            <Text style={[T.screenTitle, s.headline]}>{headline}</Text>
+            <Text scale="display" style={[T.screenTitle, s.headline]}>{headline}</Text>
           </View>
-          <Pressable onPress={() => router.push("/(tabs)/profile")}>
+          <Pressable
+            onPress={() => router.push("/(tabs)/profile")}
+            accessibilityRole="button"
+            accessibilityLabel={`Profile, ${displayName}`}
+            // The avatar is 40; the target around it is 44. Padded rather than
+            // hitSlopped so the web build gets it too.
+            style={s.avatarTarget}
+          >
             <Avatar name={displayName} uri={avatarUri} />
           </Pressable>
         </View>
@@ -161,10 +200,16 @@ export default function HomeScreen() {
             </View>
 
             <View style={s.metricRow}>
-              <Text style={T.metricHeroXL}>{Math.round(latest.overallScore!)}</Text>
+              <Text scale="display" style={T.metricHeroXL}>{Math.round(latest.overallScore!)}</Text>
+              {/* Neutral, not cobalt. This pill rendered every delta in cobalt
+                  regardless of sign, so a 71-point collapse arrived in the
+                  colour the system reserves for "the one thing to do next".
+                  A delta is a measurement, not an action and not an alarm: it
+                  reads in mono with its sign, and the instrument does not
+                  cheer. Progress follows the same rule. */}
               {change !== null && delta(change) && (
                 <View style={s.deltaPill}>
-                  <Text style={[T.measured, { fontSize: 11, color: color.cobalt }]}>
+                  <Text style={[T.measured, { fontSize: 11, color: color.textSecondary }]}>
                     {delta(change)} VS LAST
                   </Text>
                 </View>
@@ -205,7 +250,7 @@ export default function HomeScreen() {
         ) : (
           <Card style={s.block}>
             <Label>FORM INDEX</Label>
-            <Text style={[T.metricHero, { color: color.textGhost, marginTop: 2 }]}>–</Text>
+            <Text scale="display" style={[T.metricHero, { color: color.textGhost, marginTop: 2 }]}>–</Text>
             <Text style={[T.body, { marginTop: 8 }]}>
               {loaded
                 ? "Film a clip and we'll measure your joint angles frame by frame. Your Form Index is calculated from those measurements, so it means the same thing every time."
@@ -231,7 +276,15 @@ export default function HomeScreen() {
           <View style={[s.block, { marginTop: 22 }]}>
             <View style={s.sectionHead}>
               <Label>LAST {recent.length === 1 ? "SESSION" : `${recent.length} SESSIONS`}</Label>
-              <Pressable onPress={() => router.push("/(tabs)/analyze")}>
+              <Pressable
+                onPress={() => router.push("/(tabs)/analyze")}
+                accessibilityRole="link"
+                accessibilityLabel="See all sessions"
+                // Real padding, not hitSlop: hitSlop does nothing on the web
+                // build, so the control was genuinely 16x16 there. The negative
+                // margin keeps the label optically aligned with the heading.
+                style={s.allLink}
+              >
                 <Text style={[T.buttonSmall, { color: color.cobalt }]}>All</Text>
               </Pressable>
             </View>
@@ -258,6 +311,8 @@ export default function HomeScreen() {
           </Card>
         )}
       </ScrollView>
+      {/* Paints over content that scrolls under the status bar. */}
+      <StatusBarScrim />
     </Screen>
   );
 }
@@ -287,10 +342,27 @@ function SessionRow({
 
   return (
     <Pressable
-      onPress={processing ? undefined : onPress}
-      style={({ pressed }) => [s.row, first && { borderTopWidth: 0 }, pressed && { opacity: 0.7 }]}
+      // `disabled`, not a missing handler. With onPress undefined the row still
+      // ran its pressed style, so a measuring session gave tap feedback and
+      // then did nothing — a control that looks alive and is not.
+      disabled={processing}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: processing }}
+      accessibilityLabel={
+        processing
+          ? `${item.title}, still measuring`
+          : `${item.title}, ${note}, score ${item.overallScore === null ? "not measured" : Math.round(item.overallScore)}`
+      }
+      style={({ pressed }) => [
+        s.row,
+        first && { borderTopWidth: 0 },
+        pressed && !processing && { opacity: 0.7 },
+      ]}
     >
-      <Text style={[T.measuredSmall, { width: 36 }]}>
+      {/* minWidth, not width: a fixed box broke "SAT" onto two lines as soon
+          as the system text size went up. */}
+      <Text style={[T.measuredSmall, { minWidth: 36 }]} numberOfLines={1}>
         {new Date(item.uploadedAt)
           .toLocaleDateString("en-GB", { weekday: "short" })
           .toUpperCase()}
@@ -347,6 +419,16 @@ function buildHeadline(latest: AnalysisRecord | undefined, count: number): strin
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
+  staleBar: {
+    marginHorizontal: GUTTER,
+    marginBottom: 14,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: color.card,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   header: {
     paddingHorizontal: GUTTER,
     flexDirection: "row",
@@ -355,13 +437,38 @@ const s = StyleSheet.create({
   },
   headline: { marginTop: 8, maxWidth: 280 },
   block: { marginHorizontal: GUTTER, marginTop: 22 },
-  metricHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  metricHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    // Wraps rather than colliding: at large system text sizes "FORM INDEX" and
+    // "96 FRAMES MEASURED" ran into each other and off the card.
+    flexWrap: "wrap",
+    columnGap: 12,
+    rowGap: 4,
+  },
   metricRow: { flexDirection: "row", alignItems: "baseline", gap: 10, marginTop: 4 },
   deltaPill: {
-    backgroundColor: color.cobaltWash,
+    backgroundColor: "rgba(16,19,18,0.06)",
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 4,
+  },
+  retryBtn: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "flex-end",
+    justifyContent: "center",
+    paddingLeft: 10,
+  },
+  avatarTarget: { minWidth: 44, minHeight: 44, alignItems: "flex-end", justifyContent: "center" },
+  allLink: {
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: "flex-end",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    marginRight: -12,
   },
   sectionHead: {
     flexDirection: "row",

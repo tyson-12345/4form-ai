@@ -10,11 +10,9 @@
 import React, { useCallback, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   Pressable,
-  Modal,
   RefreshControl,
   TextInput,
   ActivityIndicator,
@@ -25,14 +23,17 @@ import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 
 import {
-  Screen,
   Card,
-  Label,
-  Chip,
   Chevron,
+  Chip,
+  Label,
   MiniBand,
-  UploadGlyph,
   PrimaryButton,
+  Screen,
+  Sheet,
+  StatusBarScrim,
+  Text,
+  UploadGlyph,
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
 import { analyses as analysesApi, type AnalysisRecord, type UsageRecord } from "@/lib/api";
@@ -42,6 +43,12 @@ import { useAuth } from "@/lib/authContext";
 import { SPORTS } from "@/constants/sports";
 import { SportScience } from "@/components/SportScience";
 import { alert } from "@/lib/alert";
+
+/**
+ * Above this many, the segmented quota bar stops being readable and becomes a
+ * proportional one instead.
+ */
+const MAX_QUOTA_SEGMENTS = 12;
 
 export default function SessionsScreen() {
   const insets = useSafeAreaInsets();
@@ -157,7 +164,22 @@ export default function SessionsScreen() {
   function startMeasuring() {
     if (!sport || !pendingUri) return;
 
-    if (usage && usage.limit !== -1 && usage.remaining <= 0) {
+    // `usage` is null when the quota request failed. The guard used to be
+    // skipped entirely in that case, so the athlete filmed, picked, waited
+    // through a full frame-by-frame measurement, and *then* got a 403. The
+    // server is still the authority; this only decides whether to spend a
+    // minute of someone's time finding out.
+    if (!usage) {
+      alert(
+        "We couldn't check your plan",
+        "Your remaining clips for this month didn't load, so we can't tell whether this one is included. Check your connection and try again.",
+        [{ text: "OK" }],
+      );
+      void load();
+      return;
+    }
+
+    if (usage.limit !== -1 && usage.remaining <= 0) {
       setPickerOpen(false);
       alert(
         "Monthly limit reached",
@@ -202,12 +224,23 @@ export default function SessionsScreen() {
         }
       >
         <View style={{ paddingHorizontal: GUTTER }}>
-          <Text style={T.screenTitle}>Sessions</Text>
+          <Text scale="display" style={T.screenTitle}>Sessions</Text>
 
-          <View style={s.quotaRow}>
+          <View
+            style={s.quotaRow}
+            accessible
+            accessibilityLabel={
+              unlimited
+                ? "Unlimited clips this month"
+                : `${used} of ${limit} clips used this month`
+            }
+          >
             {unlimited ? (
-              <View style={s.quotaTrackFull} />
-            ) : (
+              // Unlimited reads as a filled bar, not an empty one.
+              <View style={s.quotaTrackFull}>
+                <View style={[s.quotaProgress, { width: "100%" }]} />
+              </View>
+            ) : segments <= MAX_QUOTA_SEGMENTS ? (
               <View style={s.quotaTrack}>
                 {Array.from({ length: segments }, (_, i) => (
                   <View
@@ -218,6 +251,19 @@ export default function SessionsScreen() {
                     ]}
                   />
                 ))}
+              </View>
+            ) : (
+              /* Beyond a dozen or so, one segment per clip is a row of
+                 hairlines with 3pt gaps — unreadable, and it gets worse the
+                 more generous the plan. A proportional bar says the same thing
+                 at any limit. */
+              <View style={s.quotaTrackFull}>
+                <View
+                  style={[
+                    s.quotaProgress,
+                    { width: `${Math.min(100, (used / Math.max(1, limit)) * 100)}%` },
+                  ]}
+                />
               </View>
             )}
             <Text style={[T.label, { letterSpacing: 1 }]}>
@@ -311,78 +357,67 @@ export default function SessionsScreen() {
       </ScrollView>
 
       {/* ── Details sheet ── */}
-      <Modal visible={pickerOpen} animationType="slide" presentationStyle="pageSheet">
-        <Screen>
-          <View style={[s.sheetHead, { paddingTop: 20 }]}>
-            <Pressable onPress={() => setPickerOpen(false)} hitSlop={12}>
-              <Text style={[T.buttonSmall, { color: color.textMuted }]}>Cancel</Text>
-            </Pressable>
-            <Label>NEW SESSION</Label>
-            <View style={{ width: 48 }} />
-          </View>
+      <Sheet visible={pickerOpen} onClose={() => setPickerOpen(false)} title="NEW SESSION">
+        <Text scale="display" style={[T.headlineSmall, { marginBottom: 22 }]}>What are we measuring?</Text>
 
-          <ScrollView
-            contentContainerStyle={{ padding: GUTTER, paddingBottom: 40 }}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Text style={[T.headlineSmall, { marginBottom: 22 }]}>
-              What are we measuring?
-            </Text>
-
-            <Label style={{ marginBottom: 8 }}>SPORT</Label>
-            <View style={s.chipWrap}>
-              {SPORTS.map((option) => (
-                <Chip
-                  key={option}
-                  label={option}
-                  selected={sport.toLowerCase() === option.toLowerCase()}
-                  onPress={() => setSport(option)}
-                />
-              ))}
-            </View>
-
-            {/* The science behind the pick, shown the moment a sport is chosen —
-                the athlete sees what this sport's bands and tips are grounded in
-                before the clip is measured against them. Picking the RIGHT sport
-                matters: every band and every tip comes from this literature. */}
-            {sport !== "" && (
-              <>
-                <Label style={{ marginTop: 26, marginBottom: 8 }}>
-                  THE SCIENCE · {sport.toUpperCase()}
-                </Label>
-                <SportScience sport={sport} />
-              </>
-            )}
-
-            <Label style={{ marginTop: 26, marginBottom: 8 }}>LABEL · OPTIONAL</Label>
-            <TextInput
-              style={s.input}
-              value={title}
-              onChangeText={setTitle}
-              placeholder={sport ? `e.g. ${exampleFor(sport)}` : "e.g. Morning session"}
-              placeholderTextColor={color.textGhost}
-              autoCapitalize="sentences"
-              maxLength={120}
-              returnKeyType="done"
-              onSubmitEditing={startMeasuring}
+        <Label style={{ marginBottom: 8 }}>SPORT</Label>
+        <View style={s.chipWrap}>
+          {SPORTS.map((option) => (
+            <Chip
+              key={option}
+              label={option}
+              selected={sport.toLowerCase() === option.toLowerCase()}
+              onPress={() => setSport(option)}
             />
+          ))}
+        </View>
 
-            <View style={{ marginTop: 30 }}>
-              <PrimaryButton
-                label="Measure this clip"
-                onPress={startMeasuring}
-                disabled={!sport}
-                trailingArrow
-              />
-              <Text style={[T.bodySmall, { textAlign: "center", marginTop: 14 }]}>
-                {sport
-                  ? "We'll step through the clip and measure your joint angles. Takes about a minute."
-                  : "Pick a sport to continue."}
-              </Text>
-            </View>
-          </ScrollView>
-        </Screen>
-      </Modal>
+        {/* The science behind the pick, shown the moment a sport is chosen —
+            the athlete sees what this sport's bands and tips are grounded in
+            before the clip is measured against them. Picking the RIGHT sport
+            matters: every band and every tip comes from this literature. */}
+        {sport !== "" && (
+          <>
+            <Label style={{ marginTop: 26, marginBottom: 8 }}>
+              THE SCIENCE · {sport.toUpperCase()}
+            </Label>
+            <SportScience sport={sport} />
+          </>
+        )}
+
+        <Label style={{ marginTop: 26, marginBottom: 8 }}>LABEL · OPTIONAL</Label>
+        <TextInput
+          style={s.input}
+          value={title}
+          onChangeText={setTitle}
+          placeholder={sport ? `e.g. ${exampleFor(sport)}` : "e.g. Morning session"}
+          placeholderTextColor={color.textGhost}
+          autoCapitalize="sentences"
+          maxLength={120}
+          returnKeyType="done"
+          // Only submit when submitting would do something. Pressing done with
+          // no sport chosen used to return silently, which reads as a dead key.
+          onSubmitEditing={() => {
+            if (sport) startMeasuring();
+          }}
+        />
+
+        <View style={{ marginTop: 30 }}>
+          <PrimaryButton
+            label="Measure this clip"
+            onPress={startMeasuring}
+            disabled={!sport}
+            trailingArrow
+          />
+          <Text style={[T.bodySmall, { textAlign: "center", marginTop: 14 }]}>
+            {sport
+              ? "We'll step through the clip and measure your joint angles. Takes about a minute."
+              : "Pick a sport to continue."}
+          </Text>
+        </View>
+      </Sheet>
+      {/* Paints over content that scrolls under the status bar. */}
+      <StatusBarScrim />
     </Screen>
   );
 }
@@ -423,6 +458,18 @@ function MeasuredRow({
     <Pressable
       onPress={onPress}
       onLongPress={onDelete}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.title}. ${note.toLowerCase()}. ${
+        item.overallScore === null ? "Not measured" : `Score ${Math.round(item.overallScore)}`
+      }.`}
+      // Long-press is the only way to delete and nothing on screen says so.
+      // A custom action puts it in the rotor for VoiceOver users, and the
+      // visible affordance is the explicit Delete control below.
+      accessibilityHint="Double tap to open. Long press to delete."
+      accessibilityActions={[{ name: "delete", label: "Delete session" }]}
+      onAccessibilityAction={(e) => {
+        if (e.nativeEvent.actionName === "delete") onDelete();
+      }}
       style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}
     >
       <View style={s.dateTile}>
@@ -473,7 +520,14 @@ function exampleFor(sport: string): string {
 const s = StyleSheet.create({
   quotaRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12 },
   quotaTrack: { flex: 1, flexDirection: "row", gap: 3 },
-  quotaTrackFull: { flex: 1, height: 6, borderRadius: 3, backgroundColor: color.ink },
+  quotaTrackFull: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: color.ruleStrong,
+    overflow: "hidden",
+  },
+  quotaProgress: { height: 6, borderRadius: 3, backgroundColor: color.ink },
   quotaSegment: { flex: 1, height: 6, borderRadius: 3 },
 
   addCard: {
@@ -532,13 +586,6 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
 
-  sheetHead: {
-    paddingHorizontal: GUTTER,
-    paddingBottom: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   input: {
     backgroundColor: color.card,

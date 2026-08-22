@@ -1,18 +1,37 @@
-import { Feather } from "@expo/vector-icons";
+/**
+ * What the athlete sees when the app has crashed.
+ *
+ * ── Why this was rewritten ──────────────────────────────────────────────────
+ * This was the Expo template's fallback, styled with raw `fontSize`/`fontWeight`
+ * values and the legacy `useColors` shim: a bold 28pt system-font heading, a
+ * shadowed rounded-rect button, nothing from Caliper. It is a screen nobody
+ * plans to show and everybody eventually sees, and it looked like a different
+ * application — which, at exactly the moment a user's trust is lowest, reads as
+ * "this thing is broken" rather than "this thing handled a problem".
+ *
+ * The developer-only error detail is kept as-is in spirit: it is genuinely
+ * useful, and it is gated behind `__DEV__` so it never reaches a user.
+ */
+
 import { reloadAppAsync } from "expo";
 import React, { useState } from "react";
 import {
-  Modal,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
-  Text,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useColors } from "@/hooks/useColors";
+import {
+  AppMark,
+  Label,
+  PrimaryButton,
+  Screen,
+  Sheet,
+  Text,
+} from "@/components/caliper";
+import { color, type as T, radius, GUTTER } from "@/constants/caliper";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -20,259 +39,79 @@ export type ErrorFallbackProps = {
 };
 
 export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
+  const [detailOpen, setDetailOpen] = useState(false);
 
-  const [isModalVisible, setIsModalVisible] = useState(false);
-
-  const handleRestart = async () => {
+  async function restart() {
     try {
       await reloadAppAsync();
-    } catch (restartError) {
-      console.error("Failed to restart app:", restartError);
+    } catch {
+      // reloadAppAsync is unavailable in some runtimes; falling back to the
+      // boundary's own reset is better than a button that does nothing.
       resetError();
     }
-  };
+  }
 
-  const formatErrorDetails = (): string => {
-    let details = `Error: ${error.message}\n\n`;
-    if (error.stack) {
-      details += `Stack Trace:\n${error.stack}`;
-    }
-    return details;
-  };
-
-  const monoFont = Platform.select({
-    ios: "Menlo",
-    android: "monospace",
-    default: "monospace",
-  });
+  const monoFont = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {__DEV__ ? (
-        <Pressable
-          onPress={() => setIsModalVisible(true)}
-          accessibilityLabel="View error details"
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.topButton,
-            {
-              top: insets.top + 16,
-              backgroundColor: colors.card,
-              opacity: pressed ? 0.8 : 1,
-            },
-          ]}
-        >
-          <Feather name="alert-circle" size={20} color={colors.foreground} />
-        </Pressable>
-      ) : null}
+    <Screen>
+      <View style={[s.wrap, { paddingTop: insets.top + 80, paddingBottom: insets.bottom + 32 }]}>
+        <View style={s.mark}>
+          <AppMark size={34} />
+          <Label>ATHLETE AI</Label>
+        </View>
 
-      <View style={styles.content}>
-        <Text style={[styles.title, { color: colors.foreground }]}>
-          Something went wrong
+        <Text scale="display" style={[T.headline, { marginTop: 28 }]}>Something went{"\n"}wrong.</Text>
+        <Text style={[T.body, { marginTop: 12, maxWidth: 310 }]}>
+          The app hit a problem and stopped. Nothing you have measured is lost — your sessions
+          and scores are stored on our servers, and your clips are still on this phone.
         </Text>
 
-        <Text style={[styles.message, { color: colors.mutedForeground }]}>
-          Please reload the app to continue.
-        </Text>
+        <View style={{ flex: 1, minHeight: 24 }} />
 
-        <Pressable
-          onPress={handleRestart}
-          style={({ pressed }) => [
-            styles.button,
-            {
-              backgroundColor: colors.primary,
-              opacity: pressed ? 0.9 : 1,
-              transform: [{ scale: pressed ? 0.98 : 1 }],
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.buttonText,
-              { color: colors.primaryForeground },
-            ]}
+        <PrimaryButton label="Reload the app" onPress={() => void restart()} trailingArrow />
+
+        {__DEV__ ? (
+          <Pressable
+            onPress={() => setDetailOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="View error details"
+            style={s.detailLink}
           >
-            Try Again
-          </Text>
-        </Pressable>
+            <Text style={[T.buttonSmall, { color: color.textMuted }]}>
+              Developer details
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
-      {__DEV__ ? (
-        <Modal
-          visible={isModalVisible}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={() => setIsModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View
-              style={[
-                styles.modalContainer,
-                { backgroundColor: colors.background },
-              ]}
-            >
-              <View
-                style={[
-                  styles.modalHeader,
-                  { borderBottomColor: colors.border },
-                ]}
-              >
-                <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-                  Error Details
-                </Text>
-                <Pressable
-                  onPress={() => setIsModalVisible(false)}
-                  accessibilityLabel="Close error details"
-                  accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.closeButton,
-                    { opacity: pressed ? 0.6 : 1 },
-                  ]}
-                >
-                  <Feather name="x" size={24} color={colors.foreground} />
-                </Pressable>
-              </View>
-
-              <ScrollView
-                style={styles.modalScrollView}
-                contentContainerStyle={[
-                  styles.modalScrollContent,
-                  { paddingBottom: insets.bottom + 16 },
-                ]}
-                showsVerticalScrollIndicator
-              >
-                <View
-                  style={[
-                    styles.errorContainer,
-                    { backgroundColor: colors.card },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.errorText,
-                      {
-                        color: colors.foreground,
-                        fontFamily: monoFont,
-                      },
-                    ]}
-                    selectable
-                  >
-                    {formatErrorDetails()}
-                  </Text>
-                </View>
-              </ScrollView>
-            </View>
+      {__DEV__ && detailOpen ? (
+        <Sheet visible onClose={() => setDetailOpen(false)} title="ERROR DETAILS">
+          <View style={s.trace}>
+            <Text style={[s.traceText, { fontFamily: monoFont }]} selectable>
+              {`Error: ${error.message}${error.stack ? `\n\nStack Trace:\n${error.stack}` : ""}`}
+            </Text>
           </View>
-        </Modal>
+        </Sheet>
       ) : null}
-    </View>
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    width: "100%",
-    height: "100%",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  content: {
+const s = StyleSheet.create({
+  wrap: { flex: 1, paddingHorizontal: GUTTER },
+  mark: { flexDirection: "row", alignItems: "center", gap: 10 },
+  detailLink: {
+    marginTop: 16,
     alignItems: "center",
     justifyContent: "center",
-    gap: 16,
-    width: "100%",
-    maxWidth: 600,
+    minHeight: 44,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    textAlign: "center",
-    lineHeight: 40,
-  },
-  message: {
-    fontSize: 16,
-    textAlign: "center",
-    lineHeight: 24,
-  },
-  topButton: {
-    position: "absolute",
-    right: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-  },
-  button: {
-    paddingVertical: 16,
-    borderRadius: 8,
-    paddingHorizontal: 24,
-    minWidth: 200,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  buttonText: {
-    fontWeight: "600",
-    textAlign: "center",
-    fontSize: 16,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContainer: {
-    width: "100%",
-    height: "90%",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-  },
-  closeButton: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalScrollView: {
-    flex: 1,
-  },
-  modalScrollContent: {
+  trace: {
+    backgroundColor: color.card,
+    borderRadius: radius.cardSmall,
     padding: 16,
   },
-  errorContainer: {
-    width: "100%",
-    borderRadius: 8,
-    overflow: "hidden",
-    padding: 16,
-  },
-  errorText: {
-    fontSize: 12,
-    lineHeight: 18,
-    width: "100%",
-  },
+  traceText: { fontSize: 12, lineHeight: 18, color: color.textPrimary },
 });

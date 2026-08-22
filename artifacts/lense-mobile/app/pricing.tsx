@@ -12,12 +12,26 @@
  *    future tense until it's true.
  */
 
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
-import { Screen, Label, Check, Chevron } from "@/components/caliper";
+import {
+  Check,
+  Chevron,
+  CloseGlyph,
+  Label,
+  PrimaryButton,
+  Screen,
+  SkeletonBlock,
+  Text,
+} from "@/components/caliper";
 import { color, type as T, radius, GUTTER } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { subscriptions, type Plan } from "@/lib/api";
@@ -31,20 +45,36 @@ export default function PricingScreen() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [billingEnabled, setBillingEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
   const [working, setWorking] = useState(false);
 
   const currentTier = subscription?.tier ?? "free";
 
-  useEffect(() => {
+  /**
+   * The plans request used to end in `.catch(() => {})`.
+   *
+   * When it failed, `loading` cleared with an empty `plans`, every card was
+   * conditional on a plan existing, and the screen rendered its headline and
+   * literally nothing else — a blank page presented as a successful load, with
+   * no error, no retry and no way to tell the difference from "we have no
+   * plans". A swallowed rejection is not error handling.
+   */
+  const load = useCallback(() => {
+    setLoading(true);
+    setFailed(false);
     subscriptions
       .plans()
       .then((r) => {
         setPlans(r.plans);
         setBillingEnabled(r.billingEnabled);
       })
-      .catch(() => {})
+      .catch(() => setFailed(true))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const pro = plans.find((p) => p.id === "pro");
   const free = plans.find((p) => p.id === "free");
@@ -90,8 +120,62 @@ export default function PricingScreen() {
 
   if (loading) {
     return (
-      <Screen style={{ alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator color={color.cobalt} />
+      <Screen>
+        <View style={[s.head, { paddingTop: insets.top + 14 }]}>
+          <Pressable
+            onPress={() => router.back()}
+            style={s.closeBtn}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
+            <CloseGlyph />
+          </Pressable>
+        </View>
+        {/* A skeleton rather than a bare spinner on an empty page: the shape of
+            what is coming is more reassuring than a dot, and it stops the
+            layout jumping when the cards land. */}
+        <View style={{ paddingHorizontal: GUTTER }}>
+          <SkeletonBlock height={38} width="82%" />
+          <SkeletonBlock height={38} width="54%" style={{ marginTop: 8 }} />
+          <SkeletonBlock height={210} style={{ marginTop: 28, borderRadius: 28 }} />
+          <SkeletonBlock height={120} style={{ marginTop: 14, borderRadius: 28 }} />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (failed || plans.length === 0) {
+    return (
+      <Screen>
+        <View style={[s.head, { paddingTop: insets.top + 14 }]}>
+          <Pressable
+            onPress={() => router.back()}
+            style={s.closeBtn}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
+            <CloseGlyph />
+          </Pressable>
+        </View>
+        <View style={s.centre}>
+          <Text style={[T.cardTitle, { textAlign: "center" }]}>
+            We couldn&apos;t load the plans
+          </Text>
+          <Text style={[T.body, { textAlign: "center", marginTop: 8, maxWidth: 300 }]}>
+            Your current plan hasn&apos;t changed and nothing has been charged.
+          </Text>
+          <View style={{ alignSelf: "stretch", marginTop: 24, gap: 10 }}>
+            <PrimaryButton label="Try again" onPress={load} />
+            <PrimaryButton
+              label="Close"
+              tone={color.card}
+              labelTone={color.textPrimary}
+              onPress={() => router.back()}
+            />
+          </View>
+        </View>
       </Screen>
     );
   }
@@ -99,8 +183,17 @@ export default function PricingScreen() {
   return (
     <Screen>
       <View style={[s.head, { paddingTop: insets.top + 14 }]}>
-        <Pressable onPress={() => router.back()} style={s.closeBtn} hitSlop={10}>
-          <Text style={s.closeGlyph}>✕</Text>
+        <Pressable
+          onPress={() => router.back()}
+          style={s.closeBtn}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+        >
+          {/* The SVG mark, not a literal "✕" character: the glyph set exists,
+              and a text ✕ renders at a different weight and baseline on every
+              platform. */}
+          <CloseGlyph />
         </Pressable>
       </View>
 
@@ -108,7 +201,7 @@ export default function PricingScreen() {
         contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: insets.bottom + 40 }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={T.headline}>
+        <Text scale="display" style={T.headline}>
           {free ? `${free.limits.analysesPerMonth} clips a month is a warm-up.` : "Measure more."}
         </Text>
         <Text style={[T.body, { marginTop: 12, maxWidth: 310 }]}>
@@ -159,6 +252,13 @@ export default function PricingScreen() {
             {currentTier !== "pro" && (
               <Pressable
                 onPress={() => attemptBuy(pro)}
+                accessibilityRole="button"
+                // Dimmed but deliberately still pressable: tapping explains
+                // that nothing can be bought yet, which is more useful than an
+                // inert control. Announced as such rather than as disabled.
+                accessibilityLabel={
+                  billingEnabled ? "Start free week" : "Coming soon. Not available to buy yet."
+                }
                 style={({ pressed }) => [
                   s.proCta,
                   { opacity: billingEnabled ? (pressed ? 0.9 : 1) : 0.55 },
@@ -209,7 +309,14 @@ export default function PricingScreen() {
             </Text>
 
             {currentTier !== "free" && (
-              <Pressable onPress={downgrade} disabled={working} style={s.downgrade}>
+              <Pressable
+                onPress={downgrade}
+                disabled={working}
+                accessibilityRole="button"
+                accessibilityLabel="Switch to the free plan"
+                accessibilityState={{ disabled: working, busy: working }}
+                style={s.downgrade}
+              >
                 <Text style={[T.buttonSmall, { color: color.textMuted }]}>
                   {working ? "Switching…" : "Switch to Free"}
                 </Text>
@@ -231,15 +338,16 @@ export default function PricingScreen() {
 
 const s = StyleSheet.create({
   head: { paddingHorizontal: GUTTER, paddingBottom: 14, alignItems: "flex-end" },
+  centre: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
   closeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    // Matches BackButton and the analysis hero controls.
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: color.card,
     alignItems: "center",
     justifyContent: "center",
   },
-  closeGlyph: { fontSize: 15, color: color.textPrimary, lineHeight: 18 },
 
   notice: {
     backgroundColor: color.card,
@@ -247,7 +355,10 @@ const s = StyleSheet.create({
     padding: 14,
     marginTop: 20,
     borderLeftWidth: 3,
-    borderLeftColor: color.rust,
+    // Ink, not rust. Nothing is wrong here — this notice is telling you that
+    // billing is not switched on yet. Rust is the alarm colour, and spending it
+    // on an informational aside is exactly the dilution rule 2 guards against.
+    borderLeftColor: color.ink,
   },
 
   proCard: {
@@ -292,7 +403,9 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginTop: 14,
+    marginTop: 10,
+    // A 16pt-tall row is not a target, and this one changes the user's plan.
+    minHeight: 44,
   },
 
   footnote: {

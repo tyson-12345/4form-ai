@@ -9,22 +9,33 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   RefreshControl,
   Pressable,
-  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 
-import { Screen, Card, Label, Sparkline, Check } from "@/components/caliper";
+import {
+  Card,
+  Check,
+  Label,
+  Screen,
+  SkeletonBlock,
+  Sparkline,
+  StatusBarScrim,
+  Text,
+} from "@/components/caliper";
 import { color, type as T, GUTTER, TAB_BAR, delta } from "@/constants/caliper";
 import { progress as progressApi, analyses as analysesApi, type ProgressRecord, type AnalysisRecord } from "@/lib/api";
 import { parseLocalDate } from "@/utils/localDate";
+import { closedFlags } from "@/utils/closedFlags";
 
 type Range = "12W" | "ALL";
+
+/** Tile padding, shared with the sparkline's width maths so the two agree. */
+const TILE_PADDING = 14;
 
 /**
  * Sub-scores that can actually be measured from 2D pose, shown as small
@@ -45,9 +56,9 @@ export default function ProgressScreen() {
   const [entries, setEntries] = useState<ProgressRecord[]>([]);
   const [sessions, setSessions] = useState<AnalysisRecord[]>([]);
   const [range, setRange] = useState<Range>("12W");
+  const [trendWidth, setTrendWidth] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const { width: screenW } = useWindowDimensions();
 
   const load = useCallback(async () => {
     const [p, a] = await Promise.allSettled([progressApi.list(), analysesApi.list()]);
@@ -106,7 +117,9 @@ export default function ProgressScreen() {
   const weekDone = week.filter((d) => d.measured).length;
 
   // ── Closed flags: joints that were flagged before and no longer are ──
-  const closed = useMemo(() => buildClosedFlags(sessions), [sessions]);
+  // Shared with Profile so the two screens cannot disagree — see
+  // utils/closedFlags.
+  const closed = useMemo(() => closedFlags(sessions), [sessions]);
 
   return (
     <Screen>
@@ -128,12 +141,15 @@ export default function ProgressScreen() {
         }
       >
         <View style={s.head}>
-          <Text style={T.screenTitle}>Progress</Text>
+          <Text scale="display" style={T.screenTitle}>Progress</Text>
           <View style={s.toggle}>
             {(["12W", "ALL"] as const).map((r) => (
               <Pressable
                 key={r}
                 onPress={() => setRange(r)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: range === r }}
+                accessibilityLabel={r === "12W" ? "Last 12 weeks" : "All time"}
                 style={[s.toggleItem, range === r && s.toggleItemOn]}
               >
                 <Text
@@ -155,11 +171,14 @@ export default function ProgressScreen() {
             <View>
               <Label>OVERALL · {range === "12W" ? "12 WEEKS" : "ALL TIME"}</Label>
               <View style={s.trendRow}>
-                <Text style={[T.metricLarge, current === null && { color: color.textGhost }]}>
+                <Text scale="display" style={[T.metricLarge, current === null && { color: color.textGhost }]}>
                   {current === null ? "–" : Math.round(current)}
                 </Text>
+                {/* Neutral: this rendered every delta cobalt, so a decline
+                    arrived in the colour reserved for the next action. Same
+                    rule as Home. */}
                 {change !== null && delta(change) && (
-                  <Text style={[T.measured, { color: color.cobalt }]}>{delta(change)}</Text>
+                  <Text style={[T.measured, { color: color.textSecondary }]}>{delta(change)}</Text>
                 )}
               </View>
             </View>
@@ -177,12 +196,25 @@ export default function ProgressScreen() {
           </View>
 
           {values.length >= 2 ? (
-            <View style={{ marginTop: 16 }}>
+            <View
+              style={{ marginTop: 16 }}
+              // Measured, not the component's 306pt default. The trend card
+              // never passed a width, so on anything narrower than about 390pt
+              // the chart was wider than the card holding it — 70pt of overflow
+              // at 320. Card has no overflow:hidden, so it simply spilled.
+              onLayout={(e) => {
+                const w = Math.round(e.nativeEvent.layout.width);
+                setTrendWidth((prev) => (Math.abs(prev - w) > 1 ? w : prev));
+              }}
+            >
+              {trendWidth > 0 && (
               <Sparkline
                 values={values}
+                width={trendWidth}
                 bandLow={band?.low ?? null}
                 bandHigh={band?.high ?? null}
               />
+              )}
               <View style={s.axis}>
                 <Text style={T.measuredSmall}>
                   {series[0] &&
@@ -197,27 +229,40 @@ export default function ProgressScreen() {
                       .toUpperCase()}
                 </Text>
               </View>
+              {/* The band is the idea this screen is built on, and it is absent
+                  until the third reading. Saying so is better than a chart that
+                  silently lacks its most important feature. */}
+              {!band && (
+                <Text style={[T.bodySmall, { marginTop: 12 }]}>
+                  One more measured session and your band appears here — the range you
+                  usually work in, drawn behind the line.
+                </Text>
+              )}
+            </View>
+          ) : !loaded ? (
+            <View style={{ marginTop: 16 }}>
+              <SkeletonBlock height={72} />
             </View>
           ) : (
-            <Text style={[T.body, { marginTop: 14 }]}>
-              {loaded
-                ? "Measure two or more sessions and your trend appears here."
-                : "Loading…"}
-            </Text>
+            <ProgressStages measured={values.length} />
           )}
         </Card>
 
-        {/* ── Small multiples — every dimension, side by side ── */}
-        <View style={s.tiles}>
-          {SUB_METRICS.map((m) => (
-            <SparkTile
-              key={m.key}
-              label={m.label}
-              points={seriesFor(m.key).map((p) => p.value)}
-              width={(screenW - GUTTER * 2 - 8) / 2 - 28}
-            />
-          ))}
-        </View>
+        {/* ── Small multiples — every dimension, side by side ──
+            Hidden until there is something to put in them. With no sessions the
+            grid rendered four tiles all reading "–  NOT MEASURED", which looks
+            like four broken charts rather than an empty screen. */}
+        {values.length > 0 && (
+          <View style={s.tiles}>
+            {SUB_METRICS.map((m) => (
+              <SparkTile
+                key={m.key}
+                label={m.label}
+                points={seriesFor(m.key).map((p) => p.value)}
+              />
+            ))}
+          </View>
+        )}
 
         {/* ── This week ── */}
         <Card style={s.block}>
@@ -264,13 +309,71 @@ export default function ProgressScreen() {
                 <Text style={[T.rowTitle, { flex: 1 }]}>
                   {flag.joint} back inside its range
                 </Text>
-                <Text style={T.measuredSmall}>{flag.when}</Text>
+                <Text style={T.measuredSmall}>
+                  {flag.closedAt
+                    .toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+                    .toUpperCase()}
+                </Text>
               </View>
             ))}
           </View>
         )}
       </ScrollView>
+      {/* Paints over content that scrolls under the status bar. */}
+      <StatusBarScrim />
     </Screen>
+  );
+}
+
+// ─── Empty state ─────────────────────────────────────────────────────────────
+
+/**
+ * What Progress shows before it has enough readings to show anything.
+ *
+ * This screen needs two sessions for a trend and three before the
+ * interquartile band — its central idea — appears at all. A new athlete
+ * therefore met an empty panel and four charts reading "NOT MEASURED", with
+ * nothing to say when that would change. That is the documented weak spot on
+ * this screen, and it is a design problem rather than a bug: the fix is to make
+ * the wait legible, not to invent a trend from one point.
+ */
+function ProgressStages({ measured }: { measured: number }) {
+  const stages = [
+    { at: 1, label: "Your first reading" },
+    { at: 2, label: "The trend line" },
+    { at: 3, label: "Your band — the range you usually work in" },
+  ];
+
+  return (
+    <View style={{ marginTop: 16 }}>
+      <Text style={T.body}>
+        {measured === 0
+          ? "Nothing measured yet. Each session you film adds a point here."
+          : "One session measured. Here's what appears as you add more."}
+      </Text>
+
+      <View style={{ marginTop: 18, gap: 12 }}>
+        {stages.map((stage) => {
+          const done = measured >= stage.at;
+          return (
+            <View key={stage.at} style={s.stageRow}>
+              <View style={[s.stageDot, done && { backgroundColor: color.ink }]} />
+              <Text
+                style={[
+                  T.rowTitle,
+                  { flex: 1, color: done ? color.textPrimary : color.textMuted },
+                ]}
+              >
+                {stage.label}
+              </Text>
+              <Text style={T.measuredSmall}>
+                {done ? "READY" : `${stage.at} ${stage.at === 1 ? "SESSION" : "SESSIONS"}`}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -285,39 +388,54 @@ export default function ProgressScreen() {
 function SparkTile({
   label,
   points,
-  width,
 }: {
   label: string;
   points: number[];
-  width: number;
 }) {
   const current = points.at(-1) ?? null;
   const first = points[0] ?? null;
   const change =
     current !== null && first !== null && points.length > 1 ? current - first : null;
 
+  /**
+   * The sparkline is sized from the tile's measured inner width.
+   *
+   * It used to be handed `(screenW - GUTTER * 2 - 8) / 2 - 28`, which models a
+   * 50% column while the tile is actually 48.5% — so the line ran wider than
+   * its own tile at every viewport and the final point's dot was clipped by the
+   * SVG bounds. That dot is the most recent reading, the one that matters most.
+   */
+  const [innerWidth, setInnerWidth] = useState(0);
+
   return (
-    <View style={s.tile}>
+    <View
+      style={s.tile}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width) - TILE_PADDING * 2;
+        setInnerWidth((prev) => (Math.abs(prev - w) > 1 ? w : prev));
+      }}
+    >
       <View style={s.tileHead}>
-        <Text style={[T.labelTight, { color: color.textMuted }]}>{label}</Text>
+        <Text scale="label" style={[T.labelTight, { color: color.textMuted, flexShrink: 1 }]}>
+          {label}
+        </Text>
         {change !== null && delta(change) && (
-          <Text
-            style={[
-              T.measured,
-              { fontSize: 10, color: change > 0 ? color.cobalt : color.textFaint },
-            ]}
-          >
+          <Text style={[T.measured, { fontSize: 11, color: color.textSecondary }]}>
             {delta(change)}
           </Text>
         )}
       </View>
-      <Text style={[T.metricMedium, current === null && { color: color.textGhost }, { marginTop: 3 }]}>
+      <Text scale="display" style={[T.metricMedium, current === null && { color: color.textGhost }, { marginTop: 3 }]}>
         {current === null ? "–" : Math.round(current)}
       </Text>
-      {points.length >= 2 ? (
+      {points.length >= 2 && innerWidth > 0 ? (
         <View style={{ marginTop: 6 }}>
-          <Sparkline values={points} width={Math.max(60, width)} height={30} />
+          <Sparkline values={points} width={innerWidth} height={30} />
         </View>
+      ) : points.length >= 2 ? (
+        // Before the first layout pass. Reserve the height so the tile does not
+        // jump when the line appears.
+        <View style={{ marginTop: 6, height: 30 }} />
       ) : (
         <Text style={[T.measuredSmall, { marginTop: 10 }]}>
           {points.length === 1 ? "ONE READING" : "NOT MEASURED"}
@@ -337,7 +455,21 @@ interface WeekDay {
   isToday: boolean;
 }
 
-/** Mon–Sun of the current week, marked where a session was measured. */
+/**
+ * Mon–Sun of the current week, marked where a session was actually measured.
+ *
+ * Two corrections, both of which made the strip say something untrue:
+ *
+ *  - It counted every `complete` session, including ones whose method is
+ *    `unscored` — a clip the app explicitly could not measure. So "4 MEASURED"
+ *    could include a session whose own row reads "NOT TRACKABLE". Every other
+ *    derivation on Home and Progress filters to `pose-measured`; this one did
+ *    not, and it is the number the athlete reads as their week.
+ *
+ *  - The key came from `d.toISOString().slice(0, 10)` on a local-midnight date,
+ *    which lands on the previous day for anyone east of UTC. `localDayKey`
+ *    formats the local date instead — the same reason `utils/localDate` exists.
+ */
 function buildWeek(sessions: AnalysisRecord[]): WeekDay[] {
   const today = new Date();
   const dayOfWeek = (today.getDay() + 6) % 7; // Monday = 0
@@ -347,7 +479,7 @@ function buildWeek(sessions: AnalysisRecord[]): WeekDay[] {
 
   const measuredDays = new Set(
     sessions
-      .filter((a) => a.status === "complete")
+      .filter((a) => a.status === "complete" && a.analysisMethod === "pose-measured")
       .map((a) => new Date(a.uploadedAt).toDateString()),
   );
 
@@ -355,7 +487,7 @@ function buildWeek(sessions: AnalysisRecord[]): WeekDay[] {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return {
-      key: d.toISOString().slice(0, 10),
+      key: localDayKey(d),
       label: d.toLocaleDateString("en-GB", { weekday: "narrow" }).toUpperCase(),
       measured: measuredDays.has(d.toDateString()),
       isToday: d.toDateString() === today.toDateString(),
@@ -363,47 +495,9 @@ function buildWeek(sessions: AnalysisRecord[]): WeekDay[] {
   });
 }
 
-interface ClosedFlag {
-  joint: string;
-  when: string;
-}
-
-/**
- * A joint that was flagged in an earlier session and wasn't in the most recent
- * one. Real progress, derived from the record rather than asserted.
- *
- * Needs at least two measured sessions; with one there is nothing to compare.
- */
-function buildClosedFlags(sessions: AnalysisRecord[]): ClosedFlag[] {
-  const measured = sessions
-    .filter((a) => a.status === "complete" && a.analysisMethod === "pose-measured")
-    .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
-
-  if (measured.length < 2) return [];
-
-  // The detail payload holds the per-joint flags; the list payload doesn't, so
-  // this uses the improvement text as the observable proxy for "was flagged".
-  const latest = measured[0]!;
-  const earlier = measured.slice(1, 5);
-
-  const latestText = (latest.improvements ?? []).join(" ").toLowerCase();
-  const JOINTS = ["left knee", "right knee", "left hip", "right hip", "left elbow", "right elbow"];
-
-  const closed: ClosedFlag[] = [];
-  for (const joint of JOINTS) {
-    const wasFlagged = earlier.find((a) =>
-      (a.improvements ?? []).join(" ").toLowerCase().includes(joint),
-    );
-    if (wasFlagged && !latestText.includes(joint)) {
-      closed.push({
-        joint: joint.replace(/\b\w/g, (c) => c.toUpperCase()),
-        when: new Date(latest.uploadedAt)
-          .toLocaleDateString("en-GB", { day: "numeric", month: "short" })
-          .toUpperCase(),
-      });
-    }
-  }
-  return closed.slice(0, 4);
+/** `YYYY-MM-DD` for a date, read in the local zone rather than UTC. */
+function localDayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
@@ -416,11 +510,34 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
   },
   toggle: { flexDirection: "row", backgroundColor: color.card, borderRadius: 999, padding: 3 },
-  toggleItem: { paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999 },
+  // This was a 25pt-tall control; a range switch is a real target.
+  toggleItem: {
+    paddingHorizontal: 14,
+    minHeight: 44,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   toggleItemOn: { backgroundColor: color.ink },
 
   block: { marginHorizontal: GUTTER, marginTop: 18 },
-  trendHead: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
+
+  stageRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  stageDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: color.ruleStrong,
+  },
+  trendHead: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    // Wraps: at large system text sizes the BEST column ran off the card.
+    flexWrap: "wrap",
+    columnGap: 16,
+    rowGap: 10,
+  },
   trendRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 2 },
   axis: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
 
@@ -435,12 +552,17 @@ const s = StyleSheet.create({
     width: "48.5%",
     backgroundColor: color.card,
     borderRadius: 20,
-    padding: 14,
+    padding: TILE_PADDING,
   },
   tileHead: {
     flexDirection: "row",
     alignItems: "baseline",
     justifyContent: "space-between",
+    // The label and its delta ran into each other at large text sizes
+    // ("TECHNIQUE-53"), and the longest label broke mid-word. Wrapping puts the
+    // delta on its own line instead of jamming it against the label.
+    flexWrap: "wrap",
+    columnGap: 8,
   },
 
   weekHead: {

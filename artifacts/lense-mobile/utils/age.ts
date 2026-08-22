@@ -85,3 +85,57 @@ export function toIsoDate(date: Date): string {
 export function isOldEnough(birth: Date | null, now = new Date()): boolean {
   return birth !== null && ageInYears(birth, now) >= MINIMUM_AGE_YEARS;
 }
+
+/**
+ * Why a typed date of birth is not acceptable — or `null` when it is fine.
+ *
+ * ── Why the screen needs more than a boolean ────────────────────────────────
+ * `parseBirthDate` returns `null` for three different reasons: incomplete,
+ * impossible (31 February), and in the future. The signup screen collapsed all
+ * of them into `!isOldEnough(...)` and printed one message:
+ *
+ *     "You need to be at least 13 to use AthleteAI."
+ *
+ * So a typo of 31/02/2000 told a 26-year-old they were too young, and left them
+ * with no idea which of the three fields was wrong. A wrong reason is worse
+ * than no reason: it sends someone off to fix something that was never broken.
+ */
+export type BirthDateProblem = "incomplete" | "impossible" | "future" | "too-young";
+
+export function birthDateProblem(
+  day: string,
+  month: string,
+  year: string,
+  now = new Date(),
+): BirthDateProblem | null {
+  if (!day || !month || year.length !== 4) return "incomplete";
+
+  const d = Number(day);
+  const m = Number(month);
+  const y = Number(year);
+  if (!d || !m || !y) return "incomplete";
+  if (m < 1 || m > 12 || d < 1 || d > 31) return "impossible";
+
+  const parsed = new Date(y, m - 1, d);
+  // Round-trip: `new Date(2000, 1, 31)` silently becomes 2 March.
+  if (parsed.getFullYear() !== y || parsed.getMonth() !== m - 1 || parsed.getDate() !== d) {
+    return "impossible";
+  }
+  if (parsed.getTime() > now.getTime()) return "future";
+  if (ageInYears(parsed, now) < MINIMUM_AGE_YEARS) return "too-young";
+  return null;
+}
+
+/** The message the signup screen shows for each problem. */
+export function birthDateMessage(problem: BirthDateProblem | null): string {
+  switch (problem) {
+    case "impossible":
+      return "That date doesn't exist. Check the day and month.";
+    case "future":
+      return "That date is in the future.";
+    case "too-young":
+      return `You need to be at least ${MINIMUM_AGE_YEARS} to use AthleteAI.`;
+    default:
+      return `You need to be at least ${MINIMUM_AGE_YEARS}. We use this to check your age, nothing else.`;
+  }
+}

@@ -1,11 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  MINIMUM_AGE_YEARS,
-  ageInYears,
-  parseBirthDate,
-  toIsoDate,
-  isOldEnough,
-} from "./age";
+import { MINIMUM_AGE_YEARS, ageInYears, parseBirthDate, toIsoDate, isOldEnough, birthDateProblem, birthDateMessage } from "./age";
 
 describe("ageInYears", () => {
   it("counts whole years", () => {
@@ -129,5 +123,48 @@ describe("isOldEnough", () => {
 
   it("rejects null", () => {
     expect(isOldEnough(null, now)).toBe(false);
+  });
+});
+
+describe("birthDateProblem", () => {
+  const now = new Date(2026, 7, 22); // 22 Aug 2026
+
+  it("says impossible for a date that does not exist, not 'too young'", () => {
+    // The bug: 31 February told a 26-year-old they were under 13.
+    expect(birthDateProblem("31", "02", "2000", now)).toBe("impossible");
+    expect(birthDateMessage("impossible")).toMatch(/doesn't exist/);
+  });
+
+  it("catches out-of-range parts", () => {
+    expect(birthDateProblem("32", "01", "2000", now)).toBe("impossible");
+    expect(birthDateProblem("01", "13", "2000", now)).toBe("impossible");
+  });
+
+  it("distinguishes a future date from an underage one", () => {
+    expect(birthDateProblem("01", "01", "2030", now)).toBe("future");
+    expect(birthDateProblem("01", "01", "2020", now)).toBe("too-young");
+  });
+
+  it("stays quiet until the fields are actually filled in", () => {
+    expect(birthDateProblem("", "", "", now)).toBe("incomplete");
+    expect(birthDateProblem("15", "06", "199", now)).toBe("incomplete");
+    expect(birthDateProblem("15", "", "1995", now)).toBe("incomplete");
+  });
+
+  it("accepts a valid adult date", () => {
+    expect(birthDateProblem("15", "06", "1995", now)).toBeNull();
+  });
+
+  it("accepts someone exactly on their thirteenth birthday", () => {
+    expect(birthDateProblem("22", "08", "2013", now)).toBeNull();
+  });
+
+  it("rejects the day before that birthday", () => {
+    expect(birthDateProblem("23", "08", "2013", now)).toBe("too-young");
+  });
+
+  it("accepts 29 February in a leap year", () => {
+    expect(birthDateProblem("29", "02", "2000", now)).toBeNull();
+    expect(birthDateProblem("29", "02", "2001", now)).toBe("impossible");
   });
 });

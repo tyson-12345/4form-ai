@@ -8,11 +8,26 @@
  */
 
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from "react-native";
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Alert,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
-import { Screen, Label, Chip, PrimaryButton, Chevron } from "@/components/caliper";
+import {
+  BackButton,
+  Chip,
+  FooterFade,
+  Label,
+  PrimaryButton,
+  Screen,
+  Text,
+  useFooterClearance,
+} from "@/components/caliper";
 import { color, type as T, GUTTER } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { SPORTS } from "@/constants/sports";
@@ -67,6 +82,8 @@ export default function OnboardingScreen() {
   const [weekly, setWeekly] = useState(3);
   const [saving, setSaving] = useState(false);
 
+  const [footerClearance, onFooterLayout] = useFooterClearance({ gap: 20, fallback: 150 });
+
   const canContinue = useMemo(() => {
     if (step === 0) return sports.length > 0;
     if (step === 1) return !!level;
@@ -117,13 +134,10 @@ export default function OnboardingScreen() {
     <Screen>
       {/* ── Progress ── */}
       <View style={[s.head, { paddingTop: insets.top + 14 }]}>
-        <Pressable
+        <BackButton
           onPress={() => (step === 0 ? router.back() : setStep(step - 1))}
-          style={s.backBtn}
-          hitSlop={8}
-        >
-          <Chevron direction="left" tone={color.textPrimary} size={16} />
-        </Pressable>
+          label={step === 0 ? "Back" : `Back to step ${step}`}
+        />
 
         <View style={s.segments}>
           {STEPS.map((_, i) => (
@@ -143,12 +157,16 @@ export default function OnboardingScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: 200 }}
+        // Measured, not a guessed 200: the footer carries a summary line that
+        // reads "8 picked · Squat, Deadlift, …" and wraps to several lines as
+        // soon as someone picks a few sports, which pushed the last chips
+        // underneath it and out of reach.
+        contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: footerClearance }}
         showsVerticalScrollIndicator={false}
       >
         <View style={{ paddingTop: 40 }}>
           <Label>{current.label}</Label>
-          <Text style={[T.headline, { marginTop: 10 }]}>{current.title}</Text>
+          <Text scale="display" style={[T.headline, { marginTop: 10 }]}>{current.title}</Text>
           <Text style={[T.body, s.sub]}>{subtitleFor(step)}</Text>
         </View>
 
@@ -227,7 +245,12 @@ export default function OnboardingScreen() {
       </ScrollView>
 
       {/* ── Footer ── */}
-      <View style={[s.footer, { paddingBottom: insets.bottom + 24 }]}>
+      <View
+        style={[s.footer, { paddingBottom: insets.bottom + 24 }]}
+        onLayout={onFooterLayout}
+      >
+        {/* Chips used to be cut in half against the footer's hard top edge. */}
+        <FooterFade />
         <PrimaryButton
           label={
             saving ? "Saving…" : step === STEPS.length - 1 ? "Start measuring" : "Continue"
@@ -288,14 +311,6 @@ const s = StyleSheet.create({
     alignItems: "center",
     gap: 14,
   },
-  backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: color.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   segments: { flex: 1, flexDirection: "row", gap: 4 },
   segment: { flex: 1, height: 3, borderRadius: 2 },
 
@@ -312,9 +327,13 @@ const s = StyleSheet.create({
 
   footer: {
     position: "absolute",
-    left: GUTTER,
-    right: GUTTER,
+    // Full bleed, then padded in. Inset by GUTTER on each side, the paper fill
+    // stopped short of the screen edge and scrolling chips stayed visible in
+    // the two margins beside it.
+    left: 0,
+    right: 0,
     bottom: 0,
+    paddingHorizontal: GUTTER,
     paddingTop: 14,
     backgroundColor: color.paper,
   },

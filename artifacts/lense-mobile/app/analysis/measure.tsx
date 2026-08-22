@@ -15,19 +15,21 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ActivityIndicator,
-  TouchableOpacity,
-  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Feather } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
 import * as FileSystem from "expo-file-system/legacy";
 
-import { useColors } from "@/hooks/useColors";
+import {
+  AlertGlyph,
+  BackButton,
+  PrimaryButton,
+  Text,
+} from "@/components/caliper";
+import { color, type as T, GUTTER } from "@/constants/caliper";
 import { analyses as analysesApi, ApiError, NetworkError } from "@/lib/api";
 import { buildPoseHtml, type PoseMessage, type PoseMetrics } from "@/lib/poseTracker";
 import { persistVideo, stageForWebView } from "@/lib/videoStore";
@@ -35,7 +37,6 @@ import { persistVideo, stageForWebView } from "@/lib/videoStore";
 type Phase = "preparing" | "measuring" | "saving" | "error";
 
 export default function MeasureScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ uri: string; sport: string; title: string }>();
@@ -145,93 +146,25 @@ export default function MeasureScreen() {
 
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
-  const s = StyleSheet.create({
-    root: { flex: 1, backgroundColor: colors.background },
-    header: {
-      paddingTop: (Platform.OS === "web" ? 20 : insets.top) + 12,
-      paddingHorizontal: 20,
-      paddingBottom: 12,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-    },
-    backBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 12,
-      backgroundColor: colors.card,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    headerTitle: { fontSize: 15, fontFamily: "InstrumentSans_600SemiBold", color: colors.foreground },
-    body: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 20 },
-    title: {
-      fontSize: 20,
-      fontFamily: "InstrumentSans_600SemiBold",
-      color: colors.foreground,
-      textAlign: "center",
-    },
-    sub: {
-      fontSize: 14,
-      fontFamily: "InstrumentSans_400Regular",
-      color: colors.mutedForeground,
-      textAlign: "center",
-      lineHeight: 21,
-    },
-    barTrack: {
-      width: "100%",
-      height: 6,
-      borderRadius: 3,
-      backgroundColor: colors.surface3,
-      overflow: "hidden",
-    },
-    barFill: { height: "100%", borderRadius: 3, backgroundColor: colors.primary },
-    pct: {
-      fontSize: 13,
-      fontFamily: "InstrumentSans_600SemiBold",
-      color: colors.primary,
-      fontVariant: ["tabular-nums"],
-    },
-    btn: {
-      backgroundColor: colors.primary,
-      borderRadius: colors.radius,
-      paddingVertical: 14,
-      paddingHorizontal: 28,
-      marginTop: 8,
-    },
-    btnText: { color: colors.primaryForeground, fontSize: 15, fontFamily: "InstrumentSans_600SemiBold" },
-    secondaryBtn: { paddingVertical: 12, paddingHorizontal: 20 },
-    secondaryText: {
-      color: colors.mutedForeground,
-      fontSize: 14,
-      fontFamily: "InstrumentSans_500Medium",
-    },
-    // The tracker must render to produce frames, but the user watches the
-    // progress UI instead — so keep it on-screen but visually out of the way.
-    hiddenWebView: { position: "absolute", width: 1, height: 1, opacity: 0, top: -9999 },
-  });
-
   return (
     <View style={s.root}>
-      <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-          <Feather name="chevron-left" size={20} color={colors.foreground} />
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>Analysing</Text>
+      <View style={[s.header, { paddingTop: insets.top + 12 }]}>
+        <BackButton onPress={() => router.back()} />
+        <Text style={T.cardTitle}>Measuring</Text>
       </View>
 
       {phase === "error" ? (
         <View style={s.body}>
-          <Feather name="alert-circle" size={40} color={colors.warning} />
-          <Text style={s.title}>Couldn't analyse this clip</Text>
+          <AlertGlyph tone={color.rust} size={38} />
+          <Text style={s.title}>Couldn&apos;t measure this clip</Text>
           <Text style={s.sub}>{errorMessage}</Text>
-          <TouchableOpacity style={s.btn} onPress={() => router.back()} activeOpacity={0.85}>
-            <Text style={s.btnText}>Try another video</Text>
-          </TouchableOpacity>
+          <View style={{ alignSelf: "stretch", marginTop: 4 }}>
+            <PrimaryButton label="Try another clip" onPress={() => router.back()} />
+          </View>
         </View>
       ) : (
         <View style={s.body}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={color.cobalt} />
           <Text style={s.title}>
             {phase === "preparing" && "Preparing your video"}
             {phase === "measuring" && "Measuring your movement"}
@@ -285,3 +218,29 @@ export default function MeasureScreen() {
     </View>
   );
 }
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: color.paper },
+  header: {
+    paddingHorizontal: GUTTER,
+    paddingBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  body: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 20 },
+  title: { ...T.cardTitle, fontSize: 20, lineHeight: 26, textAlign: "center" },
+  sub: { ...T.body, textAlign: "center" },
+  barTrack: {
+    width: "100%",
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: color.paperDeep,
+    overflow: "hidden",
+  },
+  barFill: { height: "100%", borderRadius: 3, backgroundColor: color.cobalt },
+  pct: { ...T.measured, color: color.cobalt, fontVariant: ["tabular-nums"] },
+  // The tracker must render to produce frames, but the athlete watches the
+  // progress UI instead — so keep it mounted but visually out of the way.
+  hiddenWebView: { position: "absolute", width: 1, height: 1, opacity: 0, top: -9999 },
+});

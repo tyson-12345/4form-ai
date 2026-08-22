@@ -1,7 +1,6 @@
 import React, { useRef, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
   Pressable,
@@ -12,7 +11,13 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
-import { Screen, Label, PrimaryButton, Chevron } from "@/components/caliper";
+import {
+  BackButton,
+  Label,
+  PrimaryButton,
+  Screen,
+  Text,
+} from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { ApiError, NetworkError } from "@/lib/api";
@@ -62,9 +67,7 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={[s.head, { paddingTop: insets.top + 14 }]}>
-          <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
-            <Chevron direction="left" tone={color.textPrimary} size={16} />
-          </Pressable>
+          <BackButton onPress={() => router.back()} />
         </View>
 
         <ScrollView
@@ -73,7 +76,7 @@ export default function LoginScreen() {
           showsVerticalScrollIndicator={false}
         >
           <Label>WELCOME BACK</Label>
-          <Text style={[T.headline, { marginTop: 10 }]}>Sign in.</Text>
+          <Text scale="display" style={[T.headline, { marginTop: 10 }]}>Sign in.</Text>
 
           <Label style={{ marginTop: 34, marginBottom: 8 }}>EMAIL</Label>
           <TextInput
@@ -111,7 +114,14 @@ export default function LoginScreen() {
               returnKeyType="go"
               onSubmitEditing={submit}
             />
-            <Pressable onPress={() => setShow(!show)} style={s.reveal} hitSlop={8}>
+            <Pressable
+              onPress={() => setShow(!show)}
+              style={s.reveal}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={show ? "Hide password" : "Show password"}
+              accessibilityState={{ selected: show }}
+            >
               <Text style={[T.buttonSmall, { color: color.textMuted }]}>
                 {show ? "Hide" : "Show"}
               </Text>
@@ -130,16 +140,19 @@ export default function LoginScreen() {
 
           <Pressable
             onPress={() => router.push("/auth/forgot-password")}
-            style={{ marginTop: 20, alignItems: "center" }}
-            hitSlop={8}
+            accessibilityRole="link"
+            accessibilityLabel="Forgot your password?"
+            // A centred label is a 16pt-tall target without a minHeight.
+            style={{ marginTop: 12, alignItems: "center", justifyContent: "center", minHeight: 44 }}
           >
             <Text style={[T.buttonSmall, { color: color.cobalt }]}>Forgot your password?</Text>
           </Pressable>
 
           <Pressable
             onPress={() => router.replace("/auth/signup")}
-            style={{ marginTop: 24, alignItems: "center" }}
-            hitSlop={8}
+            accessibilityRole="link"
+            accessibilityLabel="Create an account"
+            style={{ marginTop: 16, alignItems: "center", justifyContent: "center", minHeight: 44 }}
           >
             <Text style={[T.bodySmall, { textAlign: "center" }]}>
               New here? <Text style={{ color: color.textPrimary }}>Create an account</Text>
@@ -153,14 +166,6 @@ export default function LoginScreen() {
 
 export const s = StyleSheet.create({
   head: { paddingHorizontal: GUTTER, paddingBottom: 10 },
-  backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: color.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   input: {
     backgroundColor: color.card,
     borderRadius: radius.cardSmall,
@@ -171,7 +176,14 @@ export const s = StyleSheet.create({
     color: color.textPrimary,
   },
   passwordWrap: { position: "relative", justifyContent: "center" },
-  reveal: { position: "absolute", right: 16 },
+  reveal: {
+    position: "absolute",
+    right: 8,
+    paddingHorizontal: 8,
+    // The label alone was a 34x16 target inside the field.
+    minHeight: 44,
+    justifyContent: "center",
+  },
   error: {
     marginTop: 14,
     fontFamily: font.body,

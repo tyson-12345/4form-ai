@@ -20,12 +20,19 @@ import { color, radius, shadow, GUTTER, TAB_BAR } from "@/constants/caliper";
 import { TabIcon, PlusGlyph } from "@/components/caliper";
 import { useAuth } from "@/lib/authContext";
 
-/** Route name → glyph. `analyze` is the centre action and is handled separately. */
-const GLYPH = {
-  index: "home",
-  progress: "progress",
-  chat: "coach",
-  profile: "profile",
+/**
+ * Route name → glyph and spoken label.
+ *
+ * The label used to be `route.name`, so VoiceOver announced the tabs as
+ * "index", "progress", "chat", "profile" — the router's internal names, read
+ * aloud to a user. The titles exist on the `<Tabs.Screen>` entries below but a
+ * custom `tabBar` never receives them, so they live here instead.
+ */
+const TABS = {
+  index: { glyph: "home", label: "Home" },
+  progress: { glyph: "progress", label: "Progress" },
+  chat: { glyph: "coach", label: "Coach" },
+  profile: { glyph: "profile", label: "Profile" },
 } as const;
 
 /**
@@ -53,7 +60,7 @@ interface TabBarProps {
 
 function CaliperTabBar({ state, navigation }: TabBarProps) {
   return (
-    <View style={s.bar} pointerEvents="box-none">
+    <View style={s.bar} pointerEvents="box-none" accessibilityRole="tablist">
       {state.routes
         .filter((route) => route.name !== "compare")
         .map((route) => {
@@ -87,20 +94,20 @@ function CaliperTabBar({ state, navigation }: TabBarProps) {
             );
           }
 
-          const glyph = GLYPH[route.name as keyof typeof GLYPH];
-          if (!glyph) return null;
+          const tab = TABS[route.name as keyof typeof TABS];
+          if (!tab) return null;
 
           return (
             <Pressable
               key={route.key}
               onPress={onPress}
               style={s.slot}
-              accessibilityRole="button"
+              accessibilityRole="tab"
               accessibilityState={{ selected: focused }}
-              accessibilityLabel={route.name}
+              accessibilityLabel={tab.label}
             >
               <TabIcon
-                name={glyph}
+                name={tab.glyph}
                 tone={focused ? color.onInk : color.onInkMuted}
               />
             </Pressable>

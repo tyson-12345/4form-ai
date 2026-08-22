@@ -9,12 +9,10 @@
 import React, { useCallback, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   Platform,
   Pressable,
-  Modal,
   TextInput,
   ActivityIndicator,
 } from "react-native";
@@ -23,7 +21,18 @@ import { useRouter, useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import Svg, { Path as SvgPath, Circle as SvgCircle } from "react-native-svg";
 
-import { Screen, Card, Label, Chip, Chevron, Avatar, PrimaryButton } from "@/components/caliper";
+import {
+  Avatar,
+  Card,
+  Chevron,
+  Chip,
+  Label,
+  PrimaryButton,
+  Screen,
+  Sheet,
+  StatusBarScrim,
+  Text,
+} from "@/components/caliper";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
 import { PRIVACY_POLICY_URL, TERMS_URL, openLegal, openSupport } from "@/constants/legal";
 import { useAuth } from "@/lib/authContext";
@@ -35,6 +44,7 @@ import {
   ApiError,
 } from "@/lib/api";
 import { SPORTS, displaySport } from "@/constants/sports";
+import { closedFlagCount } from "@/utils/closedFlags";
 import { alert } from "@/lib/alert";
 
 const LEVELS = ["Beginner", "Intermediate", "Advanced", "Elite"] as const;
@@ -106,13 +116,10 @@ export default function ProfileScreen() {
     (a) => a.status === "complete" && a.analysisMethod === "pose-measured",
   );
 
-  // Flags closed = sessions where an earlier improvement no longer appears.
-  const flagsClosed = Math.max(
-    0,
-    new Set(
-      sessions.flatMap((a) => (a.improvements ?? []).slice(0, 1)),
-    ).size - (measured[0]?.improvements?.length ?? 0),
-  );
+  // One definition, shared with Progress — see utils/closedFlags. This used to
+  // be computed inline here from unrelated quantities and reported 3 while
+  // Progress, on the same account at the same moment, listed 1.
+  const flagsClosed = closedFlagCount(sessions);
 
   const displayName = profile?.name || user?.name || "Athlete";
   const tier = subscription?.tier ?? "free";
@@ -133,6 +140,9 @@ export default function ProfileScreen() {
   async function save(override?: string) {
     const next = (override ?? value).trim();
     if (!next || !edit) return;
+    // Chip taps called this with no in-flight guard, so a slow PATCH invited a
+    // second tap and a second write.
+    if (saving) return;
 
     setSaving(true);
     try {
@@ -173,7 +183,7 @@ export default function ProfileScreen() {
             </View>
           </Pressable>
           <View style={{ flex: 1 }}>
-            <Text style={[T.metricMedium, { fontSize: 24 }]} numberOfLines={1}>
+            <Text scale="display" style={[T.metricMedium, { fontSize: 24 }]} numberOfLines={1}>
               {displayName}
             </Text>
             <Text style={[T.bodySmall, { marginTop: 2 }]} numberOfLines={1}>
@@ -216,6 +226,8 @@ export default function ProfileScreen() {
         {/* ── Plan ── */}
         <Pressable
           onPress={() => router.push("/pricing")}
+          accessibilityRole="button"
+          accessibilityLabel={`${tier} plan. See plans.`}
           style={({ pressed }) => [s.plan, pressed && { opacity: 0.9 }]}
         >
           <View style={{ flex: 1 }}>
@@ -303,145 +315,136 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* ── Edit sheet ── */}
-      <Modal visible={edit !== null} animationType="slide" presentationStyle="pageSheet">
-        <Screen>
-          <View style={s.sheetHead}>
-            <Pressable onPress={() => setEdit(null)} hitSlop={12}>
-              <Text style={[T.buttonSmall, { color: color.textMuted }]}>Cancel</Text>
-            </Pressable>
-            <Label>{(edit ?? "").toUpperCase()}</Label>
-            <View style={{ width: 48 }} />
+      <Sheet
+        visible={edit !== null}
+        onClose={() => setEdit(null)}
+        title={(edit ?? "").toUpperCase()}
+      >
+        {edit === "sport" && (
+          <View style={s.chipWrap}>
+            {SPORTS.map((sport) => (
+              <Chip
+                key={sport}
+                label={sport}
+                selected={value.toLowerCase() === sport.toLowerCase()}
+                onPress={saving ? undefined : () => {
+                  setValue(sport);
+                  void save(sport);
+                }}
+              />
+            ))}
           </View>
+        )}
 
-          <ScrollView contentContainerStyle={{ padding: GUTTER }} keyboardShouldPersistTaps="handled">
-            {edit === "sport" && (
-              <View style={s.chipWrap}>
-                {SPORTS.map((sport) => (
-                  <Chip
-                    key={sport}
-                    label={sport}
-                    selected={value.toLowerCase() === sport.toLowerCase()}
-                    onPress={() => {
-                      setValue(sport);
-                      void save(sport);
-                    }}
-                  />
-                ))}
-              </View>
-            )}
+        {edit === "level" && (
+          <View style={s.chipWrap}>
+            {LEVELS.map((level) => (
+              <Chip
+                key={level}
+                label={level}
+                selected={value.toLowerCase() === level.toLowerCase()}
+                onPress={saving ? undefined : () => {
+                  setValue(level);
+                  void save(level);
+                }}
+              />
+            ))}
+          </View>
+        )}
 
-            {edit === "level" && (
-              <View style={s.chipWrap}>
-                {LEVELS.map((level) => (
-                  <Chip
-                    key={level}
-                    label={level}
-                    selected={value.toLowerCase() === level.toLowerCase()}
-                    onPress={() => {
-                      setValue(level);
-                      void save(level);
-                    }}
-                  />
-                ))}
-              </View>
-            )}
+        {edit === "weeklyGoal" && (
+          <View style={s.chipWrap}>
+            {[2, 3, 4, 5, 6, 7].map((n) => (
+              <Chip
+                key={n}
+                label={`${n} a week`}
+                selected={value === String(n)}
+                onPress={saving ? undefined : () => {
+                  setValue(String(n));
+                  void save(String(n));
+                }}
+              />
+            ))}
+          </View>
+        )}
 
-            {edit === "weeklyGoal" && (
-              <View style={s.chipWrap}>
-                {[2, 3, 4, 5, 6, 7].map((n) => (
-                  <Chip
-                    key={n}
-                    label={`${n} a week`}
-                    selected={value === String(n)}
-                    onPress={() => {
-                      setValue(String(n));
-                      void save(String(n));
-                    }}
-                  />
-                ))}
-              </View>
-            )}
-
-            {edit === "name" && (
-              <>
-                <TextInput
-                  style={s.input}
-                  value={value}
-                  onChangeText={setValue}
-                  placeholder="Your name"
-                  placeholderTextColor={color.textGhost}
-                  autoFocus
-                  maxLength={80}
-                  returnKeyType="done"
-                  onSubmitEditing={() => save()}
-                />
-                <View style={{ marginTop: 24 }}>
-                  <PrimaryButton
-                    label={saving ? "Saving…" : "Save"}
-                    onPress={() => save()}
-                    disabled={saving || !value.trim()}
-                  />
-                </View>
-              </>
-            )}
-          </ScrollView>
-        </Screen>
-      </Modal>
+        {edit === "name" && (
+          <>
+            <TextInput
+              style={s.input}
+              value={value}
+              onChangeText={setValue}
+              placeholder="Your name"
+              placeholderTextColor={color.textGhost}
+              autoFocus
+              maxLength={80}
+              returnKeyType="done"
+              onSubmitEditing={() => save()}
+            />
+            <View style={{ marginTop: 24 }}>
+              <PrimaryButton
+                label={saving ? "Saving…" : "Save"}
+                onPress={() => save()}
+                disabled={saving || !value.trim()}
+              />
+            </View>
+          </>
+        )}
+      </Sheet>
 
       {/* ── Photo sheet ── */}
-      <Modal
+      <Sheet
         visible={photoOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setPhotoOpen(false)}
+        onClose={() => setPhotoOpen(false)}
+        title="PROFILE PHOTO"
+        scroll={false}
       >
-        <Screen>
-          <View style={s.sheetHead}>
-            <Pressable onPress={() => setPhotoOpen(false)} hitSlop={12}>
-              <Text style={[T.buttonSmall, { color: color.textMuted }]}>Cancel</Text>
-            </Pressable>
-            <Label>PROFILE PHOTO</Label>
-            <View style={{ width: 48 }} />
-          </View>
+        <View style={{ padding: GUTTER, alignItems: "center" }}>
+          <Avatar name={displayName} uri={avatarUri} size={120} />
+          <Text style={[T.bodySmall, { marginTop: 16, textAlign: "center", maxWidth: 280 }]}>
+            Your photo stays on this phone. It&apos;s never uploaded.
+          </Text>
 
-          <View style={{ padding: GUTTER, alignItems: "center" }}>
-            <Avatar name={displayName} uri={avatarUri} size={120} />
-            <Text style={[T.bodySmall, { marginTop: 16, textAlign: "center", maxWidth: 280 }]}>
-              Your photo stays on this phone. It's never uploaded.
-            </Text>
-
-            <View style={{ alignSelf: "stretch", marginTop: 28, gap: 10 }}>
+          <View style={{ alignSelf: "stretch", marginTop: 28, gap: 10 }}>
+            <PrimaryButton
+              label={avatarUri ? "Choose a different photo" : "Choose a photo"}
+              onPress={() => void choosePhoto()}
+            />
+            {avatarUri && (
               <PrimaryButton
-                label={avatarUri ? "Choose a different photo" : "Choose a photo"}
-                onPress={() => void choosePhoto()}
+                label="Remove photo"
+                tone={color.card}
+                labelTone={color.rust}
+                onPress={() => {
+                  void removeAvatarPhoto();
+                  setPhotoOpen(false);
+                }}
               />
-              {avatarUri && (
-                <PrimaryButton
-                  label="Remove photo"
-                  tone={color.card}
-                  labelTone={color.rust}
-                  onPress={() => {
-                    void removeAvatarPhoto();
-                    setPhotoOpen(false);
-                  }}
-                />
-              )}
-            </View>
+            )}
           </View>
-        </Screen>
-      </Modal>
+        </View>
+      </Sheet>
 
-      <DeleteAccountSheet
+      {/* Mounted only while open. The sheet holds a typed password and a typed
+          confirmation in its own state, and a permanently-mounted component
+          keeps both after it closes — reopening it showed a pre-armed form with
+          the password still filled in. Unmounting is the guarantee; remembering
+          to clear on close is not. */}
+      {deleteOpen && (
+        <DeleteAccountSheet
         visible={deleteOpen}
         onClose={() => setDeleteOpen(false)}
-        onDeleted={async () => {
-          // Deleting the account deletes everything — the device-local photo
-          // included. Must run before logout clears the user id it is keyed by.
-          await removeAvatarPhoto().catch(() => {});
-          await logout();
-          router.replace("/welcome");
-        }}
-      />
+          onDeleted={async () => {
+            // Deleting the account deletes everything — the device-local photo
+            // included. Must run before logout clears the user id it is keyed by.
+            await removeAvatarPhoto().catch(() => {});
+            await logout();
+            router.replace("/welcome");
+          }}
+        />
+      )}
+      {/* Paints over content that scrolls under the status bar. */}
+      <StatusBarScrim />
     </Screen>
   );
 }
@@ -482,66 +485,62 @@ function DeleteAccountSheet({
   }
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
-      <Screen>
-        <View style={s.sheetHead}>
-          <Pressable onPress={onClose} hitSlop={12}>
-            <Text style={[T.buttonSmall, { color: color.textMuted }]}>Cancel</Text>
-          </Pressable>
-          <Label>DELETE ACCOUNT</Label>
-          <View style={{ width: 48 }} />
-        </View>
+    <Sheet visible={visible} onClose={onClose} title="DELETE ACCOUNT">
+      <Text scale="display" style={T.headlineSmall}>This can&apos;t be undone.</Text>
 
-        <ScrollView contentContainerStyle={{ padding: GUTTER }} keyboardShouldPersistTaps="handled">
-          <Text style={T.headlineSmall}>This can't be undone.</Text>
+      <Text style={[T.body, { marginTop: 14 }]}>
+        Deleting your account permanently removes your measurements, sessions, coaching
+        notes, progress history, and chat with Atlas. Clips stored on this phone are
+        removed too.
+      </Text>
 
-          <Text style={[T.body, { marginTop: 14 }]}>
-            Deleting your account permanently removes your measurements, sessions, coaching
-            notes, progress history, and chat with Atlas. Clips stored on this phone are
-            removed too.
-          </Text>
+      <Label style={{ marginTop: 28, marginBottom: 8 }}>TYPE DELETE TO CONFIRM</Label>
+      <TextInput
+        style={s.input}
+        value={confirm}
+        onChangeText={setConfirm}
+        placeholder="DELETE"
+        placeholderTextColor={color.textGhost}
+        autoCapitalize="characters"
+        autoCorrect={false}
+        accessibilityLabel="Type DELETE to confirm"
+      />
 
-          <Label style={{ marginTop: 28, marginBottom: 8 }}>TYPE DELETE TO CONFIRM</Label>
-          <TextInput
-            style={s.input}
-            value={confirm}
-            onChangeText={setConfirm}
-            placeholder="DELETE"
-            placeholderTextColor={color.textGhost}
-            autoCapitalize="characters"
-            autoCorrect={false}
-          />
+      <Label style={{ marginTop: 20, marginBottom: 8 }}>YOUR PASSWORD</Label>
+      <TextInput
+        style={s.input}
+        value={password}
+        onChangeText={setPassword}
+        placeholder="Password"
+        placeholderTextColor={color.textGhost}
+        secureTextEntry
+        autoCapitalize="none"
+        autoComplete="current-password"
+        accessibilityLabel="Your password"
+      />
 
-          <Label style={{ marginTop: 20, marginBottom: 8 }}>YOUR PASSWORD</Label>
-          <TextInput
-            style={s.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            placeholderTextColor={color.textGhost}
-            secureTextEntry
-            autoCapitalize="none"
-            autoComplete="current-password"
-          />
+      {error && (
+        <Text
+          style={[T.bodySmall, { color: color.rust, marginTop: 12 }]}
+          accessibilityLiveRegion="assertive"
+          accessibilityRole="alert"
+        >
+          {error}
+        </Text>
+      )}
 
-          {error && (
-            <Text style={[T.bodySmall, { color: color.rust, marginTop: 12 }]}>{error}</Text>
-          )}
+      <View style={{ marginTop: 28 }}>
+        <PrimaryButton
+          label={working ? "Deleting…" : "Delete my account"}
+          onPress={run}
+          disabled={!armed || working}
+          tone={color.rust}
+          labelTone={color.onCobalt}
+        />
+      </View>
 
-          <View style={{ marginTop: 28 }}>
-            <PrimaryButton
-              label={working ? "Deleting…" : "Delete my account"}
-              onPress={run}
-              disabled={!armed || working}
-              tone={color.rust}
-              labelTone={color.onCobalt}
-            />
-          </View>
-
-          {working && <ActivityIndicator style={{ marginTop: 16 }} color={color.rust} />}
-        </ScrollView>
-      </Screen>
-    </Modal>
+      {working && <ActivityIndicator style={{ marginTop: 16 }} color={color.rust} />}
+    </Sheet>
   );
 }
 
@@ -565,8 +564,10 @@ function CameraGlyph() {
 
 function Stat({ value, label, tone }: { value: number; label: string; tone?: string }) {
   return (
-    <View style={s.stat}>
-      <Text style={[T.metricMedium, tone ? { color: tone } : null]}>{value}</Text>
+    // Grouped: the number and its label are one fact, and read as two
+    // disconnected nodes otherwise ("7" … "MEASURED").
+    <View style={s.stat} accessible accessibilityLabel={`${value} ${label.toLowerCase()}`}>
+      <Text scale="display" style={[T.metricMedium, tone ? { color: tone } : null]}>{value}</Text>
       <Text style={[T.measuredSmall, { marginTop: 3, letterSpacing: 1.2 }]}>{label}</Text>
     </View>
   );
@@ -589,6 +590,10 @@ function Row({
     <Pressable
       onPress={onPress}
       disabled={!onPress}
+      // A non-pressable Row (the version line) is not a button and must not
+      // announce as one.
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={onPress ? (value ? `${label}, ${value}` : label) : undefined}
       style={({ pressed }) => [s.row, last && { borderBottomWidth: 0 }, pressed && { opacity: 0.6 }]}
     >
       <Text style={[T.rowTitle, { flex: 1, fontSize: 15 }, tone ? { color: tone } : null]}>
@@ -649,14 +654,6 @@ const s = StyleSheet.create({
     paddingVertical: 9,
   },
 
-  sheetHead: {
-    paddingHorizontal: GUTTER,
-    paddingTop: 20,
-    paddingBottom: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   input: {
     backgroundColor: color.card,

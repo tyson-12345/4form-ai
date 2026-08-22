@@ -12,16 +12,76 @@
 import React from "react";
 import {
   View,
-  Text,
+  Text as RNText,
   StyleSheet,
   Pressable,
+  Modal,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  type LayoutChangeEvent,
   type ViewStyle,
   type StyleProp,
   type TextStyle,
 } from "react-native";
 import Svg, { Line, Path, Circle, Polyline, Rect, Polygon } from "react-native-svg";
 import { Image as ExpoImage } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { color, type as T, radius, GUTTER, TAB_BAR, font, delta } from "@/constants/caliper";
+// Pure scale maths lives in utils/ so it can be tested without a React Native
+// environment — the same reason flagSeverity and provenance live there.
+import { bandScale } from "@/utils/bandScale";
+
+// ─── Text ────────────────────────────────────────────────────────────────────
+
+/**
+ * Every piece of text in the app, with a bound on how far it scales.
+ *
+ * ── The problem ─────────────────────────────────────────────────────────────
+ * React Native's `<Text>` honours the system text size by default, and this app
+ * had no bound on it anywhere: not one `maxFontSizeMultiplier`, not one
+ * `allowFontScaling`. iOS's Larger Text runs to roughly 3.1x, and Caliper's
+ * display styles are already 46–82pt with `lineHeight` set *below* `fontSize`
+ * (`metricHeroXL` is 82/74). React Native scales `fontSize` but does not scale
+ * `lineHeight`, so those styles clip as soon as they scale at all — and the
+ * app is full of fixed-height furniture that a 3x label simply does not fit in.
+ *
+ * ── Why a wrapper and not a global default ──────────────────────────────────
+ * The usual fix is `Text.defaultProps.maxFontSizeMultiplier = n` at app start.
+ * React 19 removed `defaultProps` support for function components, and RN's
+ * `Text` is a `forwardRef`, so that assignment is now silently ignored. A
+ * wrapper is the only app-wide mechanism left.
+ *
+ * ── The caps ────────────────────────────────────────────────────────────────
+ * Prose scales generously because that is what the setting is for. Display
+ * numbers scale least: they are the largest things on screen already, and a
+ * reader who needs bigger text needs the *labels* bigger, not a 250pt score.
+ *
+ *   scale="body"    2.0   prose, rows, buttons — the default
+ *   scale="label"   1.8   small-caps labels and mono stamps
+ *   scale="display" 1.3   screen titles, headlines, metric numbers
+ *
+ * The prop is `scale` rather than `role` because react-native's Text already
+ * has a `role` prop (the ARIA one), and intersecting the two collapses to
+ * `never`.
+ *
+ * Screens import `Text` from this module rather than from react-native. The
+ * lint rule that would enforce that does not exist yet; the import is the
+ * convention.
+ */
+const FONT_CAP = { body: 2.0, label: 1.8, display: 1.3 } as const;
+
+export type TextScale = keyof typeof FONT_CAP;
+
+export function Text({
+  scale = "body",
+  maxFontSizeMultiplier,
+  ...rest
+}: React.ComponentProps<typeof RNText> & { scale?: TextScale }) {
+  return (
+    <RNText maxFontSizeMultiplier={maxFontSizeMultiplier ?? FONT_CAP[scale]} {...rest} />
+  );
+}
 
 // ─── Label ───────────────────────────────────────────────────────────────────
 
@@ -35,7 +95,11 @@ export function Label({
   tone?: string;
   style?: StyleProp<TextStyle>;
 }) {
-  return <Text style={[T.label, { color: tone }, style]}>{children}</Text>;
+  return (
+    <Text scale="label" style={[T.label, { color: tone }, style]}>
+      {children}
+    </Text>
+  );
 }
 
 /** A measured value in mono. */
@@ -51,7 +115,9 @@ export function Measured({
   style?: StyleProp<TextStyle>;
 }) {
   return (
-    <Text style={[T.measured, { color: tone, fontSize: size }, style]}>{children}</Text>
+    <Text scale="label" style={[T.measured, { color: tone, fontSize: size }, style]}>
+      {children}
+    </Text>
   );
 }
 
@@ -73,7 +139,11 @@ export function Card({
   );
   if (!onPress) return body;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => (pressed ? s.pressed : undefined)}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={({ pressed }) => (pressed ? s.pressed : undefined)}
+    >
       {body}
     </Pressable>
   );
@@ -161,6 +231,9 @@ export function AppMark({
  * Draws a tick ruler across `min..max`, shades the athlete's own band, and
  * marks the current reading. A bare number is a scoreboard; this is a reading.
  */
+/** Ticks, baseline and axis numbers, below the marker label. */
+const BAND_SCALE_HEIGHT = 44;
+
 export function MetricBand({
   value,
   min = 40,
@@ -195,61 +268,124 @@ export function MetricBand({
    */
   axisCaption?: string | null;
 }) {
-  const span = Math.max(1, max - min);
-  // Typed as a percentage template literal so it satisfies RN's DimensionValue.
-  const pct = (v: number): `${number}%` =>
-    `${Math.min(100, Math.max(0, ((v - min) / span) * 100))}%`;
-
   const hasBand =
     bandLow !== null && bandLow !== undefined && bandHigh !== null && bandHigh !== undefined;
   const hasReference = reference !== null && reference !== undefined;
 
-  // 40 · 60 · 80 · 100 — laid out with space-between rather than positioned,
-  // so the first and last labels sit flush with the ends of the scale.
+  /**
+   * The window has to contain everything it is asked to draw.
+   *
+   * `min`/`max` are a *default* window, not a clamp. A value or a band outside
+   * it means the default is wrong for this athlete, not that the reading should
+   * be pinned to the edge — which is what used to happen: a Form Index of 22
+   * against the 40–100 default rendered at exactly the same place as a 40, and
+   * the caption underneath cheerfully read "BAND 22–93" while the scale was
+   * incapable of drawing it. The band fill was worse: its width was computed
+   * raw while its position was clamped, so it rendered 118% wide and ran 56px
+   * off the side of the card and off the screen.
+   *
+   * Widening instead of clamping keeps rule 4 — every number is shown against
+   * the band it came from — true for every input rather than most of them.
+   */
+  // Rounded outward to the axis step so the labels stay round numbers.
+  const { from, to, ratio, pct, fillWidth } = bandScale(
+    min,
+    max,
+    [value, bandLow, bandHigh, reference],
+    axisEvery,
+  );
+
   const axisTicks: number[] = [];
-  for (let v = min; v <= max; v += axisEvery) axisTicks.push(v);
+  for (let v = from; v <= to; v += axisEvery) axisTicks.push(v);
+
+  /**
+   * Keep the label inside the track while the stem stays on the true value.
+   *
+   * The label is 60 wide and was centred with `marginLeft: -30`, so a reading
+   * at either end pushed it clean off the card. Near an edge it anchors to that
+   * edge instead; everywhere else it stays centred on the stem.
+   */
+  /**
+   * The scale is pushed down by however tall the marker label actually is.
+   *
+   * The label sat at `top: 0` with the ticks hard-coded to `top: 10`, which
+   * clears a 10pt label and nothing else. At the larger system text sizes the
+   * label grows and lands on top of the tick marks and the axis numbers. Its
+   * height is measured rather than assumed, so the scale moves with it.
+   */
+  const [labelHeight, setLabelHeight] = React.useState(13);
+  const scaleTop = labelHeight + 4;
+
+  const at = ratio(value);
+  const labelAnchor: ViewStyle =
+    at < 12
+      ? { left: 0, alignItems: "flex-start" }
+      : at > 88
+        ? { right: 0, alignItems: "flex-end" }
+        : { left: pct(value), marginLeft: -30, alignItems: "center" };
 
   return (
-    <View style={s.bandWrap}>
-      <View style={s.bandBaseline} />
+    <View
+      // Height comes from the same measurement as the scale offset: every child
+      // here is absolutely positioned, so the wrap cannot size itself.
+      style={[s.bandWrap, { height: scaleTop + BAND_SCALE_HEIGHT }]}
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={describeBand({ value, from, to, bandLow, bandHigh, reference, markerLabel })}
+    >
+      <View style={[s.bandBaseline, { top: scaleTop + 12 }]} />
 
       {hasBand && (
         <View
           style={[
             s.bandFill,
             {
+              top: scaleTop + 6,
               left: pct(bandLow),
-              width: `${Math.max(2, ((bandHigh - bandLow) / span) * 100)}%` as `${number}%`,
+              width: fillWidth(bandLow, bandHigh, 2),
             },
           ]}
         />
       )}
 
-      <View style={s.bandTicks}>
+      <View style={[s.bandTicks, { top: scaleTop }]}>
         {Array.from({ length: tickCount }, (_, i) => (
           <View key={i} style={[s.bandTick, { height: i % 4 === 0 ? 16 : 9 }]} />
         ))}
       </View>
 
-      {hasReference && <View style={[s.bandReference, { left: pct(reference) }]} />}
+      {hasReference && (
+        <View style={[s.bandReference, { top: scaleTop + 4, left: pct(reference) }]} />
+      )}
 
-      <View style={[s.bandMarker, { left: pct(value) }]}>
-        <Text style={s.bandMarkerLabel} numberOfLines={1}>
+      <View
+        // Spans the tick band only. A 32pt stem hung down into the axis row and
+        // struck through the "20", which is the number it is pointing at.
+        style={[s.bandMarkerStem, s.bandStemAbs, { top: scaleTop - 3, left: pct(value) }]}
+      />
+      <View
+        style={[s.bandMarkerLabelWrap, labelAnchor]}
+        pointerEvents="none"
+        onLayout={(e) => {
+          const h = Math.round(e.nativeEvent.layout.height);
+          setLabelHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev));
+        }}
+      >
+        <Text scale="label" style={s.bandMarkerLabel} numberOfLines={1}>
           {markerLabel}
         </Text>
-        <View style={s.bandMarkerStem} />
       </View>
 
       <View style={s.bandAxis}>
         {axisCaption ? (
           <>
-            <Text style={s.bandEnd}>{min}</Text>
+            <Text scale="label" style={s.bandEnd}>{from}</Text>
             <Text style={[s.bandEnd, { color: color.textFaint }]}>{axisCaption}</Text>
-            <Text style={s.bandEnd}>{max}</Text>
+            <Text scale="label" style={s.bandEnd}>{to}</Text>
           </>
         ) : (
           axisTicks.map((v) => (
-            <Text key={v} style={s.bandEnd}>
+            <Text key={v} scale="label" style={s.bandEnd}>
               {v}
             </Text>
           ))
@@ -257,6 +393,41 @@ export function MetricBand({
       </View>
     </View>
   );
+}
+
+/**
+ * What a screen reader hears instead of the drawing.
+ *
+ * The band *is* the product's output, so leaving it as an unlabelled pile of
+ * SVG made the one thing the app exists to say invisible to anyone using
+ * VoiceOver.
+ */
+function describeBand({
+  value,
+  from,
+  to,
+  bandLow,
+  bandHigh,
+  reference,
+  markerLabel,
+}: {
+  value: number;
+  from: number;
+  to: number;
+  bandLow?: number | null;
+  bandHigh?: number | null;
+  reference?: number | null;
+  markerLabel: string;
+}): string {
+  const parts = [`${markerLabel.toLowerCase()}: ${Math.round(value)} on a scale of ${from} to ${to}`];
+  if (bandLow != null && bandHigh != null) {
+    parts.push(`your usual range is ${Math.round(bandLow)} to ${Math.round(bandHigh)}`);
+    if (value < bandLow) parts.push("below your usual range");
+    else if (value > bandHigh) parts.push("above your usual range");
+    else parts.push("inside your usual range");
+  }
+  if (reference != null) parts.push(`previous session ${Math.round(reference)}`);
+  return parts.join(". ") + ".";
 }
 
 // ─── Mini band (row-scale ruler) ─────────────────────────────────────────────
@@ -285,21 +456,25 @@ export function MiniBand({
   width?: number;
 }) {
   if (value === null) return null;
-  const span = Math.max(1, max - min);
-  const pct = (v: number): `${number}%` =>
-    `${Math.min(100, Math.max(0, ((v - min) / span) * 100))}%`;
+  const { pct, fillWidth } = bandScale(min, max, [value, bandLow, bandHigh]);
   const hasBand = bandLow != null && bandHigh != null;
 
   return (
-    <View style={[s.miniBand, { width }]}>
+    <View
+      style={[s.miniBand, { width }]}
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={
+        hasBand
+          ? `${Math.round(value)}, against your usual ${Math.round(bandLow!)} to ${Math.round(bandHigh!)}`
+          : `${Math.round(value)}`
+      }
+    >
       {hasBand && (
         <View
           style={[
             s.miniBandFill,
-            {
-              left: pct(bandLow),
-              width: `${Math.max(4, ((bandHigh - bandLow) / span) * 100)}%` as `${number}%`,
-            },
+            { left: pct(bandLow), width: fillWidth(bandLow, bandHigh, 4) },
           ]}
         />
       )}
@@ -331,22 +506,26 @@ export function MicroAxis({
   /** Marker colour — ink for live readings, rust for a flagged one. */
   tone?: string;
 }) {
-  const span = Math.max(1, max - min);
-  const pct = (v: number): `${number}%` =>
-    `${Math.min(100, Math.max(0, ((v - min) / span) * 100))}%`;
+  const { pct, fillWidth } = bandScale(min, max, [value, bandLow, bandHigh]);
   const hasBand = bandLow != null && bandHigh != null;
 
   return (
-    <View style={s.microAxis}>
+    <View
+      style={s.microAxis}
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={
+        hasBand
+          ? `${Math.round(value)}, against your usual ${Math.round(bandLow!)} to ${Math.round(bandHigh!)}`
+          : `${Math.round(value)}`
+      }
+    >
       <View style={s.microAxisBase} />
       {hasBand && (
         <View
           style={[
             s.microAxisFill,
-            {
-              left: pct(bandLow),
-              width: `${Math.max(4, ((bandHigh - bandLow) / span) * 100)}%` as `${number}%`,
-            },
+            { left: pct(bandLow), width: fillWidth(bandLow, bandHigh, 4) },
           ]}
         />
       )}
@@ -411,19 +590,43 @@ export function RangeRuler({
   const bandLeft = safeMin ?? lo;
   const bandRight = safeMax ?? hi;
 
+  /**
+   * Clamped, like every other fill in this file.
+   *
+   * `hi` is capped at 185 but `bandRight` is not, so a band whose upper bound
+   * sits above that cap would render wider than its own track. It cannot happen
+   * today — `safeBandOf` on the server maps the profiles' 999 "no upper flag"
+   * sentinel to null before it ships — but that is a guarantee two modules away
+   * from here, and the same unclamped shape is what put a 118%-wide fill on the
+   * home screen.
+   */
+  const ratio = (v: number) => Math.min(100, Math.max(0, ((v - lo) / span) * 100));
+  const bandWidth = `${Math.max(
+    2,
+    Math.min(100 - ratio(bandLeft), ratio(bandRight) - ratio(bandLeft)),
+  )}%` as `${number}%`;
+
+  const description =
+    `Observed ${Math.round(observedMin)} to ${Math.round(observedMax)} degrees` +
+    (safeMin !== null && safeMax !== null
+      ? `, against a safe band of ${Math.round(safeMin)} to ${Math.round(safeMax)}`
+      : safeMax !== null
+        ? `, safe up to ${Math.round(safeMax)}`
+        : safeMin !== null
+          ? `, safe from ${Math.round(safeMin)}`
+          : ", with no band for this sport") +
+    (alarming ? ". Outside the band." : ".");
+
   return (
-    <View style={s.rangeRuler}>
+    <View
+      style={s.rangeRuler}
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={description}
+    >
       <View style={s.rangeRulerBase} />
       {(safeMin !== null || safeMax !== null) && (
-        <View
-          style={[
-            s.rangeRulerBand,
-            {
-              left: pct(bandLeft),
-              width: `${Math.max(2, ((bandRight - bandLeft) / span) * 100)}%` as `${number}%`,
-            },
-          ]}
-        />
+        <View style={[s.rangeRulerBand, { left: pct(bandLeft), width: bandWidth }]} />
       )}
       <View
         style={[
@@ -462,9 +665,13 @@ export function ReferenceRow({
   return (
     <View style={s.referenceRow}>
       {present.map((item) => (
-        <View key={item.label}>
-          <Text style={s.referenceLabel}>{item.label}</Text>
-          <Text style={s.referenceValue}>{item.value}</Text>
+        <View key={item.label} style={s.referenceItem}>
+          <Text scale="label" style={s.referenceLabel}>
+            {item.label}
+          </Text>
+          <Text scale="label" style={s.referenceValue}>
+            {item.value}
+          </Text>
         </View>
       ))}
     </View>
@@ -559,11 +766,22 @@ export function Prescription({
   return (
     <Pressable
       onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={onPress ? `${label}: ${text}` : undefined}
       style={({ pressed }) => [s.prescription, pressed && s.pressed]}
     >
       <View style={{ flex: 1 }}>
         <Label tone={color.onCobaltMuted}>{label}</Label>
-        <Text style={[compact ? T.prescriptionSmall : T.prescription, { marginTop: 7 }]}>
+        {/* Capped in the compact form. This renders in a dock floating over the
+            analysis screen, and at the larger system text sizes an uncapped
+            seven-line prescription covered more than half the viewport. The
+            full text is one tap away. */}
+        <Text
+          scale="display"
+          style={[compact ? T.prescriptionSmall : T.prescription, { marginTop: 7 }]}
+          numberOfLines={compact ? 3 : undefined}
+        >
           {text}
         </Text>
         {why && !compact && (
@@ -628,6 +846,12 @@ export function Chip({
   return (
     <Pressable
       onPress={onPress}
+      disabled={!onPress}
+      // Without the role a screen reader reads a chip as plain text, and
+      // without the state it cannot tell a chosen sport from an unchosen one —
+      // which is the entire interaction on the onboarding screens.
+      accessibilityRole="button"
+      accessibilityState={{ selected, disabled: !onPress }}
       style={({ pressed }) => [
         s.chip,
         selected ? s.chipSelected : s.chipIdle,
@@ -655,6 +879,9 @@ export function MonoChip({
   return (
     <Pressable
       onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected, disabled: !onPress }}
       style={({ pressed }) => [
         s.monoChip,
         { backgroundColor: selected ? color.ink : color.card },
@@ -692,7 +919,14 @@ export function PrimaryButton({
 }) {
   return (
     <Pressable
-      onPress={disabled ? undefined : onPress}
+      // `disabled` rather than swapping onPress for undefined: the old form
+      // dimmed the button to 0.4 but left it focusable and announced as
+      // enabled, so a keyboard or VoiceOver user could tab to the app's main
+      // button, activate it, and get nothing.
+      disabled={disabled}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
       style={({ pressed }) => [
         s.primaryBtn,
         { backgroundColor: tone, opacity: disabled ? 0.4 : 1 },
@@ -816,6 +1050,88 @@ export function TabIcon({
   );
 }
 
+/**
+ * Close mark.
+ *
+ * Drawn rather than the literal "✕" character, which pricing used at 15px: that
+ * codepoint has no consistent weight, size or baseline across platforms and it
+ * sat next to a set of hand-drawn SVG glyphs that all agree with each other.
+ */
+/**
+ * The circular back control, shared by every screen that has one.
+ *
+ * There were five hand-rolled copies of this — signup, login, forgot-password,
+ * reset-password and onboarding — each a 34pt `Pressable` with a chevron, no
+ * role and no label, so it announced as nothing and was the smallest control
+ * on screens whose only other control is a full-width button. One component
+ * means fixing it once.
+ */
+export function BackButton({
+  onPress,
+  label = "Back",
+  tone = color.textPrimary,
+}: {
+  onPress: () => void;
+  label?: string;
+  tone?: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={10}
+      style={({ pressed }) => [s.backButton, pressed && s.pressed]}
+    >
+      <Chevron direction="left" tone={tone} size={16} />
+    </Pressable>
+  );
+}
+
+/**
+ * Alert mark — a failed measurement, a state that needs attention.
+ *
+ * Replaces `@expo/vector-icons`' Feather "alert-circle" on the measure screen,
+ * which was the only icon-font glyph left in an app whose marks are all drawn
+ * SVG at matched weights.
+ */
+export function AlertGlyph({ tone = color.rust, size = 38 }: { tone?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx={12} cy={12} r={9.2} stroke={tone} strokeWidth={1.9} fill="none" />
+      <Line x1={12} y1={7.4} x2={12} y2={13} stroke={tone} strokeWidth={1.9} strokeLinecap="round" />
+      <Circle cx={12} cy={16.4} r={1.1} fill={tone} />
+    </Svg>
+  );
+}
+
+export function CloseGlyph({ tone = color.textPrimary, size = 15 }: { tone?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Line x1={5} y1={5} x2={19} y2={19} stroke={tone} strokeWidth={2.4} strokeLinecap="round" />
+      <Line x1={19} y1={5} x2={5} y2={19} stroke={tone} strokeWidth={2.4} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/**
+ * Expand / collapse mark, for the skeleton screen's orientation toggle.
+ *
+ * That control was the literal "⤢" character rendered at **9px** in a 34pt
+ * button — effectively invisible, and the only way to get the player into
+ * landscape.
+ */
+export function ExpandGlyph({ tone = color.textSecondary, size = 16 }: { tone?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Polyline points="14 4 20 4 20 10" stroke={tone} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <Polyline points="10 20 4 20 4 14" stroke={tone} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <Line x1={20} y1={4} x2={13} y2={11} stroke={tone} strokeWidth={2.2} strokeLinecap="round" />
+      <Line x1={4} y1={20} x2={11} y2={13} stroke={tone} strokeWidth={2.2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export function PlusGlyph({ tone = color.onCobalt, size = 20 }: { tone?: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -864,7 +1180,10 @@ export function PlayGlyph({ tone = color.ink, size = 14 }: { tone?: string; size
  */
 export function Sparkline({
   values,
-  width = 306,
+  // A default that fitted one screen. Callers should measure and pass a width
+  // — both do now — but if one forgets, 100% of whatever holds it is a far
+  // better guess than a fixed 306 that overflows every phone under ~390pt.
+  width,
   height = 132,
   bandLow,
   bandHigh,
@@ -875,8 +1194,9 @@ export function Sparkline({
   bandLow?: number | null;
   bandHigh?: number | null;
 }) {
-  if (values.length < 2) {
-    return <View style={{ width, height, justifyContent: "center" }} />;
+  // Nothing to draw, and nothing to draw it in.
+  if (values.length < 2 || !width || width <= 0) {
+    return <View style={{ width: width ?? "100%", height, justifyContent: "center" }} />;
   }
 
   const lo = Math.min(...values, bandLow ?? Infinity);
@@ -884,7 +1204,16 @@ export function Sparkline({
   const span = Math.max(1, hi - lo);
   const pad = 12;
 
-  const x = (i: number) => (i / (values.length - 1)) * width;
+  /**
+   * The horizontal inset exists because the last point carries a marker.
+   *
+   * `x` used to run flush from 0 to `width`, while the final reading is drawn
+   * as a 10pt halo around a 5pt dot — so half of that halo sat outside the SVG
+   * and was clipped by its own viewport, on every sparkline in the app. The
+   * clipped dot is the most recent session, the one the eye goes to first.
+   */
+  const xPad = 11;
+  const x = (i: number) => xPad + (i / (values.length - 1)) * Math.max(1, width - xPad * 2);
   const y = (v: number) => pad + (1 - (v - lo) / span) * (height - pad * 2);
 
   const d = values.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
@@ -892,7 +1221,24 @@ export function Sparkline({
   const bandTop = bandHigh != null ? y(bandHigh) : null;
   const bandBottom = bandLow != null ? y(bandLow) : null;
 
+  // What VoiceOver hears instead of the line. A trend drawn as pure SVG is
+  // silent, and the trend is most of what this screen is for.
+  const first = values[0]!;
+  const last = values.at(-1)!;
+  const move = Math.round(last - first);
+  const description =
+    `Trend across ${values.length} sessions. ` +
+    `From ${Math.round(first)} to ${Math.round(last)}, ` +
+    (move === 0 ? "no overall change" : move > 0 ? `up ${move}` : `down ${Math.abs(move)}`) +
+    (bandLow != null && bandHigh != null
+      ? `. Your usual range is ${Math.round(bandLow)} to ${Math.round(bandHigh)}.`
+      : ".");
+
   return (
+    // The accessibility props sit on a wrapping View, not on <Svg>:
+    // react-native-svg forwards unknown props to the DOM node on web, and
+    // `accessible={true}` on an <svg> element is a React DOM warning.
+    <View accessible accessibilityRole="image" accessibilityLabel={description}>
     <Svg width={width} height={height}>
       {[0.08, 0.4, 0.72].map((f, i) => (
         <Line
@@ -919,6 +1265,7 @@ export function Sparkline({
       <Circle cx={x(values.length - 1)} cy={y(values[values.length - 1]!)} r={10} fill={color.cobalt} fillOpacity={0.16} />
       <Circle cx={x(values.length - 1)} cy={y(values[values.length - 1]!)} r={5} fill={color.cobalt} />
     </Svg>
+    </View>
   );
 }
 
@@ -933,6 +1280,263 @@ export function Screen({
   style?: StyleProp<ViewStyle>;
 }) {
   return <View style={[s.screen, style]}>{children}</View>;
+}
+
+/**
+ * The bottom sheet used for every modal form in the app.
+ *
+ * ── What the four hand-rolled copies each got wrong ─────────────────────────
+ * `analyze` had one and `profile` had three. Between them:
+ *
+ *  - **Three had no `onRequestClose`.** That is the Android hardware back
+ *    button and the web Escape key. The worst offender was the delete-account
+ *    sheet: the most dangerous screen in the app, and back did nothing.
+ *  - **None wrapped its inputs in a `KeyboardAvoidingView`.** The name editor,
+ *    the new-session title field and the delete-account confirmation all put
+ *    their submit button under the keyboard on a short device.
+ *  - **The header was duplicated with different padding** in the two files, so
+ *    the same sheet sat 20pt lower depending on which screen opened it.
+ *  - **State survived closing.** `DeleteAccountSheet` never cleared `password`
+ *    or the typed "DELETE", so reopening it showed a pre-armed form with a
+ *    password still in memory.
+ *
+ * The last one is structural rather than a habit: the body is not rendered at
+ * all while the sheet is closed, so a closed sheet holds no state, runs no
+ * effects and keeps no typed password in memory.
+ *
+ * **That only covers state declared inside the body.** A wrapper component that
+ * holds state and *returns* a `Sheet` is not unmounted by this — the caller has
+ * to stop rendering the wrapper. `profile.tsx` does exactly that for the
+ * delete-account sheet, and the comment there explains why.
+ */
+export function Sheet({
+  visible,
+  onClose,
+  title,
+  children,
+  scroll = true,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  /** Small-caps sheet title, e.g. "NEW SESSION". */
+  title: string;
+  children: React.ReactNode;
+  /** Set false when the body manages its own scrolling. */
+  scroll?: boolean;
+}) {
+  const body = scroll ? (
+    <ScrollView
+      contentContainerStyle={{ padding: GUTTER, paddingBottom: 48 }}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      {children}
+    </ScrollView>
+  ) : (
+    children
+  );
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <Screen>
+        <View style={s.sheetHead}>
+          <Pressable
+            onPress={onClose}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            style={s.sheetCancel}
+          >
+            <Text style={[T.buttonSmall, { color: color.textMuted }]}>Cancel</Text>
+          </Pressable>
+          <Label>{title}</Label>
+          {/* Balances the cancel control so the title stays optically centred. */}
+          <View style={s.sheetCancel} />
+        </View>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          {/* Not rendered while closed: a hidden Modal still mounts its
+              children, so an invisible sheet would keep running effects and
+              holding whatever was last typed into it. */}
+          {visible ? body : null}
+        </KeyboardAvoidingView>
+      </Screen>
+    </Modal>
+  );
+}
+
+/**
+ * A placeholder block for a loading state.
+ *
+ * ── Why not a spinner ───────────────────────────────────────────────────────
+ * The analysis screen and the pricing screen both showed a single centred
+ * `ActivityIndicator` on an otherwise blank page. A dot in the middle of
+ * nothing communicates "wait" and nothing else: it does not say how much is
+ * coming, it does not hold the layout, and when the content lands the whole
+ * page jumps.
+ *
+ * Blocks in the shape of the content that is loading answer all three. They are
+ * deliberately static — a shimmer animation would be motion for its own sake on
+ * a screen whose whole argument is that it does not decorate.
+ */
+export function SkeletonBlock({
+  height,
+  width = "100%",
+  style,
+}: {
+  height: number;
+  width?: number | `${number}%`;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View
+      style={[s.skeleton, { height, width }, style]}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    />
+  );
+}
+
+/**
+ * An opaque strip behind the status bar, with a short fade below it.
+ *
+ * ── Why ─────────────────────────────────────────────────────────────────────
+ * Every scrolling screen here runs its content to the top edge, so text passes
+ * under the status bar as you scroll. That is ordinary iOS behaviour and most
+ * apps live with it — but Caliper's paper is light and its status bar is dark,
+ * so a headline scrolling past renders dark-on-dark straight through the clock.
+ * Both become unreadable at once. On the welcome screen the word "measured."
+ * sits directly behind the time.
+ *
+ * The strip is paper, the same colour as the page, so it is invisible until
+ * something scrolls beneath it. The fade below keeps the edge from reading as
+ * a hard line across the screen.
+ *
+ * Only needed on screens whose scroll view reaches the top edge. Screens with a
+ * fixed header outside the scroll view (auth, pricing, onboarding, chat) do not
+ * need it.
+ */
+export function StatusBarScrim() {
+  const insets = useSafeAreaInsets();
+  return (
+    <View pointerEvents="none" style={[s.statusScrim, { height: insets.top }]}>
+      <View style={{ flex: 1, backgroundColor: color.paper }} />
+      <FooterFade height={14} bands={6} from="bottom" />
+    </View>
+  );
+}
+
+/**
+ * The paper fade that sits above a floating footer.
+ *
+ * A dock or a footer bar that floats over a scroll view slices the content at
+ * its top edge: a line of prose is cut in half mid-stroke and the page looks
+ * broken rather than layered. A short gradient from transparent to paper lets
+ * the text dissolve into the footer instead.
+ *
+ * Rendered *behind* the footer's own content and above the scroll view, so it
+ * never intercepts a touch.
+ */
+export function FooterFade({
+  height = 28,
+  bands = 8,
+  tone = color.paper,
+  from = "top",
+}: {
+  height?: number;
+  bands?: number;
+  /** The surface being faded into. Paper by default; ink for the dark hero. */
+  tone?: string;
+  /** "top" fades content into a footer below; "bottom" into a header above. */
+  from?: "top" | "bottom";
+}) {
+  /**
+   * Drawn as a short opacity ramp rather than with `expo-linear-gradient`.
+   *
+   * The gradient version crashed the app on device:
+   *
+   *     View config getter callback for component
+   *     `ViewManagerAdapter_ExpoLinearGradient` must be a function
+   *
+   * `expo-linear-gradient` is declared in package.json but had never been
+   * imported by any screen, so its native view manager was never linked into
+   * the iOS build. react-native-web implements it in JavaScript, which is why
+   * the browser build rendered it perfectly and the simulator did not.
+   *
+   * Taking a native dependency — and a 30-45 minute rebuild — for a 28pt
+   * cosmetic fade is the wrong trade. Eight stacked bands are indistinguishable
+   * at this size and need nothing native.
+   */
+  return (
+    <View
+      pointerEvents="none"
+      style={[s.footerFade, from === "top" ? { height, top: -height } : { height, bottom: 0 }]}
+    >
+      {Array.from({ length: bands }, (_, i) => {
+        // Ease in, so the far end of the ramp is imperceptible rather than a
+        // visible first step.
+        const step = Math.pow((i + 1) / bands, 2);
+        return (
+          <View
+            key={i}
+            style={{
+              height: height / bands,
+              backgroundColor: tone,
+              opacity: from === "top" ? step : 1 - step + 1 / bands,
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * Reserve exactly as much room as a floating footer actually occupies.
+ *
+ * ── Why this is a hook and not a constant ───────────────────────────────────
+ * Screens with an absolutely-positioned footer used to reserve a hand-picked
+ * number at the end of their scroll: `paddingBottom: 200` on onboarding,
+ * `insets.bottom + 120` on the analysis screen. Both were measured once, by
+ * eye, against one example of the footer's content.
+ *
+ * Then the content grew. The analysis dock holds a `Prescription` whose text
+ * wraps; with a three-line drill it renders **164pt tall against 120pt of
+ * reserved space**, and the last line of the last drill sits under it with no
+ * scroll left to recover — permanently unreadable. Onboarding's footer carries
+ * a summary line that reads "8 picked · Squat, Deadlift, …" and wraps past its
+ * 200pt allowance the moment someone picks a few sports.
+ *
+ * A number cannot track content it has never seen. Measuring can.
+ *
+ *   const [clearance, onFooterLayout] = useFooterClearance();
+ *   <ScrollView contentContainerStyle={{ paddingBottom: clearance }} />
+ *   <View style={s.dock} onLayout={onFooterLayout} />
+ *
+ * `gap` is the breathing room between the last content and the footer's top
+ * edge. `fallback` is used before the first layout pass so the first frame is
+ * not visibly short.
+ */
+export function useFooterClearance(
+  { gap = 16, fallback = 120 }: { gap?: number; fallback?: number } = {},
+): [number, (e: LayoutChangeEvent) => void] {
+  const [height, setHeight] = React.useState<number | null>(null);
+
+  const onLayout = React.useCallback((e: LayoutChangeEvent) => {
+    const next = Math.round(e.nativeEvent.layout.height);
+    // Only commit real changes: re-setting an identical height on every layout
+    // pass would re-render the screen forever.
+    setHeight((prev) => (prev === null || Math.abs(prev - next) > 1 ? next : prev));
+  }, []);
+
+  return [(height ?? fallback) + gap, onLayout];
 }
 
 /** Avatar: the athlete's photo when one is set, their initials otherwise. */
@@ -975,8 +1579,37 @@ const s = StyleSheet.create({
 
   pressed: { opacity: 0.82 },
 
+  footerFade: { position: "absolute", left: 0, right: 0 },
+  statusScrim: { position: "absolute", left: 0, right: 0, top: 0, zIndex: 5 },
+
+  skeleton: { backgroundColor: "rgba(16,19,18,0.055)", borderRadius: 12 },
+
+  sheetHead: {
+    paddingHorizontal: GUTTER,
+    paddingTop: 20,
+    paddingBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sheetCancel: { minWidth: 56, minHeight: 44, justifyContent: "center" },
+
+  backButton: {
+    // 44: the platform minimum, met by the control itself rather than by
+    // hitSlop. hitSlop still helps on device, but it does not exist on the web
+    // build and it is invisible to any audit that measures what is rendered.
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: color.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   // Band
-  bandWrap: { marginTop: 24, height: 52, position: "relative" },
+  // minHeight, not height: the marker label and the axis numbers both scale
+  // with the system text size, and a fixed 52 made them collide with the ticks.
+  bandWrap: { marginTop: 28, minHeight: 58, position: "relative" },
   bandBaseline: {
     position: "absolute",
     left: 0,
@@ -1012,18 +1645,19 @@ const s = StyleSheet.create({
     backgroundColor: "rgba(16,19,18,0.32)",
   },
   // Wide enough for "THIS CLIP", the longest marker label — 44 wrapped it.
-  bandMarker: {
-    position: "absolute",
-    top: 0,
-    alignItems: "center",
-    gap: 3,
-    marginLeft: -30,
-    width: 60,
-  },
-  bandMarkerStem: { width: 3, height: 32, backgroundColor: color.cobalt, borderRadius: 2 },
+  /**
+   * The label rides above the stem but is anchored, not centred, near the ends
+   * of the track — a centred 60-wide label at 0% hung 30px off the card.
+   */
+  // 72, not 60: "THIS CLIP" at 10px mono with 1pt tracking overran a 60pt box
+  // and rendered as "THIS CL…".
+  bandMarkerLabelWrap: { position: "absolute", top: 0, width: 72 },
+  /** The stem marks the true value and is never nudged to fit the label. */
+  bandStemAbs: { position: "absolute", marginLeft: -1.5 },
+  bandMarkerStem: { width: 3, height: 26, backgroundColor: color.cobalt, borderRadius: 2 },
   bandMarkerLabel: {
     fontFamily: font.monoBold,
-    fontSize: 9,
+    fontSize: 10,
     letterSpacing: 1,
     color: color.cobalt,
   },
@@ -1031,26 +1665,31 @@ const s = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: -4,
+    bottom: 0,
     flexDirection: "row",
     justifyContent: "space-between",
   },
   bandEnd: {
     fontFamily: font.mono,
-    fontSize: 9,
+    fontSize: 11,
     color: color.textGhost,
   },
   referenceRow: {
     flexDirection: "row",
+    // Wraps. At large system text sizes three fixed columns ran past the card
+    // and clipped "BEST" to "BE"; wrapping stacks them instead of hiding them.
+    flexWrap: "wrap",
     gap: 22,
+    rowGap: 14,
     marginTop: 20,
     paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: color.ruleFaint,
   },
+  referenceItem: { flexShrink: 1 },
   referenceLabel: {
     fontFamily: font.mono,
-    fontSize: 9,
+    fontSize: 11,
     letterSpacing: 1.2,
     color: color.textGhost,
   },
@@ -1222,10 +1861,26 @@ const s = StyleSheet.create({
   },
 
   // Chips
-  chip: { borderRadius: radius.pill, paddingHorizontal: 16, paddingVertical: 11 },
+  // minHeight, not padding: the chip must clear 44pt for a fingertip, but it
+  // must also grow rather than clip when the label wraps or the system text
+  // size is turned up. Padding alone did neither — chips were 40pt and mono
+  // chips 27pt.
+  chip: {
+    borderRadius: radius.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    minHeight: 44,
+    justifyContent: "center",
+  },
   chipIdle: { backgroundColor: color.card },
   chipSelected: { backgroundColor: color.ink },
-  monoChip: { borderRadius: radius.pill, paddingHorizontal: 13, paddingVertical: 7 },
+  monoChip: {
+    borderRadius: radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    minHeight: 44,
+    justifyContent: "center",
+  },
 
   // Buttons
   primaryBtn: {
@@ -1241,3 +1896,4 @@ const s = StyleSheet.create({
 });
 
 export { GUTTER, TAB_BAR };
+export { bandScale } from "@/utils/bandScale";

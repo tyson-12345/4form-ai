@@ -25,7 +25,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
-  Text,
   Pressable,
   ActivityIndicator,
   Platform,
@@ -35,12 +34,22 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { WebView } from "react-native-webview";
 import * as ScreenOrientation from "expo-screen-orientation";
 import * as FileSystem from "expo-file-system/legacy";
 
-import { Screen, Label, Card, Chevron, MicroAxis, PrimaryButton } from "@/components/caliper";
-import { color, type as T, radius, GUTTER, bandColor } from "@/constants/caliper";
+import {
+  Card,
+  Chevron,
+  ExpandGlyph,
+  Label,
+  MicroAxis,
+  PrimaryButton,
+  Screen,
+  Text,
+} from "@/components/caliper";
+import { color, type as T, radius, GUTTER, bandColor, WEB_TOP_INSET } from "@/constants/caliper";
 import { profileForSport, jointKind, safeBand } from "@/constants/riskProfiles";
 import { displaySport } from "@/constants/sports";
 import { analyses as analysesApi } from "@/lib/api";
@@ -128,9 +137,12 @@ export default function SkeletonScreen() {
     | { kind: "error"; message: string };
 
   const [stage, setStage] = useState<Stage>({ kind: "loading" });
+  // Bumped by the retry button; the staging effect below depends on it, so a
+  // failed prepare can be re-attempted without leaving the screen.
+  const [reloadKey, setReloadKey] = useState(0);
 
   const isLandscape = screenW > screenH;
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? WEB_TOP_INSET : insets.top;
 
   // ── Load the clip and build the tracker document ──
   useEffect(() => {
@@ -190,7 +202,7 @@ export default function SkeletonScreen() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, reloadKey]);
 
   // ── Orientation ──
   async function toggleOrientation() {
@@ -357,6 +369,15 @@ export default function SkeletonScreen() {
             <Text style={[T.bodySmall, { textAlign: "center", color: color.onInkFaint }]}>
               {stage.message}
             </Text>
+            {/* There was no way out of this state but the back button. */}
+            <View style={{ alignSelf: "stretch", marginTop: 8 }}>
+              <PrimaryButton
+                label="Try again"
+                tone={color.cobalt}
+                labelTone={color.onCobalt}
+                onPress={() => setReloadKey((n) => n + 1)}
+              />
+            </View>
           </>
         )}
       </View>
@@ -366,7 +387,13 @@ export default function SkeletonScreen() {
     <Screen>
       {!isLandscape && (
         <View style={[s.header, { paddingTop: topPad + 8 }]}>
-          <Pressable onPress={() => router.back()} style={s.headerBtn} hitSlop={8}>
+          <Pressable
+            onPress={() => router.back()}
+            style={s.headerBtn}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
             <Chevron direction="left" tone={color.textSecondary} size={16} />
           </Pressable>
           <View style={{ flex: 1, alignItems: "center" }}>
@@ -381,8 +408,14 @@ export default function SkeletonScreen() {
             )}
           </View>
           {stage.kind === "ready" ? (
-            <Pressable onPress={toggleOrientation} style={s.headerBtn} hitSlop={8}>
-              <Text style={[T.measuredSmall, { color: color.textSecondary }]}>⤢</Text>
+            <Pressable
+              onPress={toggleOrientation}
+              style={s.headerBtn}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={isLandscape ? "Switch to portrait" : "Switch to landscape"}
+            >
+              <ExpandGlyph tone={color.textSecondary} size={16} />
             </Pressable>
           ) : (
             <View style={s.headerBtn} />
@@ -413,6 +446,8 @@ export default function SkeletonScreen() {
           </View>
           <Pressable
             onPress={toggleOrientation}
+            accessibilityRole="button"
+            accessibilityLabel="Switch to portrait"
             style={[
               s.portraitBtn,
               { top: insets.top + 14, right: insets.right + 14 },
@@ -488,7 +523,7 @@ export default function SkeletonScreen() {
                           {label}
                         </Text>
                         <Text
-                          style={[
+                          scale="display" style={[
                             T.metricMedium,
                             { marginTop: 3 },
                             flagged && { color: color.rust },
@@ -589,9 +624,9 @@ const s = StyleSheet.create({
     gap: 12,
   },
   headerBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: color.card,
     alignItems: "center",
     justifyContent: "center",

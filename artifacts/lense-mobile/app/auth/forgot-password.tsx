@@ -9,7 +9,6 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
   Pressable,
@@ -20,7 +19,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
-import { Screen, Label, PrimaryButton, Chevron, Check } from "@/components/caliper";
+import {
+  BackButton,
+  Check,
+  Label,
+  PrimaryButton,
+  Screen,
+  Text,
+} from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { auth, NetworkError } from "@/lib/api";
 
@@ -60,9 +66,7 @@ export default function ForgotPasswordScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={[s.head, { paddingTop: insets.top + 14 }]}>
-          <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
-            <Chevron direction="left" tone={color.textPrimary} size={16} />
-          </Pressable>
+          <BackButton onPress={() => router.back()} />
         </View>
 
         <ScrollView
@@ -74,7 +78,7 @@ export default function ForgotPasswordScreen() {
               <View style={s.sentGlyph}>
                 <Check tone={color.cobalt} size={22} />
               </View>
-              <Text style={[T.headline, { marginTop: 20 }]}>Check your email.</Text>
+              <Text scale="display" style={[T.headline, { marginTop: 20 }]}>Check your email.</Text>
               <Text style={[T.body, { marginTop: 14 }]}>
                 If that email is registered, you will receive a reset link. It expires in 30
                 minutes and can only be used once.
@@ -101,7 +105,7 @@ export default function ForgotPasswordScreen() {
           ) : (
             <>
               <Label>RESET</Label>
-              <Text style={[T.headline, { marginTop: 10 }]}>
+              <Text scale="display" style={[T.headline, { marginTop: 10 }]}>
                 Forgot your{"\n"}password?
               </Text>
               <Text style={[T.body, { marginTop: 14 }]}>
@@ -146,14 +150,6 @@ export default function ForgotPasswordScreen() {
 
 const s = StyleSheet.create({
   head: { paddingHorizontal: GUTTER, paddingBottom: 10 },
-  backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: color.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   input: {
     backgroundColor: color.card,
     borderRadius: radius.cardSmall,

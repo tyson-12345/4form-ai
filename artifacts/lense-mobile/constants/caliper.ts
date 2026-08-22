@@ -10,8 +10,18 @@
  *     ink or paper instead. Cobalt is never used for a score, a chart line, or
  *     a decorative accent.
  *
- *  2. **Rust is reserved for flags.** A measured joint outside its band. Never
- *     used for errors, destructive buttons, or emphasis.
+ *  2. **Rust is the alarm colour, and nothing else.** A measured joint outside
+ *     its band, a destructive action, a failed operation. These read as one
+ *     meaning — "something here is wrong" — so they share one colour rather
+ *     than inventing a second red that would compete with it.
+ *
+ *     What rust is still never used for is *emphasis*: an informational notice,
+ *     a highlight, a decorative rule. If nothing is wrong, it is not rust.
+ *
+ *     (Until 2026-08-22 this rule read "reserved for flags, never for errors or
+ *     destructive buttons" while six screens used it for exactly that. The rule
+ *     lost — an app needs an alarm colour — so the rule now says what the app
+ *     does, and the audit removed the genuinely decorative uses.)
  *
  *  3. **Anything measured is set in mono.** Angles, percentages, frame counts,
  *     dates, bands. If a number came from a measurement, it is JetBrains Mono.
@@ -40,26 +50,81 @@ export const color = {
 
   /** Reserved: the one thing to do next. Never decorative. */
   cobalt: "#2436E8",
-  /** Reserved: a measured value outside its band. Never an error colour. */
-  rust: "#C2542E",
+  /**
+   * The alarm colour — a measured value outside its band, a destructive
+   * action, a failure. Darkened from #C2542E on 2026-08-22: the original was
+   * 3.86:1 on paper, so every "COULDN'T MEASURE" and every validation message
+   * failed AA. This is 4.94:1 on paper and 5.84:1 on card, and reads as the
+   * same rust.
+   */
+  rust: "#A84726",
 
-  /** Text tiers, darkest to lightest. */
+  /**
+   * The flag colour on ink surfaces — the analysis hero, the skeleton player.
+   *
+   * A single mid-tone rust cannot clear 4.5:1 on both paper and ink; that is
+   * arithmetic, not a preference. #A84726 is 4.94:1 on paper and 3.20:1 on ink,
+   * and the original #C2542E failed both (3.86 and 4.09). So the flag has a
+   * dark-ground variant, exactly as `onInk` and `onCobalt` already do for text.
+   * This is 5.15:1 on ink and reads as the same rust.
+   *
+   * Use `rust` on paper and card. Use this on ink.
+   */
+  rustOnInk: "#D2683F",
+
+  /**
+   * Text tiers, darkest to lightest. **Every tier meets WCAG AA (4.5:1) on
+   * paper, card and paperDeep.** Do not lighten one without re-checking; the
+   * harness in `e2e/audit.js` fails the build of trust if you do.
+   *
+   * ── Why there are four real steps and not six ────────────────────────────
+   * The palette used to run to #8A8D89 (2.84:1 on paper) and #A0A39F (2.16:1).
+   * Those were not a hierarchy, they were unreadable text — and they carried
+   * every small-caps label, every mono stamp and every "not measured" dash in
+   * the app, at 9–10px.
+   *
+   * Forced to 4.5:1, the bottom tiers converge: the lightest compliant grey on
+   * this paper is about #676A66, and anything claiming to be lighter is either
+   * the same colour or illegible. So the ladder is four separated steps
+   * (15.8 / 7.7 / 6.0 / 4.6 on paper) and the finer distinctions the old tiers
+   * pretended to make are carried where they belong — by size, weight and
+   * case. `muted`, `faint` and `ghost` are kept as names because the call
+   * sites read better for them, but they are deliberately close: the design
+   * difference between them is not colour.
+   *
+   * Measured ratios (paper #EDECE7 / card #FFFFFF):
+   *   textPrimary   15.80 / 18.68
+   *   textBody       7.74 /  9.15
+   *   textSecondary  5.96 /  7.05
+   *   textMuted      5.23 /  6.19
+   *   textFaint      4.85 /  5.73
+   *   textGhost      4.57 /  5.40
+   *
+   * `paperDeep` is deliberately not in that list: it is a surface, not a text
+   * ground — it backs progress tracks and badges, never prose. If that changes,
+   * re-check, because none of the three light tiers clears 4.5:1 against it.
+   */
   textPrimary: "#101312",
   textBody: "#454946",
   textSecondary: "#55595E",
-  textMuted: "#6B6F6C",
-  textFaint: "#8A8D89",
-  textGhost: "#A0A39F",
+  textMuted: "#5F625E",
+  textFaint: "#646763",
+  textGhost: "#686B67",
 
   /** On-dark text, for ink surfaces. */
   onInk: "#EDECE7",
   onInkMuted: "#75787A",
   onInkFaint: "rgba(237,236,231,0.55)",
 
-  /** On-cobalt text. */
+  /**
+   * On-cobalt text. The muted and body tiers were 0.6 and 0.72 alpha, which
+   * composite to 3.65:1 and 4.64:1 against cobalt — the first fails AA, and it
+   * was carrying the "DO THIS NEXT" label on the prescription card. Raised so
+   * both clear 4.5:1.
+   */
   onCobalt: "#FFFFFF",
-  onCobaltMuted: "rgba(255,255,255,0.6)",
-  onCobaltBody: "rgba(255,255,255,0.72)",
+  onCobaltMuted: "rgba(255,255,255,0.78)",
+  onCobaltBody: "rgba(255,255,255,0.86)",
 
   /** Hairlines and separators. */
   rule: "rgba(16,19,18,0.10)",
@@ -234,18 +299,26 @@ export const type = {
     lineHeight: 21,
     color: color.textPrimary,
   },
-  /** Small-caps section label — "FORM INDEX", "WHAT THE TAPE SHOWS". */
+  /**
+   * Small-caps section label — "FORM INDEX", "WHAT THE TAPE SHOWS".
+   *
+   * 11px, not 10. Small caps in mono with 1.6 tracking already reads smaller
+   * than its nominal size, and at 10px against the (now compliant, therefore
+   * darker) faint tier it was the smallest text in the app carrying real
+   * meaning. The extra pixel costs nothing in layout and is the difference
+   * between "quiet" and "squinting".
+   */
   label: {
     fontFamily: font.monoBold,
-    fontSize: 10,
-    lineHeight: 13,
+    fontSize: 11,
+    lineHeight: 14,
     letterSpacing: 1.6,
     color: color.textFaint,
   },
   labelTight: {
     fontFamily: font.mono,
-    fontSize: 10,
-    lineHeight: 13,
+    fontSize: 11,
+    lineHeight: 14,
     letterSpacing: 1.2,
     color: color.textFaint,
   },
@@ -256,10 +329,17 @@ export const type = {
     lineHeight: 15,
     color: color.textPrimary,
   },
+  /**
+   * The smallest measured stamp — provenance lines, axis ends, weekday marks.
+   *
+   * Was 9px. Nine-pixel type is below the floor for anything a user has to
+   * read, and this style carries the frame counts and the "not measured" dash,
+   * which are content rather than decoration.
+   */
   measuredSmall: {
     fontFamily: font.mono,
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 11,
+    lineHeight: 14,
     letterSpacing: 1,
     color: color.textGhost,
   },
@@ -286,6 +366,21 @@ export const type = {
 
 /** Screen gutter. Every screen uses this; nothing sits closer to the edge. */
 export const GUTTER = 22;
+
+/**
+ * Stand-in for the top safe-area inset on the web build.
+ *
+ * `react-native-safe-area-context` reports zero insets in a browser, so a
+ * screen that pads by `insets.top` puts its title flush against the top of the
+ * viewport. Two screens carried a bare `Platform.OS === "web" ? 67 : insets.top`
+ * with no explanation of where 67 came from.
+ *
+ * This is the height of a status bar plus a notch on a modern iPhone, which is
+ * what the layout is really compensating for. The browser build is a
+ * development surface, so an approximation is the right answer — but a named
+ * approximation, not a magic number.
+ */
+export const WEB_TOP_INSET = 59;
 
 export const radius = {
   /** Primary content cards. */

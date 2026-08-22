@@ -16,7 +16,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TextInput,
@@ -25,13 +24,22 @@ import {
   KeyboardAvoidingView,
   Keyboard,
   Platform,
+  type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
 import Svg, { Path, Polyline } from "react-native-svg";
 
-import { Screen, Label, Card, Chevron, PlayGlyph } from "@/components/caliper";
+import {
+  Card,
+  Chevron,
+  Label,
+  PlayGlyph,
+  Screen,
+  Text,
+} from "@/components/caliper";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
 import {
   chat as chatApi,
@@ -188,7 +196,7 @@ export default function CoachScreen() {
       <Screen>
         <View style={[s.head, { paddingTop: insets.top + 14 }]}>
           <View>
-            <Text style={T.screenTitle}>Atlas</Text>
+            <Text scale="display" style={T.screenTitle}>Atlas</Text>
             <Label style={{ marginTop: 2 }}>YOUR AI COACH</Label>
           </View>
         </View>
@@ -213,6 +221,7 @@ export default function CoachScreen() {
             )}
             <Pressable
               onPress={() => router.push("/pricing")}
+              accessibilityRole="button"
               style={({ pressed }) => [s.lockCta, pressed && { opacity: 0.85 }]}
             >
               <Text style={[T.button, { color: color.onCobalt }]}>
@@ -234,7 +243,7 @@ export default function CoachScreen() {
       >
         <View style={[s.head, { paddingTop: insets.top + 14 }]}>
           <View style={{ flex: 1 }}>
-            <Text style={T.screenTitle}>Atlas</Text>
+            <Text scale="display" style={T.screenTitle}>Atlas</Text>
             <Label style={{ marginTop: 2 }}>
               {measuredCount > 0
                 ? `READS ALL ${measuredCount} OF YOUR SESSIONS`
@@ -257,6 +266,8 @@ export default function CoachScreen() {
                 ])
               }
               hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Clear conversation"
               style={s.headBtn}
             >
               <TrashGlyph />
@@ -279,7 +290,7 @@ export default function CoachScreen() {
             <ActivityIndicator style={{ marginTop: 40 }} color={color.textFaint} />
           ) : messages.length === 0 ? (
             <View style={s.empty}>
-              <Text style={[T.headlineSmall, { textAlign: "center" }]}>
+              <Text scale="display" style={[T.headlineSmall, { textAlign: "center" }]}>
                 Ask about any session.
               </Text>
               <Text style={[T.body, { textAlign: "center", marginTop: 10 }]}>
@@ -326,6 +337,7 @@ export default function CoachScreen() {
               <Pressable
                 key={starter}
                 onPress={() => send(starter)}
+                accessibilityRole="button"
                 style={({ pressed }) => [s.starter, pressed && { opacity: 0.8 }]}
               >
                 <Text style={[T.message, { fontSize: 13 }]}>{starter}</Text>
@@ -373,6 +385,9 @@ export default function CoachScreen() {
           <Pressable
             onPress={() => send()}
             disabled={!input.trim() || sending}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+            accessibilityState={{ disabled: !input.trim() || sending }}
             style={({ pressed }) => [
               s.sendBtn,
               { opacity: !input.trim() || sending ? 0.35 : pressed ? 0.85 : 1 },
@@ -399,14 +414,55 @@ function Message({
 }) {
   const isUser = message.role === "user";
 
+  /**
+   * Long-press to copy, with something to show for it.
+   *
+   * `Clipboard.setStringAsync` was called bare: no haptic, no confirmation, no
+   * change on screen. The athlete long-pressed a message and, as far as the
+   * interface was concerned, nothing happened — the copy either worked or did
+   * not and there was no way to tell.
+   *
+   * The bubbles also carried no accessibility information at all. A `Pressable`
+   * with no role announces every message in the conversation as a button, so
+   * VoiceOver read a transcript as a list of fourteen unlabelled controls. They
+   * are text; copying is an *action on* that text, which is what
+   * `accessibilityActions` is for.
+   */
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(() => {
+    void Clipboard.setStringAsync(message.content);
+    void Haptics.selectionAsync().catch(() => {});
+    setCopied(true);
+    const t = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(t);
+  }, [message.content]);
+
+  const copyProps = {
+    onLongPress: copy,
+    // A message is text that can be copied, not a button. On iOS `role="text"`
+    // plus a named action is exactly that: VoiceOver reads the message rather
+    // than announcing "button", and Copy appears in the actions rotor.
+    //
+    // react-native-web drops this role (it is an iOS concept, not a valid ARIA
+    // role), and gives every Pressable `cursor: pointer` regardless — so on the
+    // browser build a message bubble advertised itself as clickable while a
+    // plain click did nothing. The cursor override below keeps the web surface
+    // honest about that.
+    accessibilityRole: "text" as const,
+    accessibilityActions: [{ name: "copy", label: "Copy message" }],
+    onAccessibilityAction: (e: { nativeEvent: { actionName: string } }) => {
+      if (e.nativeEvent.actionName === "copy") copy();
+    },
+  };
+
   if (isUser) {
     return (
-      <Pressable
-        onLongPress={() => void Clipboard.setStringAsync(message.content)}
-        style={s.userBubble}
-      >
-        <Text style={[T.message, { color: color.onInk }]}>{message.content}</Text>
-      </Pressable>
+      <View style={{ alignItems: "flex-end" }}>
+        <Pressable {...copyProps} style={[s.userBubble, s.textCursor]}>
+          <Text style={[T.message, { color: color.onInk }]}>{message.content}</Text>
+        </Pressable>
+        {copied && <Label style={{ marginTop: 4, marginBottom: 2 }}>COPIED</Label>}
+      </View>
     );
   }
 
@@ -422,15 +478,14 @@ function Message({
 
   return (
     <View style={{ marginBottom: 14 }}>
-      <Pressable
-        onLongPress={() => void Clipboard.setStringAsync(message.content)}
-        style={s.coachBubble}
-      >
+      <Pressable {...copyProps} style={[s.coachBubble, s.textCursor]}>
         <Text style={T.message}>{body}</Text>
 
         {cited && (
           <Pressable
             onPress={() => onOpenSession(cited.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${cited.title}, the session this refers to`}
             style={({ pressed }) => [s.evidence, pressed && { opacity: 0.8 }]}
           >
             <View style={s.evidenceGlyph}>
@@ -543,10 +598,17 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  /**
+   * Web only. A Pressable that exists purely for long-press should not show a
+   * pointer cursor: on a browser that reads as "click me", and clicking does
+   * nothing. Ignored on native, where there is no cursor.
+   */
+  textCursor: { cursor: "text" } as unknown as ViewStyle,
+
   headBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: color.card,
     alignItems: "center",
     justifyContent: "center",
@@ -609,6 +671,9 @@ const s = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: 15,
     paddingVertical: 9,
+    // 39pt before; a suggestion chip is a real target like any other.
+    minHeight: 44,
+    justifyContent: "center",
   },
 
   dismissBar: {

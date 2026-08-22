@@ -24,9 +24,18 @@
  * Head, spine, and feet are furniture: nothing measures them, nothing lights
  * them.
  */
+/*
+ * Every flag mark in this figure uses `rustOnInk`, not `rust`: this component
+ * only ever draws on the analysis screen's ink hero, and the paper rust is
+ * 3.2:1 against that ground.
+ */
 
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import {
+  View,
+  StyleSheet,
+} from "react-native";
+import { Text } from "@/components/caliper";
 import Svg, { Circle, Path } from "react-native-svg";
 
 import { color, font } from "@/constants/caliper";
@@ -203,12 +212,12 @@ export function MeasureFigure({ findings, height = 190 }: MeasureFigureProps) {
             <React.Fragment key={key}>
               {/* Punch the node out of the limb line so it reads as a joint. */}
               <Circle cx={x} cy={y} r={7.5} fill={color.ink} />
-              <Circle cx={x} cy={y} r={5} fill={flagged ? color.rust : color.onInk} />
+              <Circle cx={x} cy={y} r={5} fill={flagged ? color.rustOnInk : color.onInk} />
               <Circle
                 cx={x}
                 cy={y}
                 r={11}
-                stroke={flagged ? color.rust : color.onInk}
+                stroke={flagged ? color.rustOnInk : color.onInk}
                 strokeWidth={flagged ? 2.2 : 1.2}
                 opacity={flagged ? 0.95 : 0.4}
                 fill="none"
@@ -216,7 +225,7 @@ export function MeasureFigure({ findings, height = 190 }: MeasureFigureProps) {
               {flagged && (
                 <Path
                   d={arcPath(x, y, 18)}
-                  stroke={color.rust}
+                  stroke={color.rustOnInk}
                   strokeWidth={2.2}
                   strokeLinecap="round"
                   fill="none"
@@ -274,13 +283,13 @@ const s = StyleSheet.create({
     fontFamily: font.mono,
     fontSize: 9,
     letterSpacing: 1.2,
-    color: color.rust,
+    color: color.rustOnInk,
   },
   rangeText: {
     fontFamily: font.mono,
     fontSize: 10,
     letterSpacing: 0.4,
-    color: color.rust,
+    color: color.rustOnInk,
     marginTop: 2,
     opacity: 0.85,
   },

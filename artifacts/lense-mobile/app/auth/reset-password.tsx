@@ -9,7 +9,6 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
   Pressable,
@@ -20,7 +19,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
-import { Screen, Label, PrimaryButton, Chevron, Check } from "@/components/caliper";
+import {
+  BackButton,
+  Check,
+  Label,
+  PrimaryButton,
+  Screen,
+  Text,
+} from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { auth, ApiError, NetworkError } from "@/lib/api";
 import { MIN_PASSWORD_LENGTH } from "@/constants/auth";
@@ -67,7 +73,7 @@ export default function ResetPasswordScreen() {
           <View style={s.doneGlyph}>
             <Check tone={color.cobalt} size={22} />
           </View>
-          <Text style={[T.headline, { marginTop: 20 }]}>Password reset.</Text>
+          <Text scale="display" style={[T.headline, { marginTop: 20 }]}>Password reset.</Text>
           <Text style={[T.body, { marginTop: 14 }]}>
             Your password has been changed and any sign-in lock has been cleared. You can sign
             in now.
@@ -87,9 +93,7 @@ export default function ResetPasswordScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={[s.head, { paddingTop: insets.top + 14 }]}>
-          <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
-            <Chevron direction="left" tone={color.textPrimary} size={16} />
-          </Pressable>
+          <BackButton onPress={() => router.back()} />
         </View>
 
         <ScrollView
@@ -97,7 +101,7 @@ export default function ResetPasswordScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <Label>RESET</Label>
-          <Text style={[T.headline, { marginTop: 10 }]}>Set a new password.</Text>
+          <Text scale="display" style={[T.headline, { marginTop: 10 }]}>Set a new password.</Text>
 
           {!params.token && (
             <>
@@ -134,7 +138,14 @@ export default function ResetPasswordScreen() {
               returnKeyType="go"
               onSubmitEditing={submit}
             />
-            <Pressable onPress={() => setShow(!show)} style={s.reveal} hitSlop={8}>
+            <Pressable
+              onPress={() => setShow(!show)}
+              style={s.reveal}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={show ? "Hide password" : "Show password"}
+              accessibilityState={{ selected: show }}
+            >
               <Text style={[T.buttonSmall, { color: color.textMuted }]}>
                 {show ? "Hide" : "Show"}
               </Text>
@@ -181,14 +192,6 @@ export default function ResetPasswordScreen() {
 
 const s = StyleSheet.create({
   head: { paddingHorizontal: GUTTER, paddingBottom: 10 },
-  backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: color.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   input: {
     backgroundColor: color.card,
     borderRadius: radius.cardSmall,
@@ -199,7 +202,14 @@ const s = StyleSheet.create({
     color: color.textPrimary,
   },
   passwordWrap: { position: "relative", justifyContent: "center" },
-  reveal: { position: "absolute", right: 16 },
+  reveal: {
+    position: "absolute",
+    right: 8,
+    paddingHorizontal: 8,
+    // The label alone was a 34x16 target inside the field.
+    minHeight: 44,
+    justifyContent: "center",
+  },
   strength: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 },
   strengthTrack: { flex: 1, height: 3, borderRadius: 2, backgroundColor: color.rule },
   strengthFill: { height: 3, borderRadius: 2 },

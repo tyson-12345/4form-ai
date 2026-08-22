@@ -17,7 +17,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   Pressable,
@@ -26,34 +25,41 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import Svg, { Defs, Pattern, Rect } from "react-native-svg";
 
 import {
-  Screen,
   Card,
+  Chevron,
+  FlagRow,
+  FooterFade,
+  FrequencyChip,
   Label,
   MetricBand,
   MicroAxis,
-  FrequencyChip,
-  RangeRuler,
-  Prescription,
-  FlagRow,
-  Chevron,
   PlayGlyph,
+  Prescription,
+  PrimaryButton,
+  RangeRuler,
+  Screen,
+  SkeletonBlock,
+  Text,
+  useFooterClearance,
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font, delta } from "@/constants/caliper";
 import {
   analyses as analysesApi,
+  ApiError,
   type AnalysisRecord,
   type TipRecord,
   type RiskRecord,
 } from "@/lib/api";
 import { displaySport } from "@/constants/sports";
+import { deleteVideo, resolveVideo } from "@/lib/videoStore";
+import { alert } from "@/lib/alert";
 import { flagSeverity, isAlarming } from "@/utils/flagSeverity";
 import { MuscleMap, MuscleMapLegend } from "@/components/MuscleMap";
 import { deriveMuscleLoad } from "@/utils/muscleLoad";
-import { resolveVideo } from "@/lib/videoStore";
-import { alert } from "@/lib/alert";
 // Safety net for the coaching text. The prompt already asks for plain
 // language, but that is an instruction, not a guarantee — one generation that
 // says "valgus" reaches a 15-year-old otherwise. Chat has always done this;
@@ -89,10 +95,16 @@ export default function AnalysisDetailScreen() {
   const { width: screenW } = useWindowDimensions();
   const router = useRouter();
 
+  // The dock's real height, measured — see useFooterClearance. A fixed 120 left
+  // the last drill line permanently under a 164pt dock.
+  const [dockClearance, onDockLayout] = useFooterClearance({ gap: 16, fallback: 140 });
+
   const [analysis, setAnalysis] = useState<AnalysisRecord | null>(null);
   const [tips, setTips] = useState<TipRecord[]>([]);
   const [risks, setRisks] = useState<RiskRecord[]>([]);
-  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  // "missing" is kept apart from "error": a session that is gone will never
+  // come back, so a "Try again" button on it is one that cannot work.
+  const [state, setState] = useState<"loading" | "ready" | "error" | "missing">("loading");
   /**
    * The athlete's other measured sessions, used only to derive the band this
    * clip is plotted against. Loaded separately and allowed to fail: without it
@@ -108,8 +120,8 @@ export default function AnalysisDetailScreen() {
       setTips(result.tips);
       setRisks(result.injuryRisks);
       setState("ready");
-    } catch {
-      setState("error");
+    } catch (err) {
+      setState(err instanceof ApiError && err.status === 404 ? "missing" : "error");
     }
   }, [id]);
 
@@ -235,8 +247,36 @@ export default function AnalysisDetailScreen() {
 
   if (state === "loading") {
     return (
+      <Screen>
+        {/* Shaped like the screen that is coming — hero, index card, prose —
+            rather than a spinner alone on paper. */}
+        <SkeletonBlock height={HERO_H} style={{ borderRadius: 0 }} />
+        <View style={{ paddingHorizontal: GUTTER }}>
+          <SkeletonBlock height={188} style={{ marginTop: -16, borderRadius: 26 }} />
+          <SkeletonBlock height={13} width="34%" style={{ marginTop: 28 }} />
+          <SkeletonBlock height={15} style={{ marginTop: 12 }} />
+          <SkeletonBlock height={15} style={{ marginTop: 8 }} />
+          <SkeletonBlock height={15} width="72%" style={{ marginTop: 8 }} />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (state === "missing") {
+    return (
       <Screen style={s.centre}>
-        <ActivityIndicator color={color.cobalt} />
+        <Text scale="display" style={[T.cardTitle, { textAlign: "center" }]}>
+          This session is no longer here
+        </Text>
+        <Text style={[T.body, { textAlign: "center", marginTop: 8, maxWidth: 300 }]}>
+          It was deleted, or this link points at a session that belongs to another account.
+        </Text>
+        <View style={{ alignSelf: "stretch", marginTop: 24 }}>
+          <PrimaryButton
+            label="Back to your sessions"
+            onPress={() => router.replace("/(tabs)/analyze")}
+          />
+        </View>
       </Screen>
     );
   }
@@ -244,10 +284,30 @@ export default function AnalysisDetailScreen() {
   if (state === "error" || !analysis) {
     return (
       <Screen style={s.centre}>
-        <Text style={T.cardTitle}>We couldn't load this session</Text>
-        <Pressable onPress={() => router.back()} style={{ marginTop: 12 }}>
-          <Text style={[T.buttonSmall, { color: color.cobalt }]}>Go back</Text>
-        </Pressable>
+        <Text scale="display" style={[T.cardTitle, { textAlign: "center" }]}>
+          We couldn&apos;t load this session
+        </Text>
+        <Text style={[T.body, { textAlign: "center", marginTop: 8, maxWidth: 300 }]}>
+          Your measurements are safe. This is usually a connection problem.
+        </Text>
+        {/* The only option here used to be "Go back", so a dropped request
+            meant leaving the screen and finding the session again. A retry is
+            the obvious recovery and it was missing. */}
+        <View style={{ alignSelf: "stretch", marginTop: 24, gap: 10 }}>
+          <PrimaryButton
+            label="Try again"
+            onPress={() => {
+              setState("loading");
+              void load();
+            }}
+          />
+          <PrimaryButton
+            label="Go back"
+            tone={color.card}
+            labelTone={color.textPrimary}
+            onPress={() => router.back()}
+          />
+        </View>
       </Screen>
     );
   }
@@ -283,32 +343,70 @@ export default function AnalysisDetailScreen() {
 
   return (
     <Screen>
+      {/* The root layout sets a dark status bar, which is right for Caliper's
+          paper and invisible against this screen's ink hero. */}
+      <StatusBar style="light" />
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
+        contentContainerStyle={{
+          paddingBottom: insets.bottom + (prescription ? dockClearance : 24),
+        }}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Hero ── */}
-        <Pressable onPress={() => router.push(`/analysis/skeleton/${analysis.id}`)}>
-          <View style={s.hero}>
-            <FilmBackdrop width={screenW} />
-            <View style={s.heroScrim} />
+        {/* ── Hero ──
+            The whole hero used to be one Pressable with the back button nested
+            inside it. On the web build the inner click bubbled, so tapping back
+            went back *and* pushed the skeleton screen. The tappable area is now
+            a sibling of the controls rather than their ancestor, so the two
+            cannot both fire. */}
+        <View style={s.hero}>
+          <FilmBackdrop width={screenW} />
+          <View style={s.heroScrim} />
 
-            {/* Above the scrim: it is there to protect the footer text, and
-                dimming the one element carrying data is the wrong trade. */}
-            <View style={s.heroBody} pointerEvents="none">
-              <MeasureFigure findings={risks} height={168} />
-            </View>
+          {/* Above the scrim: it is there to protect the footer text, and
+              dimming the one element carrying data is the wrong trade. */}
+          <View style={s.heroBody} pointerEvents="none">
+            <MeasureFigure findings={risks} height={168} />
+          </View>
 
-            <View style={[s.heroTop, { top: insets.top + 6 }]}>
-              <Pressable onPress={() => router.back()} style={s.heroBtn} hitSlop={8}>
-                <Chevron direction="left" tone={color.onInk} size={16} />
-              </Pressable>
-              <View style={s.heroBtn}>
-                <PlayGlyph tone={color.onInk} size={13} />
-              </View>
-            </View>
+          {/* The open-skeleton target: everything below the top controls. */}
+          <Pressable
+            onPress={() => router.push(`/analysis/skeleton/${analysis.id}`)}
+            accessibilityRole="button"
+            accessibilityLabel="Open the skeleton overlay for this clip"
+            style={[StyleSheet.absoluteFill, { top: insets.top + 52 }]}
+          />
 
-            <View style={s.heroFoot}>
+          <View style={[s.heroTop, { top: insets.top + 6 }]}>
+            <Pressable
+              onPress={() => router.back()}
+              style={s.heroBtn}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+            >
+              <Chevron direction="left" tone={color.onInk} size={16} />
+            </Pressable>
+            {/* This was a bare View styled exactly like the back button next to
+                it — same size, same fill, same radius — holding a play glyph
+                and doing nothing at all. Playback lives on the skeleton screen,
+                so it now says so and goes there. */}
+            <Pressable
+              onPress={() => router.push(`/analysis/skeleton/${analysis.id}`)}
+              style={s.heroBtn}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Play this clip with the skeleton overlay"
+            >
+              <PlayGlyph tone={color.onInk} size={13} />
+            </Pressable>
+          </View>
+
+          <View style={s.heroFoot} pointerEvents="none">
+            {/* Ink scrim directly above the footer text. At large system text
+                sizes the footer grows upward into the skeleton figure and the
+                two drew over each other; the figure now dissolves into ink
+                instead of crossing the words. */}
+            <FooterFade height={64} tone={color.ink} />
               <Label tone="rgba(237,236,231,0.6)">
                 {displaySport(analysis.sport).toUpperCase()}
                 {" · "}
@@ -317,7 +415,7 @@ export default function AnalysisDetailScreen() {
                   .toUpperCase()}
                 {analysis.duration ? ` · ${analysis.duration.toFixed(1)}S` : ""}
               </Label>
-              <Text style={[T.headlineSmall, { color: color.onInk, marginTop: 6 }]}>
+              <Text scale="display" style={[T.headlineSmall, { color: color.onInk, marginTop: 6 }]}>
                 {analysis.title}
               </Text>
 
@@ -329,9 +427,8 @@ export default function AnalysisDetailScreen() {
                   TAP TO OPEN SKELETON OVERLAY
                 </Text>
               </View>
-            </View>
           </View>
-        </Pressable>
+        </View>
 
         {/* ── Wrong sport ──
             Sits above the scores because it changes how to read them: every band
@@ -386,7 +483,7 @@ export default function AnalysisDetailScreen() {
 
           <View style={s.indexRow}>
             <Text
-              style={[
+              scale="display" style={[
                 T.metricLarge,
                 analysis.overallScore === null && { color: color.textGhost },
               ]}
@@ -525,6 +622,43 @@ export default function AnalysisDetailScreen() {
           </View>
         )}
 
+        {/* ── Remove ──
+            Deleting a session was long-press-only on the Sessions list: no
+            affordance, no hint, and unreachable for anyone using VoiceOver or
+            switch control. The list keeps the shortcut; this is the path a user
+            can actually find. */}
+        <View style={s.section}>
+          <Pressable
+            onPress={() =>
+              alert(analysis.title, "Delete this session and its clip?", [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Delete",
+                  style: "destructive",
+                  onPress: async () => {
+                    try {
+                      await analysesApi.delete(analysis.id);
+                      await deleteVideo(analysis.id);
+                      router.back();
+                    } catch {
+                      alert("Couldn't delete", "Please try again.");
+                    }
+                  },
+                },
+              ])
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Delete this session"
+            style={({ pressed }) => [s.deleteRow, pressed && { opacity: 0.6 }]}
+          >
+            <Text style={[T.rowTitle, { color: color.rust }]}>Delete this session</Text>
+          </Pressable>
+          <Text style={[T.bodySmall, { marginTop: 8 }]}>
+            Removes the measurements, the coaching notes, and the clip stored on this phone.
+            Your monthly quota is not refunded.
+          </Text>
+        </View>
+
         {/* ── Drills ── */}
         {tips.length > 1 && (
           <View style={s.section}>
@@ -551,7 +685,9 @@ export default function AnalysisDetailScreen() {
 
       {/* ── The one next action ── */}
       {prescription && (
-        <View style={[s.dock, { paddingBottom: insets.bottom + 12 }]}>
+        <View style={[s.dock, { paddingBottom: insets.bottom + 12 }]} onLayout={onDockLayout}>
+          {/* Content used to be sliced dead flat at the dock's top edge. */}
+          <FooterFade />
           <Prescription
             compact
             text={prescription.drill || prescription.title}
@@ -604,7 +740,7 @@ function JointStrip({ risks }: { risks: RiskRecord[] }) {
               s.stripBar,
               {
                 height: 6 + severity * 16,
-                backgroundColor: isAlarming(risk.riskPercent) ? color.rust : color.onInkMuted,
+                backgroundColor: isAlarming(risk.riskPercent) ? color.rustOnInk : color.onInkMuted,
               },
             ]}
           />
@@ -638,16 +774,14 @@ function SubScoreTile({
     <View style={s.tile}>
       <Text style={[T.labelTight, { color: color.textMuted }]}>{name.toUpperCase()}</Text>
       <View style={s.tileRow}>
-        <Text style={[T.metricMedium, value === null && { color: color.textGhost }]}>
+        <Text scale="display" style={[T.metricMedium, value === null && { color: color.textGhost }]}>
           {value === null ? "–" : Math.round(value)}
         </Text>
+        {/* Neutral, matching Home and Progress. This was the third delta
+            rendering in the app and the last one still painting a change in the
+            colour reserved for the next action. */}
         {deltaText && (
-          <Text
-            style={[
-              T.measured,
-              { fontSize: 10, color: (deltaValue ?? 0) > 0 ? color.cobalt : color.textFaint },
-            ]}
-          >
+          <Text style={[T.measured, { fontSize: 11, color: color.textSecondary }]}>
             {deltaText}
           </Text>
         )}
@@ -755,9 +889,11 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
   },
   heroBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    // 34 before. hitSlop carried the touch target on native, but not on web,
+    // and this is the only way off the screen.
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: color.inkWashOnDark,
     alignItems: "center",
     justifyContent: "center",
@@ -765,14 +901,30 @@ const s = StyleSheet.create({
   // Sized and placed to clear the footer block entirely — at HERO_H 340 the
   // sport line starts near y=205, and the figures plus caption end by ~176.
   heroBody: { position: "absolute", left: 0, right: 0, top: 14, alignItems: "center" },
-  heroFoot: { position: "absolute", left: GUTTER, right: GUTTER, bottom: 26 },
+  // Full bleed, then padded in, so the ink scrim above it reaches both screen
+  // edges. Inset by GUTTER the fade stopped short and the figure stayed visible
+  // in the two margins.
+  heroFoot: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 26,
+    paddingHorizontal: GUTTER,
+  },
   heroCta: { marginTop: 12, opacity: 0.6 },
 
   strip: { flexDirection: "row", alignItems: "flex-end", gap: 3, height: 22, marginTop: 14 },
   stripBar: { flex: 1, borderRadius: 1, maxWidth: 26 },
 
   indexCard: { marginHorizontal: GUTTER, marginTop: -16 },
-  indexHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  indexHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    columnGap: 12,
+    rowGap: 4,
+  },
   indexRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 2 },
   tiles: { marginTop: 20, flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tile: {
@@ -781,13 +933,21 @@ const s = StyleSheet.create({
     borderRadius: 16,
     padding: 12,
   },
-  tileRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 4 },
+  tileRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 4,
+  },
 
   findingCard: { marginBottom: 10, padding: 16, borderRadius: radius.cardSmall },
-  findingHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+  findingHead: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
   findingAxis: {
     flexDirection: "row",
     justifyContent: "space-between",
+    flexWrap: "wrap",
+    columnGap: 10,
     marginTop: 4,
   },
   legacyNote: {
@@ -816,6 +976,13 @@ const s = StyleSheet.create({
   },
 
   section: { paddingHorizontal: GUTTER, paddingTop: 24 },
+  deleteRow: {
+    minHeight: 44,
+    justifyContent: "center",
+    borderTopWidth: 1,
+    borderTopColor: color.rule,
+    paddingTop: 16,
+  },
   processingRow: { flexDirection: "row", alignItems: "center", gap: 12 },
 
   tipCard: { marginBottom: 10, padding: 16, borderRadius: radius.cardSmall },
@@ -832,5 +999,6 @@ const s = StyleSheet.create({
     right: GUTTER,
     bottom: 0,
     paddingTop: 8,
+    backgroundColor: color.paper,
   },
 });

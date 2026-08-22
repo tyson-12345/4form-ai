@@ -1,7 +1,6 @@
 import React, { useRef, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
   Pressable,
@@ -12,14 +11,26 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
-import { Screen, Label, PrimaryButton, Chevron } from "@/components/caliper";
+import {
+  BackButton,
+  Label,
+  PrimaryButton,
+  Screen,
+  Text,
+} from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { ApiError, NetworkError } from "@/lib/api";
 import { PRIVACY_POLICY_URL, TERMS_URL, openLegal } from "@/constants/legal";
 // Date maths lives in utils/ so it can be tested — this screen cannot be, and
 // a bug here either admits an under-13 or silently blocks a legitimate signup.
-import { MINIMUM_AGE_YEARS, isOldEnough, parseBirthDate, toIsoDate } from "@/utils/age";
+import {
+  birthDateMessage,
+  birthDateProblem,
+  isOldEnough,
+  parseBirthDate,
+  toIsoDate,
+} from "@/utils/age";
 import { MIN_PASSWORD_LENGTH } from "@/constants/auth";
 
 
@@ -48,11 +59,13 @@ export default function SignupScreen() {
   const longEnough = password.length >= MIN_PASSWORD_LENGTH;
 
   const birthDate = parseBirthDate(dobDay, dobMonth, dobYear);
-  const dobComplete = dobDay.length > 0 && dobMonth.length > 0 && dobYear.length === 4;
   const oldEnough = isOldEnough(birthDate);
-  // Only complain once they've finished typing — flagging "too young" while
-  // someone is halfway through their birth year is just noise.
-  const dobInvalid = dobComplete && !oldEnough;
+  // Why it is wrong, not just that it is. "31 February" used to be reported as
+  // "you need to be at least 13", which sent a 26-year-old off to argue with
+  // the wrong field. `incomplete` is deliberately not shown: flagging someone
+  // halfway through typing their birth year is just noise.
+  const dobProblem = birthDateProblem(dobDay, dobMonth, dobYear);
+  const dobInvalid = dobProblem !== null && dobProblem !== "incomplete";
 
   const canSubmit =
     name.trim().length > 0 && email.trim().length > 0 && longEnough && oldEnough && !busy;
@@ -84,9 +97,7 @@ export default function SignupScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={[s.head, { paddingTop: insets.top + 14 }]}>
-          <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={8}>
-            <Chevron direction="left" tone={color.textPrimary} size={16} />
-          </Pressable>
+          <BackButton onPress={() => router.back()} />
         </View>
 
         <ScrollView
@@ -95,7 +106,7 @@ export default function SignupScreen() {
           showsVerticalScrollIndicator={false}
         >
           <Label>GET STARTED</Label>
-          <Text style={[T.headline, { marginTop: 10 }]}>Create your{"\n"}account.</Text>
+          <Text scale="display" style={[T.headline, { marginTop: 10 }]}>Create your{"\n"}account.</Text>
 
           <Label style={{ marginTop: 30, marginBottom: 8 }}>NAME</Label>
           <TextInput
@@ -140,10 +151,10 @@ export default function SignupScreen() {
               API's lib/validate.ts — because this field is a courtesy to the
               user, not the control. */}
           <Label style={{ marginTop: 18, marginBottom: 8 }}>DATE OF BIRTH</Label>
-          <View style={s.dobRow}>
+          <View style={s.dobRow} accessibilityLabel="Date of birth, day month year">
             <TextInput
               ref={dobDayRef}
-              style={[s.input, s.dobPart, dobInvalid && s.inputError]}
+              style={[s.input, s.inputBordered, s.dobPart, dobInvalid && s.inputError]}
               value={dobDay}
               onChangeText={(v) => {
                 const digits = v.replace(/\D/g, "").slice(0, 2);
@@ -159,13 +170,20 @@ export default function SignupScreen() {
             />
             <TextInput
               ref={dobMonthRef}
-              style={[s.input, s.dobPart, dobInvalid && s.inputError]}
+              style={[s.input, s.inputBordered, s.dobPart, dobInvalid && s.inputError]}
               value={dobMonth}
               onChangeText={(v) => {
                 const digits = v.replace(/\D/g, "").slice(0, 2);
                 setDobMonth(digits);
                 setError(null);
                 if (digits.length === 2) dobYearRef.current?.focus();
+              }}
+              // Advancing was automatic but going back was not, so correcting a
+              // typo in DD meant reaching for the field with a fingertip.
+              onKeyPress={(e) => {
+                if (e.nativeEvent.key === "Backspace" && dobMonth.length === 0) {
+                  dobDayRef.current?.focus();
+                }
               }}
               placeholder="MM"
               placeholderTextColor={color.textGhost}
@@ -175,11 +193,16 @@ export default function SignupScreen() {
             />
             <TextInput
               ref={dobYearRef}
-              style={[s.input, s.dobYear, dobInvalid && s.inputError]}
+              style={[s.input, s.inputBordered, s.dobYear, dobInvalid && s.inputError]}
               value={dobYear}
               onChangeText={(v) => {
                 setDobYear(v.replace(/\D/g, "").slice(0, 4));
                 setError(null);
+              }}
+              onKeyPress={(e) => {
+                if (e.nativeEvent.key === "Backspace" && dobYear.length === 0) {
+                  dobMonthRef.current?.focus();
+                }
               }}
               placeholder="YYYY"
               placeholderTextColor={color.textGhost}
@@ -189,10 +212,13 @@ export default function SignupScreen() {
               onSubmitEditing={() => passwordRef.current?.focus()}
             />
           </View>
-          <Text style={[T.bodySmall, { marginTop: 8, color: dobInvalid ? color.rust : color.textFaint }]}>
-            {dobInvalid
-              ? `You need to be at least ${MINIMUM_AGE_YEARS} to use AthleteAI.`
-              : `You need to be at least ${MINIMUM_AGE_YEARS}. We use this to check your age, nothing else.`}
+          <Text
+            style={[T.bodySmall, { marginTop: 8, color: dobInvalid ? color.rust : color.textFaint }]}
+            // Announced when it changes, rather than sitting there silently for
+            // anyone not looking at that part of the screen.
+            accessibilityLiveRegion={dobInvalid ? "polite" : "none"}
+          >
+            {birthDateMessage(dobInvalid ? dobProblem : null)}
           </Text>
 
           <Label style={{ marginTop: 18, marginBottom: 8 }}>PASSWORD</Label>
@@ -213,7 +239,14 @@ export default function SignupScreen() {
               returnKeyType="go"
               onSubmitEditing={submit}
             />
-            <Pressable onPress={() => setShow(!show)} style={s.reveal} hitSlop={8}>
+            <Pressable
+              onPress={() => setShow(!show)}
+              style={s.reveal}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={show ? "Hide password" : "Show password"}
+              accessibilityState={{ selected: show }}
+            >
               <Text style={[T.buttonSmall, { color: color.textMuted }]}>
                 {show ? "Hide" : "Show"}
               </Text>
@@ -243,7 +276,11 @@ export default function SignupScreen() {
             </View>
           )}
 
-          {error && <Text style={s.error}>{error}</Text>}
+          {error && (
+            <Text style={s.error} accessibilityLiveRegion="assertive" accessibilityRole="alert">
+              {error}
+            </Text>
+          )}
 
           <View style={{ marginTop: 28 }}>
             <PrimaryButton
@@ -262,12 +299,17 @@ export default function SignupScreen() {
               clauses that limit liability for a training app. */}
           <Text style={s.legal}>
             By creating an account you agree to our{" "}
-            <Text style={s.legalLink} onPress={() => void openLegal(TERMS_URL, "Terms of Service")}>
+            <Text
+              style={s.legalLink}
+              accessibilityRole="link"
+              onPress={() => void openLegal(TERMS_URL, "Terms of Service")}
+            >
               Terms of Service
             </Text>{" "}
             and{" "}
             <Text
               style={s.legalLink}
+              accessibilityRole="link"
               onPress={() => void openLegal(PRIVACY_POLICY_URL, "Privacy Policy")}
             >
               Privacy Policy
@@ -282,8 +324,9 @@ export default function SignupScreen() {
 
           <Pressable
             onPress={() => router.replace("/auth/login")}
-            style={{ marginTop: 24, alignItems: "center" }}
-            hitSlop={8}
+            accessibilityRole="link"
+            accessibilityLabel="Sign in to an existing account"
+            style={{ marginTop: 16, alignItems: "center", justifyContent: "center", minHeight: 44 }}
           >
             <Text style={[T.bodySmall, { textAlign: "center" }]}>
               Already have an account?{" "}
@@ -299,8 +342,12 @@ export default function SignupScreen() {
 const s = StyleSheet.create({
   legal: {
     fontFamily: font.body,
-    fontSize: 12,
-    lineHeight: 17,
+    // 12/17 was the smallest prose in the app, and it is the sentence that
+    // carries the terms someone is agreeing to. The extra leading also gives
+    // the two inline links a little more to aim at — WCAG 2.5.8 exempts
+    // in-sentence targets from the 44pt minimum, but "exempt" is not "easy".
+    fontSize: 13,
+    lineHeight: 21,
     color: color.textFaint,
     textAlign: "center",
     marginTop: 16,
@@ -313,16 +360,12 @@ const s = StyleSheet.create({
   // pushing YYYY out of view entirely. No effect on native.
   dobPart: { flex: 1, minWidth: 0, textAlign: "center" },
   dobYear: { flex: 1.6, minWidth: 0, textAlign: "center" },
-  inputError: { borderWidth: 1, borderColor: color.rust },
+  // A transparent border is always present, so turning the error on changes the
+  // colour and nothing else. Adding `borderWidth: 1` only when invalid grew the
+  // field by 2pt and nudged everything below it the moment validation fired.
+  inputBordered: { borderWidth: 1, borderColor: "transparent" },
+  inputError: { borderColor: color.rust },
   head: { paddingHorizontal: GUTTER, paddingBottom: 10 },
-  backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: color.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   input: {
     backgroundColor: color.card,
     borderRadius: radius.cardSmall,
@@ -333,7 +376,14 @@ const s = StyleSheet.create({
     color: color.textPrimary,
   },
   passwordWrap: { position: "relative", justifyContent: "center" },
-  reveal: { position: "absolute", right: 16 },
+  reveal: {
+    position: "absolute",
+    right: 8,
+    paddingHorizontal: 8,
+    // The label alone was a 34x16 target inside the field.
+    minHeight: 44,
+    justifyContent: "center",
+  },
   strength: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 },
   strengthTrack: { flex: 1, height: 3, borderRadius: 2, backgroundColor: color.rule },
   strengthFill: { height: 3, borderRadius: 2 },

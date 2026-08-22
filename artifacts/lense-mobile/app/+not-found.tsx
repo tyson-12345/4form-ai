@@ -1,45 +1,59 @@
-import { Link, Stack } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+/**
+ * The screen behind a link that goes nowhere.
+ *
+ * Rewritten from the Expo template's unstyled version, which used raw
+ * `fontSize: 20, fontWeight: "bold"` and the legacy `useColors` shim, so a bad
+ * deep link dropped the athlete onto a screen that plainly belonged to a
+ * different app. It is rare, but it is the first thing someone sees when a
+ * shared link is wrong, and it should look like the rest of the product.
+ */
 
-import { useColors } from "@/hooks/useColors";
+import React from "react";
+import {
+  View,
+  StyleSheet,
+} from "react-native";
+import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import {
+  AppMark,
+  Label,
+  PrimaryButton,
+  Screen,
+  Text,
+} from "@/components/caliper";
+import { type as T, GUTTER } from "@/constants/caliper";
 
 export default function NotFoundScreen() {
-  const colors = useColors();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
-    <>
-      <Stack.Screen options={{ title: "Oops!" }} />
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>
-          This screen doesn&apos;t exist.
+    <Screen>
+      <View style={[s.wrap, { paddingTop: insets.top + 80, paddingBottom: insets.bottom + 32 }]}>
+        <View style={s.mark}>
+          <AppMark size={34} />
+          <Label>ATHLETE AI</Label>
+        </View>
+
+        <Text scale="display" style={[T.headline, { marginTop: 28 }]}>
+          There&apos;s nothing{"\n"}at this address.
+        </Text>
+        <Text style={[T.body, { marginTop: 12, maxWidth: 300 }]}>
+          The link you followed points at a screen that doesn&apos;t exist. Your sessions and
+          measurements are unaffected.
         </Text>
 
-        <Link href="/" style={styles.link}>
-          <Text style={[styles.linkText, { color: colors.primary }]}>
-            Go to home screen!
-          </Text>
-        </Link>
+        <View style={{ flex: 1, minHeight: 24 }} />
+
+        <PrimaryButton label="Go to Home" onPress={() => router.replace("/")} trailingArrow />
       </View>
-    </>
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: "bold",
-  },
-  link: {
-    marginTop: 15,
-    paddingVertical: 15,
-  },
-  linkText: {
-    fontSize: 14,
-  },
+const s = StyleSheet.create({
+  wrap: { flex: 1, paddingHorizontal: GUTTER },
+  mark: { flexDirection: "row", alignItems: "center", gap: 10 },
 });

@@ -20,12 +20,24 @@
  */
 
 import React from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Svg, { Line, Circle } from "react-native-svg";
 
-import { Screen, Label, PrimaryButton, Chip, AppMark } from "@/components/caliper";
+import {
+  AppMark,
+  Chip,
+  Label,
+  PrimaryButton,
+  Screen,
+  StatusBarScrim,
+  Text,
+} from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { SPORTS } from "@/constants/sports";
 
@@ -52,7 +64,7 @@ export default function WelcomeScreen() {
           <Label>ATHLETE AI</Label>
         </View>
 
-        <Text style={[T.headline, s.headline]}>
+        <Text scale="display" style={[T.headline, s.headline]}>
           Your technique,{"\n"}measured.
         </Text>
 
@@ -102,6 +114,8 @@ export default function WelcomeScreen() {
 
         <Text style={s.footnote}>Free to start. No card required.</Text>
       </ScrollView>
+      {/* Paints over content that scrolls under the status bar. */}
+      <StatusBarScrim />
     </Screen>
   );
 }

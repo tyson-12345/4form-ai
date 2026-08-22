@@ -1,28 +1,32 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 
-import { useColors } from "@/hooks/useColors";
-import { TAB_BAR } from "@/constants/caliper";
+import {
+  Chevron,
+  CloseGlyph,
+  Text,
+} from "@/components/caliper";
+import { color, radius, TAB_BAR, WEB_TOP_INSET } from "@/constants/caliper";
 import { REFERENCE_MODELS } from "@/lib/referenceModels";
 import type { ProAthlete } from "@/lib/types";
 
-const SPORT_COLORS: Record<string, string> = {
-  golf: "#4ade80",
-  basketball: "#f97316",
-  fencing: "#a78bfa",
-  tennis: "#facc15",
-  gymnastics: "#f472b6",
-  running: "#38bdf8",
-};
+/**
+ * Reference-model avatars are ink on paper, not a per-sport colour.
+ *
+ * This screen used to assign each sport a saturated hue — mint, orange, violet,
+ * yellow, pink, sky — six accent colours on one screen in a system whose first
+ * rule is that cobalt appears at most once and means "the next action". The
+ * sport is already written next to every avatar; the colour was decoration
+ * carrying no information, and it made the one screen that is not yet built
+ * the most colourful in the app.
+ */
 
 /**
  * Similarity against a reference model.
@@ -46,27 +50,30 @@ function getSimilarityForAthlete(_proId: string): number | null {
 }
 
 export default function CompareScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<ProAthlete | null>(null);
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  // Web reports zero safe-area insets, so a bare `insets.top` puts the title
+  // flush against the top of the browser viewport. The fallback is the height
+  // of a typical status bar plus notch, not a number picked to look right on
+  // one screenshot.
+  const topPad = Platform.OS === "web" ? WEB_TOP_INSET : insets.top;
   // TAB_BAR.clearance, not a hand-picked number: the floating bar needs
   // 62 + 26 + 12 = 100, and 60 left the last card sitting under it.
   const bottomPad = TAB_BAR.clearance + insets.bottom;
 
   const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
+    container: { flex: 1, backgroundColor: color.paper },
     scroll: { flex: 1 },
     header: {
       paddingTop: topPad + 16,
       paddingHorizontal: 20,
       paddingBottom: 20,
     },
-    title: { fontSize: 28, fontFamily: "InstrumentSans_600SemiBold", color: colors.foreground },
-    subtitle: { fontSize: 14, color: colors.mutedForeground, fontFamily: "InstrumentSans_400Regular", marginTop: 4 },
+    title: { fontSize: 28, fontFamily: "InstrumentSans_600SemiBold", color: color.textPrimary },
+    subtitle: { fontSize: 14, color: color.textMuted, fontFamily: "InstrumentSans_400Regular", marginTop: 4 },
     proCard: {
-      backgroundColor: colors.card,
-      borderRadius: colors.radius,
+      backgroundColor: color.card,
+      borderRadius: radius.card,
       padding: 16,
       marginHorizontal: 20,
       marginBottom: 12,
@@ -79,61 +86,70 @@ export default function CompareScreen() {
       width: 52,
       height: 52,
       borderRadius: 26,
+      backgroundColor: color.ink,
       alignItems: "center",
       justifyContent: "center",
     },
     avatarText: {
-      fontSize: 20,
+      fontSize: 18,
       fontFamily: "InstrumentSans_600SemiBold",
-      color: "#fff",
+      color: color.onInk,
     },
-    proName: { fontSize: 16, fontFamily: "InstrumentSans_600SemiBold", color: colors.foreground },
-    proSpecialty: { fontSize: 12, color: colors.mutedForeground, fontFamily: "InstrumentSans_400Regular", marginTop: 2 },
+    proName: { fontSize: 16, fontFamily: "InstrumentSans_600SemiBold", color: color.textPrimary },
+    proSpecialty: { fontSize: 12, color: color.textMuted, fontFamily: "InstrumentSans_400Regular", marginTop: 2 },
     sportBadge: {
       alignSelf: "flex-start",
       borderRadius: 20,
-      paddingHorizontal: 8,
-      paddingVertical: 2,
-      marginTop: 4,
+      backgroundColor: color.paperDeep,
+      paddingHorizontal: 9,
+      paddingVertical: 3,
+      marginTop: 5,
     },
-    sportBadgeText: { fontSize: 10, fontFamily: "InstrumentSans_500Medium", textTransform: "capitalize" },
+    sportBadgeText: {
+      fontSize: 11,
+      // textSecondary, not textMuted: paperDeep is the one surface where the
+      // lighter tiers drop under 4.5:1 (see the ladder note in constants).
+      color: color.textSecondary,
+      fontFamily: "InstrumentSans_500Medium",
+      textTransform: "capitalize",
+    },
     similarityBadge: {
       borderRadius: 20,
       paddingHorizontal: 10,
       paddingVertical: 5,
-      backgroundColor: colors.primary + "22",
+      backgroundColor: color.cobalt + "22",
       alignItems: "center",
     },
-    similarityNum: { fontSize: 16, fontFamily: "InstrumentSans_600SemiBold", color: colors.primary },
-    similarityLabel: { fontSize: 9, color: colors.primary, fontFamily: "InstrumentSans_400Regular" },
+    similarityNum: { fontSize: 16, fontFamily: "InstrumentSans_600SemiBold", color: color.cobalt },
+    similarityLabel: { fontSize: 9, color: color.cobalt, fontFamily: "InstrumentSans_400Regular" },
     comparePanel: {
       marginHorizontal: 20,
       marginBottom: 24,
-      backgroundColor: colors.card,
-      borderRadius: colors.radius,
+      backgroundColor: color.card,
+      borderRadius: radius.card,
       padding: 20,
       borderWidth: 1,
-      borderColor: colors.primary + "44",
+      borderColor: color.cobalt + "44",
     },
-    panelTitle: { fontSize: 18, fontFamily: "InstrumentSans_600SemiBold", color: colors.foreground, marginBottom: 4 },
-    panelSubtitle: { fontSize: 13, color: colors.mutedForeground, fontFamily: "InstrumentSans_400Regular", marginBottom: 16 },
+    panelTitle: { fontSize: 18, fontFamily: "InstrumentSans_600SemiBold", color: color.textPrimary, marginBottom: 4 },
+    panelSubtitle: { fontSize: 13, color: color.textMuted, fontFamily: "InstrumentSans_400Regular", marginBottom: 16 },
     simBar: { marginBottom: 16 },
     simBarLabel: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-    simBarLabelText: { fontSize: 12, color: colors.mutedForeground, fontFamily: "InstrumentSans_400Regular" },
-    simBarValue: { fontSize: 14, fontFamily: "InstrumentSans_600SemiBold", color: colors.primary },
-    simBarBg: { height: 8, backgroundColor: colors.border, borderRadius: 4 },
-    simBarFill: { height: 8, borderRadius: 4, backgroundColor: colors.primary },
+    simBarLabelText: { fontSize: 12, color: color.textMuted, fontFamily: "InstrumentSans_400Regular" },
+    simBarValue: { fontSize: 14, fontFamily: "InstrumentSans_600SemiBold", color: color.cobalt },
+    simBarBg: { height: 8, backgroundColor: color.rule, borderRadius: 4 },
+    simBarFill: { height: 8, borderRadius: 4, backgroundColor: color.cobalt },
     keyAttrSection: { marginTop: 8 },
-    keyAttrTitle: { fontSize: 13, fontFamily: "InstrumentSans_600SemiBold", color: colors.foreground, marginBottom: 8 },
+    keyAttrTitle: { fontSize: 13, fontFamily: "InstrumentSans_600SemiBold", color: color.textPrimary, marginBottom: 8 },
     attrPill: {
       borderRadius: 20,
       paddingHorizontal: 12,
       paddingVertical: 5,
-      backgroundColor: colors.muted,
+      backgroundColor: color.paperDeep,
       marginRight: 8,
       marginBottom: 8,
     },
-    attrText: { fontSize: 12, color: colors.foreground, fontFamily: "InstrumentSans_400Regular" },
+    attrText: { fontSize: 12, color: color.textPrimary, fontFamily: "InstrumentSans_400Regular" },
     closeBtn: {
       flexDirection: "row",
       alignItems: "center",
@@ -141,11 +157,11 @@ export default function CompareScreen() {
       gap: 6,
       marginTop: 16,
       paddingVertical: 12,
-      borderRadius: colors.radius,
+      borderRadius: radius.card,
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: color.rule,
     },
-    closeBtnText: { color: colors.mutedForeground, fontSize: 13, fontFamily: "InstrumentSans_400Regular" },
+    closeBtnText: { color: color.textMuted, fontSize: 13, fontFamily: "InstrumentSans_400Regular" },
   });
 
   return (
@@ -175,7 +191,7 @@ export default function CompareScreen() {
                 </View>
               )}
               {getSimilarityForAthlete(selected.id) === null && (
-                <Text style={{ color: colors.mutedForeground, fontSize: 12, fontFamily: "InstrumentSans_400Regular" }}>
+                <Text style={{ color: color.textMuted, fontSize: 12, fontFamily: "InstrumentSans_400Regular" }}>
                   Measured comparison isn&apos;t available yet. The attributes below are what
                   this movement is judged on. Use them as a checklist against your own clips.
                 </Text>
@@ -194,14 +210,13 @@ export default function CompareScreen() {
             </View>
 
             <TouchableOpacity style={s.closeBtn} activeOpacity={0.7} onPress={() => setSelected(null)}>
-              <Feather name="x" size={14} color={colors.mutedForeground} />
+              <CloseGlyph tone={color.textMuted} size={13} />
               <Text style={s.closeBtnText}>Close comparison</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {REFERENCE_MODELS.map((pro) => {
-          const sportColor = SPORT_COLORS[pro.sport] ?? colors.primary;
           const initials = pro.name.split(" ").map((n) => n[0]).join("").slice(0, 2);
           const similarity = getSimilarityForAthlete(pro.id);
           const isSelected = selected?.id === pro.id;
@@ -209,18 +224,21 @@ export default function CompareScreen() {
           return (
             <TouchableOpacity
               key={pro.id}
-              style={[s.proCard, { borderColor: isSelected ? colors.primary + "88" : colors.border }]}
+              style={[s.proCard, { borderColor: isSelected ? color.cobalt + "88" : color.rule }]}
               activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isSelected }}
+              accessibilityLabel={`${pro.name}, ${pro.specialty}, ${pro.sport}`}
               onPress={() => setSelected(isSelected ? null : pro)}
             >
-              <View style={[s.avatar, { backgroundColor: sportColor + "33" }]}>
-                <Text style={[s.avatarText, { color: sportColor }]}>{initials}</Text>
+              <View style={s.avatar}>
+                <Text style={s.avatarText}>{initials}</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.proName}>{pro.name}</Text>
                 <Text style={s.proSpecialty}>{pro.specialty}</Text>
-                <View style={[s.sportBadge, { backgroundColor: sportColor + "22" }]}>
-                  <Text style={[s.sportBadgeText, { color: sportColor }]}>{pro.sport}</Text>
+                <View style={s.sportBadge}>
+                  <Text style={s.sportBadgeText}>{pro.sport}</Text>
                 </View>
               </View>
               {similarity !== null ? (
@@ -229,7 +247,7 @@ export default function CompareScreen() {
                   <Text style={s.similarityLabel}>match</Text>
                 </View>
               ) : (
-                <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+                <Chevron />
               )}
             </TouchableOpacity>
           );

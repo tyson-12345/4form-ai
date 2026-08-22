@@ -26,7 +26,15 @@
  *   docs/TERMS-OF-SERVICE.md  → <base>/terms
  */
 
-import { Linking, Alert } from "react-native";
+import { Linking } from "react-native";
+
+// The cross-platform wrapper, not react-native's Alert. react-native-web's
+// Alert is a silent no-op, so on the browser build every one of the four
+// dialogs below did nothing at all — no message, no error, no clue. That is the
+// same defect that once shipped a dead Sign out button, and it was still live
+// on the three controls both app stores check during review: Privacy Policy,
+// Terms of Service and Support.
+import { alert } from "@/lib/alert";
 
 const RAW_BASE = process.env.EXPO_PUBLIC_LEGAL_BASE_URL?.trim();
 
@@ -65,7 +73,7 @@ export async function openLegal(
   label: string,
 ): Promise<void> {
   if (!url) {
-    Alert.alert(
+    alert(
       `${label} isn't published yet`,
       `We're getting ${label.toLowerCase()} online. Until then, contact us and we'll send it to you directly.`,
       [{ text: "OK" }],
@@ -78,7 +86,7 @@ export async function openLegal(
     if (!supported) throw new Error("unsupported");
     await Linking.openURL(url);
   } catch {
-    Alert.alert(
+    alert(
       `Couldn't open ${label}`,
       `Please visit ${url} in your browser.`,
       [{ text: "OK" }],
@@ -89,7 +97,7 @@ export async function openLegal(
 /** Open a support mail composer, or explain that support isn't set up yet. */
 export async function openSupport(): Promise<void> {
   if (!SUPPORT_EMAIL) {
-    Alert.alert(
+    alert(
       "Support isn't set up yet",
       "We don't have a support address configured. Please try again after the next update.",
       [{ text: "OK" }],
@@ -97,6 +105,6 @@ export async function openSupport(): Promise<void> {
     return;
   }
   await Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {
-    Alert.alert("Couldn't open mail", `Write to ${SUPPORT_EMAIL}.`, [{ text: "OK" }]);
+    alert("Couldn't open mail", `Write to ${SUPPORT_EMAIL}.`, [{ text: "OK" }]);
   });
 }
