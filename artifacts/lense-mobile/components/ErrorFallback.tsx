@@ -17,7 +17,6 @@ import { reloadAppAsync } from "expo";
 import React, { useState } from "react";
 import {
   Platform,
-  Pressable,
   StyleSheet,
   View,
 } from "react-native";
@@ -30,6 +29,7 @@ import {
   Screen,
   Sheet,
   Text,
+  Tappable,
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER } from "@/constants/caliper";
 
@@ -73,7 +73,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
         <PrimaryButton label="Reload the app" onPress={() => void restart()} trailingArrow />
 
         {__DEV__ ? (
-          <Pressable
+          <Tappable
             onPress={() => setDetailOpen(true)}
             accessibilityRole="button"
             accessibilityLabel="View error details"
@@ -82,7 +82,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
             <Text style={[T.buttonSmall, { color: color.textMuted }]}>
               Developer details
             </Text>
-          </Pressable>
+          </Tappable>
         ) : null}
       </View>
 

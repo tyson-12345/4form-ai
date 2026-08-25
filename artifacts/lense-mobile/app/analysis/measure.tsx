@@ -27,12 +27,14 @@ import {
   AlertGlyph,
   BackButton,
   PrimaryButton,
+  Meter,
   Text,
 } from "@/components/caliper";
 import { color, type as T, GUTTER } from "@/constants/caliper";
 import { analyses as analysesApi, ApiError, NetworkError } from "@/lib/api";
 import { buildPoseHtml, type PoseMessage, type PoseMetrics } from "@/lib/poseTracker";
 import { persistVideo, stageForWebView } from "@/lib/videoStore";
+import * as haptics from "@/lib/haptics";
 
 type Phase = "preparing" | "measuring" | "saving" | "error";
 
@@ -51,6 +53,7 @@ export default function MeasureScreen() {
   const submitted = useRef(false);
 
   const fail = useCallback((message: string) => {
+    haptics.fail();
     setErrorMessage(message);
     setPhase("error");
   }, []);
@@ -103,6 +106,9 @@ export default function MeasureScreen() {
         // Store the clip under the analysis id so the overlay can find it later.
         await persistVideo(params.uri, analysis.id);
 
+        // The moment this whole product exists to produce, and until now it
+        // arrived in complete silence.
+        haptics.success();
         router.replace(`/analysis/${analysis.id}`);
       } catch (err) {
         submitted.current = false;
@@ -144,7 +150,6 @@ export default function MeasureScreen() {
     [submit, fail],
   );
 
-  const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
     <View style={s.root}>
@@ -165,7 +170,14 @@ export default function MeasureScreen() {
       ) : (
         <View style={s.body}>
           <ActivityIndicator size="large" color={color.cobalt} />
-          <Text style={s.title}>
+          {/*
+            This screen runs for about a minute and said nothing to a screen
+            reader for any of it — no role on the bar, no value, and no
+            announcement when the phase changed. A blind user started a
+            measurement and then had no way to know whether it was running,
+            finished, or dead.
+          */}
+          <Text style={s.title} accessibilityLiveRegion="polite">
             {phase === "preparing" && "Preparing your video"}
             {phase === "measuring" && "Measuring your movement"}
             {phase === "saving" && "Building your report"}
@@ -173,9 +185,18 @@ export default function MeasureScreen() {
 
           {phase === "measuring" && progress.total > 0 && (
             <>
-              <View style={s.barTrack}>
-                <View style={[s.barFill, { width: `${pct}%` }]} />
-              </View>
+              {/*
+                Was a raw View whose width was bound straight to React state, so
+                it jumped from reading to reading rather than advancing. On the
+                app's longest wait, a bar that lurches reads as a process that
+                keeps stalling.
+              */}
+              <Meter
+                value={progress.done / progress.total}
+                tone={color.cobalt}
+                label={`Measuring: ${progress.done} of ${progress.total} frames`}
+                style={{ alignSelf: "stretch" }}
+              />
               <Text style={s.pct}>
                 {progress.done} of {progress.total} frames
               </Text>
@@ -231,14 +252,6 @@ const s = StyleSheet.create({
   body: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 20 },
   title: { ...T.cardTitle, fontSize: 20, lineHeight: 26, textAlign: "center" },
   sub: { ...T.body, textAlign: "center" },
-  barTrack: {
-    width: "100%",
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: color.paperDeep,
-    overflow: "hidden",
-  },
-  barFill: { height: "100%", borderRadius: 3, backgroundColor: color.cobalt },
   pct: { ...T.measured, color: color.cobalt, fontVariant: ["tabular-nums"] },
   // The tracker must render to produce frames, but the athlete watches the
   // progress UI instead — so keep it mounted but visually out of the way.

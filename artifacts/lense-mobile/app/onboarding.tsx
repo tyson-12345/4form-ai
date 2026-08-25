@@ -12,7 +12,6 @@ import {
   View,
   StyleSheet,
   ScrollView,
-  Pressable,
   Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +26,7 @@ import {
   Screen,
   Text,
   useFooterClearance,
+  Tappable,
 } from "@/components/caliper";
 import { color, type as T, GUTTER } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
@@ -183,14 +183,11 @@ export default function OnboardingScreen() {
 
           {step === 1 &&
             LEVELS.map((l) => (
-              <Pressable
+              <Tappable
                 key={l.key}
                 onPress={() => setLevel(l.key)}
-                style={({ pressed }) => [
-                  s.levelCard,
-                  level === l.key && s.levelCardOn,
-                  pressed && { opacity: 0.85 },
-                ]}
+                style={[s.levelCard,
+                  level === l.key && s.levelCardOn]}
               >
                 <Text
                   style={[
@@ -209,7 +206,7 @@ export default function OnboardingScreen() {
                 >
                   {l.note}
                 </Text>
-              </Pressable>
+              </Tappable>
             ))}
 
           {step === 2 &&
@@ -337,11 +334,5 @@ const s = StyleSheet.create({
     paddingTop: 14,
     backgroundColor: color.paper,
   },
-  summary: {
-    textAlign: "center",
-    marginTop: 14,
-    fontFamily: "InstrumentSans_400Regular",
-    fontSize: 13,
-    color: color.textFaint,
-  },
+  summary: { ...T.bodySmall, textAlign: "center", marginTop: 14, color: color.textFaint },
 });

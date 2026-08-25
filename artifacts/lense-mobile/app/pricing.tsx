@@ -17,7 +17,6 @@ import {
   View,
   StyleSheet,
   ScrollView,
-  Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -31,8 +30,9 @@ import {
   Screen,
   SkeletonBlock,
   Text,
+  Tappable,
 } from "@/components/caliper";
-import { color, type as T, radius, GUTTER } from "@/constants/caliper";
+import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { subscriptions, type Plan } from "@/lib/api";
 import { alert } from "@/lib/alert";
@@ -122,7 +122,7 @@ export default function PricingScreen() {
     return (
       <Screen>
         <View style={[s.head, { paddingTop: insets.top + 14 }]}>
-          <Pressable
+          <Tappable
             onPress={() => router.back()}
             style={s.closeBtn}
             hitSlop={10}
@@ -130,7 +130,7 @@ export default function PricingScreen() {
             accessibilityLabel="Close"
           >
             <CloseGlyph />
-          </Pressable>
+          </Tappable>
         </View>
         {/* A skeleton rather than a bare spinner on an empty page: the shape of
             what is coming is more reassuring than a dot, and it stops the
@@ -149,7 +149,7 @@ export default function PricingScreen() {
     return (
       <Screen>
         <View style={[s.head, { paddingTop: insets.top + 14 }]}>
-          <Pressable
+          <Tappable
             onPress={() => router.back()}
             style={s.closeBtn}
             hitSlop={10}
@@ -157,7 +157,7 @@ export default function PricingScreen() {
             accessibilityLabel="Close"
           >
             <CloseGlyph />
-          </Pressable>
+          </Tappable>
         </View>
         <View style={s.centre}>
           <Text style={[T.cardTitle, { textAlign: "center" }]}>
@@ -183,7 +183,7 @@ export default function PricingScreen() {
   return (
     <Screen>
       <View style={[s.head, { paddingTop: insets.top + 14 }]}>
-        <Pressable
+        <Tappable
           onPress={() => router.back()}
           style={s.closeBtn}
           hitSlop={10}
@@ -194,7 +194,7 @@ export default function PricingScreen() {
               and a text ✕ renders at a different weight and baseline on every
               platform. */}
           <CloseGlyph />
-        </Pressable>
+        </Tappable>
       </View>
 
       <ScrollView
@@ -250,7 +250,7 @@ export default function PricingScreen() {
             </View>
 
             {currentTier !== "pro" && (
-              <Pressable
+              <Tappable
                 onPress={() => attemptBuy(pro)}
                 accessibilityRole="button"
                 // Dimmed but deliberately still pressable: tapping explains
@@ -259,15 +259,12 @@ export default function PricingScreen() {
                 accessibilityLabel={
                   billingEnabled ? "Start free week" : "Coming soon. Not available to buy yet."
                 }
-                style={({ pressed }) => [
-                  s.proCta,
-                  { opacity: billingEnabled ? (pressed ? 0.9 : 1) : 0.55 },
-                ]}
+                style={[s.proCta, { opacity: billingEnabled ? 1 : 0.55 }]}
               >
                 <Text style={[T.button, { color: color.cobalt }]}>
                   {billingEnabled ? "Start free week" : "Coming soon"}
                 </Text>
-              </Pressable>
+              </Tappable>
             )}
           </View>
         )}
@@ -309,7 +306,7 @@ export default function PricingScreen() {
             </Text>
 
             {currentTier !== "free" && (
-              <Pressable
+              <Tappable
                 onPress={downgrade}
                 disabled={working}
                 accessibilityRole="button"
@@ -321,7 +318,7 @@ export default function PricingScreen() {
                   {working ? "Switching…" : "Switch to Free"}
                 </Text>
                 <Chevron />
-              </Pressable>
+              </Tappable>
             )}
           </View>
         )}
@@ -370,7 +367,7 @@ const s = StyleSheet.create({
   proHead: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
   priceRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 6 },
   price: {
-    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontFamily: font.display,
     fontSize: 40,
     lineHeight: 42,
     letterSpacing: -1.8,
@@ -408,12 +405,7 @@ const s = StyleSheet.create({
     minHeight: 44,
   },
 
-  footnote: {
-    textAlign: "center",
-    marginTop: 26,
-    fontFamily: "InstrumentSans_400Regular",
-    fontSize: 12,
-    lineHeight: 18,
-    color: color.textFaint,
-  },
+  // Was a hand-rolled 12/18 in a literal font name. `bodySmall` is 13/18 in
+  // the same face — one step up, and one step the type scale actually owns.
+  footnote: { ...T.bodySmall, textAlign: "center", marginTop: 26, color: color.textFaint },
 });

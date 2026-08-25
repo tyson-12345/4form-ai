@@ -12,14 +12,12 @@ import {
   StyleSheet,
   ScrollView,
   Platform,
-  Pressable,
   TextInput,
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import Svg, { Path as SvgPath, Circle as SvgCircle } from "react-native-svg";
 
 import {
   Avatar,
@@ -32,6 +30,11 @@ import {
   Sheet,
   StatusBarScrim,
   Text,
+  CameraGlyph,
+  Toast,
+  Entering,
+  TextField,
+  Tappable,
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
 import { PRIVACY_POLICY_URL, TERMS_URL, openLegal, openSupport } from "@/constants/legal";
@@ -51,6 +54,14 @@ const LEVELS = ["Beginner", "Intermediate", "Advanced", "Elite"] as const;
 
 type EditField = "name" | "sport" | "level" | "weeklyGoal" | null;
 
+/** What the confirmation calls each field. Spoken as well as shown. */
+const LABELS: Record<Exclude<EditField, null>, string> = {
+  name: "Name",
+  sport: "Sport",
+  level: "Level",
+  weeklyGoal: "Weekly goal",
+};
+
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -64,6 +75,7 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
 
   /**
    * Pick a square-cropped photo from the library and store it on-device.
@@ -151,7 +163,11 @@ export default function ProfileScreen() {
       else if (edit === "level")
         await updateProfile({ level: next.toLowerCase() as "beginner" });
       else if (edit === "weeklyGoal") await updateProfile({ weeklyGoal: Number(next) });
+      // Saving used to succeed in complete silence: the sheet closed and
+      // nothing else happened, so "saved" and "quietly failed and closed
+      // anyway" looked identical.
       setEdit(null);
+      setSaved(LABELS[edit] ?? "Saved");
     } catch {
       alert("Couldn't save", "Please try again.");
     } finally {
@@ -161,6 +177,12 @@ export default function ProfileScreen() {
 
   return (
     <Screen>
+      <Toast
+        message={saved ? `${saved} updated` : ""}
+        visible={!!saved}
+        onHide={() => setSaved(null)}
+        bottomInset={TAB_BAR.clearance + insets.bottom}
+      />
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + 14,
@@ -170,18 +192,18 @@ export default function ProfileScreen() {
       >
         {/* ── Identity ── */}
         <View style={s.identity}>
-          <Pressable
+          <Tappable
             onPress={() => setPhotoOpen(true)}
             accessibilityRole="button"
             accessibilityLabel="Change profile photo"
-            style={({ pressed }) => pressed && { opacity: 0.8 }}
+
           >
             <Avatar name={displayName} uri={avatarUri} size={62} />
             {/* The affordance that makes the avatar read as editable. */}
             <View style={s.avatarBadge}>
               <CameraGlyph />
             </View>
-          </Pressable>
+          </Tappable>
           <View style={{ flex: 1 }}>
             <Text scale="display" style={[T.metricMedium, { fontSize: 24 }]} numberOfLines={1}>
               {displayName}
@@ -200,7 +222,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Training ── */}
-        <View style={s.section}>
+        <Entering index={1} style={s.section}>
           <Label style={{ marginBottom: 10 }}>TRAINING</Label>
           <Card padded={false} style={{ paddingHorizontal: 18 }}>
             <Row label="Name" value={displayName} onPress={() => openEdit("name")} />
@@ -221,14 +243,14 @@ export default function ProfileScreen() {
               last
             />
           </Card>
-        </View>
+        </Entering>
 
         {/* ── Plan ── */}
-        <Pressable
+        <Tappable
           onPress={() => router.push("/pricing")}
           accessibilityRole="button"
           accessibilityLabel={`${tier} plan. See plans.`}
-          style={({ pressed }) => [s.plan, pressed && { opacity: 0.9 }]}
+          style={[s.plan]}
         >
           <View style={{ flex: 1 }}>
             <Label tone={color.onInkFaint}>
@@ -242,10 +264,10 @@ export default function ProfileScreen() {
           <View style={s.planCta}>
             <Text style={[T.buttonSmall, { color: color.onCobalt }]}>Plans</Text>
           </View>
-        </Pressable>
+        </Tappable>
 
         {/* ── App ── */}
-        <View style={s.section}>
+        <Entering index={2} style={s.section}>
           <Label style={{ marginBottom: 10 }}>APP</Label>
           <Card padded={false} style={{ paddingHorizontal: 18 }}>
             <Row
@@ -282,10 +304,10 @@ export default function ProfileScreen() {
             />
             <Row label="Version" value="1.0.0" last />
           </Card>
-        </View>
+        </Entering>
 
         {/* ── Account ── */}
-        <View style={s.section}>
+        <Entering index={3} style={s.section}>
           <Label style={{ marginBottom: 10 }}>ACCOUNT</Label>
           <Card padded={false} style={{ paddingHorizontal: 18 }}>
             <Row
@@ -311,7 +333,7 @@ export default function ProfileScreen() {
               last
             />
           </Card>
-        </View>
+        </Entering>
       </ScrollView>
 
       {/* ── Edit sheet ── */}
@@ -370,12 +392,11 @@ export default function ProfileScreen() {
 
         {edit === "name" && (
           <>
-            <TextInput
-              style={s.input}
+            <TextField
+              label="Name"
               value={value}
               onChangeText={setValue}
               placeholder="Your name"
-              placeholderTextColor={color.textGhost}
               autoFocus
               maxLength={80}
               returnKeyType="done"
@@ -494,29 +515,25 @@ function DeleteAccountSheet({
         removed too.
       </Text>
 
-      <Label style={{ marginTop: 28, marginBottom: 8 }}>TYPE DELETE TO CONFIRM</Label>
-      <TextInput
-        style={s.input}
+      <TextField
+        label="Type DELETE to confirm"
+        containerStyle={{ marginTop: 28 }}
         value={confirm}
         onChangeText={setConfirm}
         placeholder="DELETE"
-        placeholderTextColor={color.textGhost}
         autoCapitalize="characters"
         autoCorrect={false}
-        accessibilityLabel="Type DELETE to confirm"
       />
 
-      <Label style={{ marginTop: 20, marginBottom: 8 }}>YOUR PASSWORD</Label>
-      <TextInput
-        style={s.input}
+      <TextField
+        label="Your password"
         value={password}
         onChangeText={setPassword}
         placeholder="Password"
-        placeholderTextColor={color.textGhost}
-        secureTextEntry
+        secure
         autoCapitalize="none"
         autoComplete="current-password"
-        accessibilityLabel="Your password"
+        containerStyle={{ marginTop: 20 }}
       />
 
       {error && (
@@ -547,21 +564,6 @@ function DeleteAccountSheet({
 // ─── Pieces ──────────────────────────────────────────────────────────────────
 
 /** Small camera mark for the avatar's edit badge — drawn, not an icon font. */
-function CameraGlyph() {
-  return (
-    <Svg width={11} height={11} viewBox="0 0 24 24">
-      <SvgPath
-        d="M4 8 h3 l2-2.5 h6 L17 8 h3 a1.5 1.5 0 0 1 1.5 1.5 v9 a1.5 1.5 0 0 1 -1.5 1.5 H4 a1.5 1.5 0 0 1 -1.5 -1.5 v-9 A1.5 1.5 0 0 1 4 8 Z"
-        fill="none"
-        stroke={color.onCobalt}
-        strokeWidth={2.4}
-        strokeLinejoin="round"
-      />
-      <SvgCircle cx={12} cy={13.5} r={3.4} fill="none" stroke={color.onCobalt} strokeWidth={2.4} />
-    </Svg>
-  );
-}
-
 function Stat({ value, label, tone }: { value: number; label: string; tone?: string }) {
   return (
     // Grouped: the number and its label are one fact, and read as two
@@ -587,21 +589,21 @@ function Row({
   tone?: string;
 }) {
   return (
-    <Pressable
+    <Tappable
       onPress={onPress}
       disabled={!onPress}
       // A non-pressable Row (the version line) is not a button and must not
       // announce as one.
       accessibilityRole={onPress ? "button" : undefined}
       accessibilityLabel={onPress ? (value ? `${label}, ${value}` : label) : undefined}
-      style={({ pressed }) => [s.row, last && { borderBottomWidth: 0 }, pressed && { opacity: 0.6 }]}
+      style={[s.row, last && { borderBottomWidth: 0 }]}
     >
       <Text style={[T.rowTitle, { flex: 1, fontSize: 15 }, tone ? { color: tone } : null]}>
         {label}
       </Text>
       {value && <Text style={[T.measured, { fontSize: 11, color: color.textMuted }]}>{value}</Text>}
       {onPress && <Chevron />}
-    </Pressable>
+    </Tappable>
   );
 }
 
@@ -655,13 +657,4 @@ const s = StyleSheet.create({
   },
 
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  input: {
-    backgroundColor: color.card,
-    borderRadius: radius.cardSmall,
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    fontFamily: font.body,
-    fontSize: 15,
-    color: color.textPrimary,
-  },
 });

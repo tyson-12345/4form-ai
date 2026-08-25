@@ -1,19 +1,39 @@
+/**
+ * Compare — reference technique models.
+ *
+ * ── Why this file changed shape ────────────────────────────────────────────
+ * It was the one screen entirely off the design system. It called
+ * `StyleSheet.create` inside the component body, so every style object in it
+ * was rebuilt on every render; it hard-coded `fontFamily: "InstrumentSans_*"`
+ * eighteen times instead of taking the type scale; it sat on a 20pt gutter
+ * while every other screen uses 22; it built colours by string concatenation
+ * (`color.cobalt + "88"`); and it re-implemented Screen, Card, Avatar, three
+ * chip variants, a meter, a close button and seven text styles that the system
+ * already exports. It also held the app's only two `TouchableOpacity`.
+ *
+ * None of that was visible as a bug, which is exactly why it survived: the
+ * screen is hidden from the tab bar and reachable by URL only, so it drifted
+ * where nobody was looking.
+ */
+
 import React, { useState } from "react";
-import {
-  View,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Platform,
-} from "react-native";
+import { View, StyleSheet, ScrollView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  Avatar,
+  Card,
   Chevron,
+  Chip,
   CloseGlyph,
+  Entering,
+  Label,
+  Meter,
+  Screen,
+  Tappable,
   Text,
 } from "@/components/caliper";
-import { color, radius, TAB_BAR, WEB_TOP_INSET } from "@/constants/caliper";
+import { color, type as T, radius, GUTTER, TAB_BAR, WEB_TOP_INSET } from "@/constants/caliper";
 import { REFERENCE_MODELS } from "@/lib/referenceModels";
 import type { ProAthlete } from "@/lib/types";
 
@@ -48,10 +68,10 @@ import type { ProAthlete } from "@/lib/types";
 function getSimilarityForAthlete(_proId: string): number | null {
   return null;
 }
-
 export default function CompareScreen() {
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<ProAthlete | null>(null);
+
   // Web reports zero safe-area insets, so a bare `insets.top` puts the title
   // flush against the top of the browser viewport. The fallback is the height
   // of a typical status bar plus notch, not a number picked to look right on
@@ -61,198 +81,132 @@ export default function CompareScreen() {
   // 62 + 26 + 12 = 100, and 60 left the last card sitting under it.
   const bottomPad = TAB_BAR.clearance + insets.bottom;
 
-  const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: color.paper },
-    scroll: { flex: 1 },
-    header: {
-      paddingTop: topPad + 16,
-      paddingHorizontal: 20,
-      paddingBottom: 20,
-    },
-    title: { fontSize: 28, fontFamily: "InstrumentSans_600SemiBold", color: color.textPrimary },
-    subtitle: { fontSize: 14, color: color.textMuted, fontFamily: "InstrumentSans_400Regular", marginTop: 4 },
-    proCard: {
-      backgroundColor: color.card,
-      borderRadius: radius.card,
-      padding: 16,
-      marginHorizontal: 20,
-      marginBottom: 12,
-      borderWidth: 1,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 14,
-    },
-    avatar: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
-      backgroundColor: color.ink,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    avatarText: {
-      fontSize: 18,
-      fontFamily: "InstrumentSans_600SemiBold",
-      color: color.onInk,
-    },
-    proName: { fontSize: 16, fontFamily: "InstrumentSans_600SemiBold", color: color.textPrimary },
-    proSpecialty: { fontSize: 12, color: color.textMuted, fontFamily: "InstrumentSans_400Regular", marginTop: 2 },
-    sportBadge: {
-      alignSelf: "flex-start",
-      borderRadius: 20,
-      backgroundColor: color.paperDeep,
-      paddingHorizontal: 9,
-      paddingVertical: 3,
-      marginTop: 5,
-    },
-    sportBadgeText: {
-      fontSize: 11,
-      // textSecondary, not textMuted: paperDeep is the one surface where the
-      // lighter tiers drop under 4.5:1 (see the ladder note in constants).
-      color: color.textSecondary,
-      fontFamily: "InstrumentSans_500Medium",
-      textTransform: "capitalize",
-    },
-    similarityBadge: {
-      borderRadius: 20,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      backgroundColor: color.cobalt + "22",
-      alignItems: "center",
-    },
-    similarityNum: { fontSize: 16, fontFamily: "InstrumentSans_600SemiBold", color: color.cobalt },
-    similarityLabel: { fontSize: 9, color: color.cobalt, fontFamily: "InstrumentSans_400Regular" },
-    comparePanel: {
-      marginHorizontal: 20,
-      marginBottom: 24,
-      backgroundColor: color.card,
-      borderRadius: radius.card,
-      padding: 20,
-      borderWidth: 1,
-      borderColor: color.cobalt + "44",
-    },
-    panelTitle: { fontSize: 18, fontFamily: "InstrumentSans_600SemiBold", color: color.textPrimary, marginBottom: 4 },
-    panelSubtitle: { fontSize: 13, color: color.textMuted, fontFamily: "InstrumentSans_400Regular", marginBottom: 16 },
-    simBar: { marginBottom: 16 },
-    simBarLabel: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-    simBarLabelText: { fontSize: 12, color: color.textMuted, fontFamily: "InstrumentSans_400Regular" },
-    simBarValue: { fontSize: 14, fontFamily: "InstrumentSans_600SemiBold", color: color.cobalt },
-    simBarBg: { height: 8, backgroundColor: color.rule, borderRadius: 4 },
-    simBarFill: { height: 8, borderRadius: 4, backgroundColor: color.cobalt },
-    keyAttrSection: { marginTop: 8 },
-    keyAttrTitle: { fontSize: 13, fontFamily: "InstrumentSans_600SemiBold", color: color.textPrimary, marginBottom: 8 },
-    attrPill: {
-      borderRadius: 20,
-      paddingHorizontal: 12,
-      paddingVertical: 5,
-      backgroundColor: color.paperDeep,
-      marginRight: 8,
-      marginBottom: 8,
-    },
-    attrText: { fontSize: 12, color: color.textPrimary, fontFamily: "InstrumentSans_400Regular" },
-    closeBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6,
-      marginTop: 16,
-      paddingVertical: 12,
-      borderRadius: radius.card,
-      borderWidth: 1,
-      borderColor: color.rule,
-    },
-    closeBtnText: { color: color.textMuted, fontSize: 13, fontFamily: "InstrumentSans_400Regular" },
-  });
-
   return (
-    <View style={s.container}>
-      <ScrollView style={s.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: bottomPad }}>
+    <Screen>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingTop: topPad + 16, paddingBottom: bottomPad }}
+      >
         <View style={s.header}>
-          <Text style={s.title}>Compare</Text>
-          <Text style={s.subtitle}>
+          <Text scale="display" style={T.screenTitle}>Compare</Text>
+          <Text style={[T.body, { marginTop: 10 }]}>
             Reference technique models for each sport. Measured comparison against your own
             clips is still in development.
           </Text>
         </View>
 
         {selected && (
-          <View style={s.comparePanel}>
-            <Text style={s.panelTitle}>vs. {selected.name}</Text>
-            <Text style={s.panelSubtitle}>{selected.specialty}</Text>
+          <Entering style={s.block}>
+            <Card>
+              <Text scale="display" style={T.cardTitle}>vs. {selected.name}</Text>
+              <Text style={[T.bodySmall, { marginTop: 4 }]}>{selected.specialty}</Text>
 
-            <View style={s.simBar}>
-              <View style={s.simBarLabel}>
-                <Text style={s.simBarLabelText}>Overall Similarity</Text>
-                <Text style={s.simBarValue}>{getSimilarityForAthlete(selected.id) ?? "–"}%</Text>
+              <View style={s.simHead}>
+                <Label>OVERALL SIMILARITY</Label>
+                <Text style={T.measured}>
+                  {getSimilarityForAthlete(selected.id) ?? "–"}%
+                </Text>
               </View>
-              {getSimilarityForAthlete(selected.id) !== null && (
-                <View style={s.simBarBg}>
-                  <View style={[s.simBarFill, { width: `${getSimilarityForAthlete(selected.id)}%` as any }]} />
-                </View>
-              )}
-              {getSimilarityForAthlete(selected.id) === null && (
-                <Text style={{ color: color.textMuted, fontSize: 12, fontFamily: "InstrumentSans_400Regular" }}>
+
+              {getSimilarityForAthlete(selected.id) !== null ? (
+                <Meter
+                  value={(getSimilarityForAthlete(selected.id) ?? 0) / 100}
+                  tone={color.ink}
+                  label={`Similarity to ${selected.name}`}
+                  style={{ marginTop: 10 }}
+                />
+              ) : (
+                <Text style={[T.bodySmall, { marginTop: 8 }]}>
                   Measured comparison isn&apos;t available yet. The attributes below are what
                   this movement is judged on. Use them as a checklist against your own clips.
                 </Text>
               )}
-            </View>
 
-            <View style={s.keyAttrSection}>
-              <Text style={s.keyAttrTitle}>Key Attributes to Match</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+              <Label style={{ marginTop: 22 }}>KEY ATTRIBUTES TO MATCH</Label>
+              <View style={s.attrs}>
                 {selected.keyAttributes.map((attr) => (
-                  <View key={attr} style={s.attrPill}>
-                    <Text style={s.attrText}>{attr}</Text>
-                  </View>
+                  <Chip key={attr} label={attr} />
                 ))}
               </View>
-            </View>
 
-            <TouchableOpacity style={s.closeBtn} activeOpacity={0.7} onPress={() => setSelected(null)}>
-              <CloseGlyph tone={color.textMuted} size={13} />
-              <Text style={s.closeBtnText}>Close comparison</Text>
-            </TouchableOpacity>
-          </View>
+              <Tappable
+                onPress={() => setSelected(null)}
+                accessibilityLabel="Close comparison"
+                style={s.close}
+              >
+                <CloseGlyph tone={color.textMuted} size={13} />
+                <Text style={[T.buttonSmall, { color: color.textMuted }]}>Close comparison</Text>
+              </Tappable>
+            </Card>
+          </Entering>
         )}
 
-        {REFERENCE_MODELS.map((pro) => {
-          const initials = pro.name.split(" ").map((n) => n[0]).join("").slice(0, 2);
-          const similarity = getSimilarityForAthlete(pro.id);
-          const isSelected = selected?.id === pro.id;
+        <View style={s.block}>
+          {REFERENCE_MODELS.map((pro, i) => {
+            const similarity = getSimilarityForAthlete(pro.id);
+            const isSelected = selected?.id === pro.id;
 
-          return (
-            <TouchableOpacity
-              key={pro.id}
-              style={[s.proCard, { borderColor: isSelected ? color.cobalt + "88" : color.rule }]}
-              activeOpacity={0.75}
-              accessibilityRole="button"
-              accessibilityState={{ selected: isSelected }}
-              accessibilityLabel={`${pro.name}, ${pro.specialty}, ${pro.sport}`}
-              onPress={() => setSelected(isSelected ? null : pro)}
-            >
-              <View style={s.avatar}>
-                <Text style={s.avatarText}>{initials}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.proName}>{pro.name}</Text>
-                <Text style={s.proSpecialty}>{pro.specialty}</Text>
-                <View style={s.sportBadge}>
-                  <Text style={s.sportBadgeText}>{pro.sport}</Text>
-                </View>
-              </View>
-              {similarity !== null ? (
-                <View style={s.similarityBadge}>
-                  <Text style={s.similarityNum}>{similarity}%</Text>
-                  <Text style={s.similarityLabel}>match</Text>
-                </View>
-              ) : (
-                <Chevron />
-              )}
-            </TouchableOpacity>
-          );
-        })}
+            return (
+              <Entering key={pro.id} index={i}>
+                <Tappable
+                  onPress={() => setSelected(isSelected ? null : pro)}
+                  haptic="select"
+                  accessibilityState={{ selected: isSelected }}
+                  accessibilityLabel={`${pro.name}, ${pro.specialty}, ${pro.sport}`}
+                  style={[s.proCard, isSelected && s.proCardOn]}
+                >
+                  <Avatar name={pro.name} size={44} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={T.rowTitle}>{pro.name}</Text>
+                    <Text style={[T.rowSubtitle, { marginTop: 2 }]}>{pro.specialty}</Text>
+                    <Label style={{ marginTop: 6 }}>{pro.sport.toUpperCase()}</Label>
+                  </View>
+                  {similarity !== null ? (
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={T.metricRow}>{similarity}%</Text>
+                      <Label>MATCH</Label>
+                    </View>
+                  ) : (
+                    <Chevron />
+                  )}
+                </Tappable>
+              </Entering>
+            );
+          })}
+        </View>
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
+
+const s = StyleSheet.create({
+  header: { paddingHorizontal: GUTTER, paddingBottom: 20 },
+  block: { paddingHorizontal: GUTTER },
+  simHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 22,
+  },
+  attrs: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
+  close: {
+    marginTop: 22,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 44,
+  },
+  proCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: color.card,
+    borderRadius: radius.cardSmall,
+    borderWidth: 1,
+    borderColor: color.rule,
+    padding: 14,
+    marginBottom: 10,
+  },
+  proCardOn: { borderColor: color.ink },
+});

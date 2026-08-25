@@ -38,7 +38,7 @@ import {
 import { Text } from "@/components/caliper";
 import Svg, { Circle, Path } from "react-native-svg";
 
-import { color, font } from "@/constants/caliper";
+import { color, type as T } from "@/constants/caliper";
 import { isAlarming } from "@/utils/flagSeverity";
 
 /** Minimal slice of a risk record the figure needs. */
@@ -259,8 +259,8 @@ export function MeasureFigure({ findings, height = 190 }: MeasureFigureProps) {
                 ? { left: px, alignItems: "flex-start" }
                 : { right: width + LABEL_GUTTER * 2 - px, alignItems: "flex-end" },
               { top: py },
+              { pointerEvents: "none" },
             ]}
-            pointerEvents="none"
           >
             <Text style={s.labelText} numberOfLines={1}>
               {labelFor(key, state)}
@@ -279,18 +279,22 @@ export function MeasureFigure({ findings, height = 190 }: MeasureFigureProps) {
 
 const s = StyleSheet.create({
   label: { position: "absolute" },
+  // Both were hand-rolled mono at 9 and 10px, below the 11px floor the type
+  // scale sets for anything carrying meaning — and these carry the joint's
+  // name and the angle that flagged it. Taking `measuredSmall` rather than
+  // repeating its fields is also what keeps them moving with it.
   labelText: {
-    fontFamily: font.mono,
-    fontSize: 9,
+    ...T.measuredSmall,
     letterSpacing: 1.2,
     color: color.rustOnInk,
   },
   rangeText: {
-    fontFamily: font.mono,
-    fontSize: 10,
+    ...T.measuredSmall,
     letterSpacing: 0.4,
     color: color.rustOnInk,
     marginTop: 2,
-    opacity: 0.85,
+    // The 0.85 opacity this carried composited rustOnInk down from the 5.15:1
+    // it was chosen for. On an 11px stamp the hierarchy is carried by case and
+    // position instead; the flag colour does not get to be almost-legible.
   },
 });

@@ -15,7 +15,6 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
-  Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -31,8 +30,12 @@ import {
   Prescription,
   ReferenceRow,
   Screen,
+  NoReading,
+  SkeletonBlock,
+  Entering,
   StatusBarScrim,
   Text,
+  Tappable,
 } from "@/components/caliper";
 import { color, type as T, GUTTER, TAB_BAR, delta, stampDate, stampDay } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
@@ -155,14 +158,14 @@ export default function HomeScreen() {
                 ? "Showing your last saved sessions. We couldn't reach the server."
                 : "We couldn't reach the server, so your sessions haven't loaded."}
             </Text>
-            <Pressable
+            <Tappable
               onPress={() => void load()}
               accessibilityRole="button"
               accessibilityLabel="Retry loading your sessions"
               style={s.retryBtn}
             >
               <Text style={[T.buttonSmall, { color: color.cobalt }]}>Retry</Text>
-            </Pressable>
+            </Tappable>
           </View>
         )}
 
@@ -175,7 +178,7 @@ export default function HomeScreen() {
             </Label>
             <Text scale="display" style={[T.screenTitle, s.headline]}>{headline}</Text>
           </View>
-          <Pressable
+          <Tappable
             onPress={() => router.push("/(tabs)/profile")}
             accessibilityRole="button"
             accessibilityLabel={`Profile, ${displayName}`}
@@ -184,10 +187,11 @@ export default function HomeScreen() {
             style={s.avatarTarget}
           >
             <Avatar name={displayName} uri={avatarUri} />
-          </Pressable>
+          </Tappable>
         </View>
 
         {/* ── Form Index ── */}
+        <Entering index={0}>
         {latest ? (
           <Card style={s.block}>
             {/* Label left, provenance right — the reading and what it was
@@ -250,33 +254,52 @@ export default function HomeScreen() {
         ) : (
           <Card style={s.block}>
             <Label>FORM INDEX</Label>
-            <Text scale="display" style={[T.metricHero, { color: color.textGhost, marginTop: 2 }]}>–</Text>
-            <Text style={[T.body, { marginTop: 8 }]}>
-              {loaded
-                ? "Film a clip and we'll measure your joint angles frame by frame. Your Form Index is calculated from those measurements, so it means the same thing every time."
-                : "Loading your sessions…"}
-            </Text>
+            {loaded ? (
+              <>
+                <NoReading style={{ marginTop: 10 }} />
+                <Text style={[T.body, { marginTop: 10 }]}>
+                  Film a clip and we&apos;ll measure your joint angles frame by frame. Your Form
+                  Index is calculated from those measurements, so it means the same thing every
+                  time.
+                </Text>
+              </>
+            ) : (
+              /*
+                Loading and empty used to share this card, so "we are fetching
+                your sessions" and "you have measured nothing" were the same
+                rectangle with different words in it. Blocks in the shape of the
+                reading say which one it is without reading a word.
+              */
+              <>
+                <SkeletonBlock height={30} width="34%" style={{ marginTop: 12 }} />
+                <SkeletonBlock height={15} style={{ marginTop: 18 }} />
+                <SkeletonBlock height={15} width="88%" style={{ marginTop: 8 }} />
+                <SkeletonBlock height={15} width="64%" style={{ marginTop: 8 }} />
+              </>
+            )}
           </Card>
         )}
 
+        </Entering>
+
         {/* ── The one next action ── */}
         {prescription && (
-          <View style={s.block}>
+          <Entering index={1} style={s.block}>
             <Prescription
               text={prescription.text}
               why={prescription.why}
               actionLabel="Open"
               onPress={() => latest && router.push(`/analysis/${latest.id}`)}
             />
-          </View>
+          </Entering>
         )}
 
         {/* ── Record ── */}
         {recent.length > 0 && (
-          <View style={[s.block, { marginTop: 22 }]}>
+          <Entering index={2} style={[s.block, { marginTop: 22 }]}>
             <View style={s.sectionHead}>
               <Label>LAST {recent.length === 1 ? "SESSION" : `${recent.length} SESSIONS`}</Label>
-              <Pressable
+              <Tappable
                 onPress={() => router.push("/(tabs)/analyze")}
                 accessibilityRole="link"
                 accessibilityLabel="See all sessions"
@@ -286,7 +309,7 @@ export default function HomeScreen() {
                 style={s.allLink}
               >
                 <Text style={[T.buttonSmall, { color: color.cobalt }]}>All</Text>
-              </Pressable>
+              </Tappable>
             </View>
 
             {recent.map((item, i) => (
@@ -298,7 +321,7 @@ export default function HomeScreen() {
                 onPress={() => router.push(`/analysis/${item.id}`)}
               />
             ))}
-          </View>
+          </Entering>
         )}
 
         {loaded && list.length === 0 && (
@@ -341,7 +364,7 @@ function SessionRow({
         : item.sport;
 
   return (
-    <Pressable
+    <Tappable
       // `disabled`, not a missing handler. With onPress undefined the row still
       // ran its pressed style, so a measuring session gave tap feedback and
       // then did nothing — a control that looks alive and is not.
@@ -354,11 +377,7 @@ function SessionRow({
           ? `${item.title}, still measuring`
           : `${item.title}, ${note}, score ${item.overallScore === null ? "not measured" : Math.round(item.overallScore)}`
       }
-      style={({ pressed }) => [
-        s.row,
-        first && { borderTopWidth: 0 },
-        pressed && !processing && { opacity: 0.7 },
-      ]}
+      style={[s.row, first && { borderTopWidth: 0 }]}
     >
       {/* minWidth, not width: a fixed box broke "SAT" onto two lines as soon
           as the system text size went up. */}
@@ -384,7 +403,7 @@ function SessionRow({
         />
       </View>
       <Chevron />
-    </Pressable>
+    </Tappable>
   );
 }
 

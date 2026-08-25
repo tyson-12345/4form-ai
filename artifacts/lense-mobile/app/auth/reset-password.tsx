@@ -10,8 +10,6 @@ import React, { useState } from "react";
 import {
   View,
   StyleSheet,
-  TextInput,
-  Pressable,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -24,6 +22,8 @@ import {
   Check,
   Label,
   PrimaryButton,
+  Meter,
+  TextField,
   Screen,
   Text,
 } from "@/components/caliper";
@@ -104,78 +104,56 @@ export default function ResetPasswordScreen() {
           <Text scale="display" style={[T.headline, { marginTop: 10 }]}>Set a new password.</Text>
 
           {!params.token && (
-            <>
-              <Label style={{ marginTop: 30, marginBottom: 8 }}>RESET CODE</Label>
-              <TextInput
-                style={s.input}
-                value={token}
-                onChangeText={(v) => {
-                  setToken(v);
-                  setError(null);
-                }}
-                placeholder="Paste the code from your email"
-                placeholderTextColor={color.textGhost}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </>
-          )}
-
-          <Label style={{ marginTop: 20, marginBottom: 8 }}>NEW PASSWORD</Label>
-          <View style={s.passwordWrap}>
-            <TextInput
-              style={[s.input, { paddingRight: 60 }]}
-              value={password}
+            <TextField
+              label="Reset code"
+              value={token}
               onChangeText={(v) => {
-                setPassword(v);
+                setToken(v);
                 setError(null);
               }}
-              placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
-              placeholderTextColor={color.textGhost}
-              secureTextEntry={!show}
+              placeholder="Paste the code from your email"
               autoCapitalize="none"
-              autoComplete="new-password"
-              returnKeyType="go"
-              onSubmitEditing={submit}
+              autoCorrect={false}
+              containerStyle={{ marginTop: 30 }}
             />
-            <Pressable
-              onPress={() => setShow(!show)}
-              style={s.reveal}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel={show ? "Hide password" : "Show password"}
-              accessibilityState={{ selected: show }}
-            >
-              <Text style={[T.buttonSmall, { color: color.textMuted }]}>
-                {show ? "Hide" : "Show"}
-              </Text>
-            </Pressable>
-          </View>
+          )}
+
+          <TextField
+            label="New password"
+            value={password}
+            onChangeText={(v) => {
+              setPassword(v);
+              setError(null);
+            }}
+            error={error}
+            placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+            secure
+            autoCapitalize="none"
+            autoComplete="new-password"
+            returnKeyType="go"
+            onSubmitEditing={submit}
+            containerStyle={{ marginTop: 20 }}
+          />
 
           {password.length > 0 && (
             <View style={s.strength}>
-              <View style={s.strengthTrack}>
-                <View
-                  style={[
-                    s.strengthFill,
-                    {
-                      width: `${Math.min(100, (password.length / 16) * 100)}%`,
-                      backgroundColor: longEnough ? color.cobalt : color.rust,
-                    },
-                  ]}
-                />
-              </View>
+              <Meter
+                value={Math.min(1, password.length / 16)}
+                tone={longEnough ? color.cobalt : color.rust}
+                height={3}
+                label={`Password strength: ${longEnough ? "good" : "too short"}`}
+                style={{ flex: 1 }}
+              />
               <Text style={[T.measuredSmall, { color: longEnough ? color.cobalt : color.rust }]}>
                 {longEnough ? "GOOD" : `${MIN_PASSWORD_LENGTH - password.length} MORE`}
               </Text>
             </View>
           )}
 
-          {error && <Text style={s.error}>{error}</Text>}
-
           <View style={{ marginTop: 28 }}>
             <PrimaryButton
-              label={busy ? "Resetting…" : "Reset password"}
+              label="Reset password"
+              loading={busy}
               onPress={submit}
               disabled={!canSubmit}
             />
@@ -192,27 +170,7 @@ export default function ResetPasswordScreen() {
 
 const s = StyleSheet.create({
   head: { paddingHorizontal: GUTTER, paddingBottom: 10 },
-  input: {
-    backgroundColor: color.card,
-    borderRadius: radius.cardSmall,
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    fontFamily: font.body,
-    fontSize: 15,
-    color: color.textPrimary,
-  },
-  passwordWrap: { position: "relative", justifyContent: "center" },
-  reveal: {
-    position: "absolute",
-    right: 8,
-    paddingHorizontal: 8,
-    // The label alone was a 34x16 target inside the field.
-    minHeight: 44,
-    justifyContent: "center",
-  },
   strength: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 },
-  strengthTrack: { flex: 1, height: 3, borderRadius: 2, backgroundColor: color.rule },
-  strengthFill: { height: 3, borderRadius: 2 },
   doneGlyph: {
     width: 52,
     height: 52,
@@ -220,12 +178,5 @@ const s = StyleSheet.create({
     backgroundColor: color.cobaltWash,
     alignItems: "center",
     justifyContent: "center",
-  },
-  error: {
-    marginTop: 14,
-    fontFamily: font.body,
-    fontSize: 13,
-    lineHeight: 18,
-    color: color.rust,
   },
 });

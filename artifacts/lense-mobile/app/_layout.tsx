@@ -20,7 +20,6 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { ActivityIndicator, View } from "react-native";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/lib/authContext";
@@ -30,16 +29,33 @@ SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
-function AuthGate({ children }: { children: React.ReactNode }) {
+/**
+ * Holds the launch until the app can show a real screen.
+ *
+ * This used to hide the splash as soon as the fonts resolved and then render a
+ * full-screen spinner while the session was restored — so a cold start was
+ * splash, hard cut to a lone spinner on paper, hard cut to content. Three
+ * states to say one thing.
+ *
+ * Now the splash stays up until fonts *and* session are both ready, and there
+ * is exactly one transition: the system's own splash dismissal, straight onto
+ * the first screen. Nothing else is faster than not showing an intermediate
+ * state at all.
+ *
+ * The two waits also overlap now rather than running in series: the provider
+ * mounts and starts restoring the session while the fonts are still
+ * downloading, because the old `return null` on the whole tree meant nothing
+ * below it had mounted to start.
+ */
+function AuthGate({ children, fontsReady }: { children: React.ReactNode; fontsReady: boolean }) {
   const { isLoading } = useAuth();
+  const ready = fontsReady && !isLoading;
 
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: color.paper, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator color={color.cobalt} size="large" />
-      </View>
-    );
-  }
+  useEffect(() => {
+    if (ready) void SplashScreen.hideAsync().catch(() => {});
+  }, [ready]);
+
+  if (!ready) return null;
 
   return <>{children}</>;
 }
@@ -55,8 +71,14 @@ function RootLayoutNav() {
       <Stack.Screen name="index" />
       <Stack.Screen name="welcome" />
       <Stack.Screen name="onboarding" />
-      <Stack.Screen name="auth/login" />
-      <Stack.Screen name="auth/signup" />
+      {/*
+        Both of these are reached from the other by `router.replace()`, which
+        without this animates as a forward push in both directions — so going
+        "back" to sign in slid in from the right exactly as going forward to
+        sign up did. `pop` makes the replace read as the reversal it is.
+      */}
+      <Stack.Screen name="auth/login" options={{ animationTypeForReplace: "pop" }} />
+      <Stack.Screen name="auth/signup" options={{ animationTypeForReplace: "pop" }} />
       <Stack.Screen name="auth/forgot-password" options={{ presentation: "modal" }} />
       <Stack.Screen name="auth/reset-password" options={{ presentation: "modal" }} />
       <Stack.Screen name="pricing" options={{ presentation: "modal" }} />
@@ -85,13 +107,9 @@ export default function RootLayout() {
     JetBrainsMono_700Bold,
   });
 
-  useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
-
-  if (!fontsLoaded && !fontError) return null;
+  // A font CDN failure degrades to system faces rather than hanging on the
+  // splash forever, which is why fontError counts as ready.
+  const fontsReady = fontsLoaded || !!fontError;
 
   return (
     <SafeAreaProvider>
@@ -102,7 +120,7 @@ export default function RootLayout() {
               {/* Caliper is a single light system — paper is load-bearing, so
                   the status bar is always dark-on-light. */}
               <StatusBar style="dark" />
-              <AuthGate>
+              <AuthGate fontsReady={fontsReady}>
                 <RootLayoutNav />
               </AuthGate>
             </GestureHandlerRootView>

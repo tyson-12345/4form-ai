@@ -136,6 +136,34 @@ export const color = {
   cobaltWash: "rgba(36,54,232,0.10)",
   cobaltWashFaint: "rgba(36,54,232,0.06)",
   inkWashOnDark: "rgba(237,236,231,0.14)",
+
+  /**
+   * Alarm washes, derived from `rust` (#A84726 = rgb(168,71,38)).
+   *
+   * These exist because they were previously written as literals at the call
+   * site — and every one of those literals was `rgba(194,84,46,...)`, which is
+   * the *pre-2026-08-22* rust (#C2542E) that this file replaced for failing
+   * WCAG AA at 3.86:1. The token moved; five hand-written copies did not, so
+   * FrequencyChip and the skeleton player kept painting the old colour.
+   *
+   * Naming them is the fix. A wash that is a token follows `rust` the next
+   * time it moves; a wash that is a string in a StyleSheet does not.
+   */
+  rustWash: "rgba(168,71,38,0.12)",
+  rustWashFaint: "rgba(168,71,38,0.08)",
+  rustEdge: "rgba(168,71,38,0.40)",
+
+  /** Neutral ink fills — badge grounds, chart tracks, skeleton blocks. */
+  inkWash: "rgba(16,19,18,0.06)",
+  inkWashFaint: "rgba(16,19,18,0.055)",
+  inkWashSoft: "rgba(16,19,18,0.07)",
+
+  /** Ink veils, for scrims laid over film and video. */
+  inkVeil: "rgba(16,19,18,0.35)",
+  inkVeilStrong: "rgba(16,19,18,0.75)",
+
+  /** A badge sitting on the cobalt prescription card. */
+  onCobaltWash: "rgba(255,255,255,0.18)",
 } as const;
 
 /**
@@ -398,7 +426,12 @@ export const radius = {
 } as const;
 
 export const shadow = {
-  /** The floating tab bar's lift. */
+  /**
+   * The floating tab bar's lift.
+   *
+   * These are the native iOS shadow properties and are *not* deprecated there;
+   * `elevation` is the Android equivalent. Keep them.
+   */
   tabBar: {
     shadowColor: "#101312",
     shadowOpacity: 0.28,
@@ -406,6 +439,18 @@ export const shadow = {
     shadowOffset: { width: 0, height: 14 },
     elevation: 12,
   },
+  /**
+   * The same lift for the web build.
+   *
+   * react-native-web deprecates the `shadow*` props in favour of `boxShadow`
+   * and warns once per style — which is noise on the surface the invariant
+   * harness runs on, and noise there buries real findings.
+   *
+   * A separate token rather than a `Platform.select` because this file is
+   * deliberately free of imports: it holds plain values so the node-environment
+   * tests can read it without a React Native runtime. The call site picks.
+   */
+  tabBarWeb: { boxShadow: "0px 14px 30px rgba(16,19,18,0.28)" },
   /** Cards do not float — they sit on the paper. Kept for parity only. */
   none: {},
 } as const;
@@ -416,6 +461,69 @@ export const TAB_BAR = {
   bottomInset: 26,
   /** Total vertical space a scroll view must clear at the bottom. */
   clearance: 62 + 26 + 12,
+} as const;
+
+// ─── Motion ──────────────────────────────────────────────────────────────────
+
+/**
+ * The instrument's motion scale.
+ *
+ * ── Why this exists ────────────────────────────────────────────────────────
+ * Until now the system had colour, type, radius and shadow scales but no
+ * motion scale, and the result was exactly what a missing scale always
+ * produces: seven different values for one idea. Press feedback was written as
+ * a raw opacity at each call site and drifted to 0.6, 0.7, 0.75, 0.8, 0.82,
+ * 0.85 and 0.9 — while 28 of the app's 51 controls got no feedback at all,
+ * including every tab and the capture disc.
+ *
+ * ── The character ──────────────────────────────────────────────────────────
+ * Caliper's argument is precision, so its motion is a caliper's detent rather
+ * than a spring toy: critically damped, short, and always doing a job. Nothing
+ * here loops, floats, shimmers or pulses. `SkeletonBlock` already refuses a
+ * shimmer on the grounds that this app does not decorate, and that rule holds
+ * for everything below.
+ *
+ * Overshoot is allowed in exactly one place — `spring.carry` — and only when
+ * the user's own flick supplied the momentum. A menu that merely appeared has
+ * no momentum to express, so it settles.
+ *
+ * Durations are milliseconds.
+ */
+export const motion = {
+  /** Press response. Anything slower stops reading as "the control reacted". */
+  instant: 90,
+  /** Chips, tabs, toggles, small state swaps. */
+  quick: 180,
+  /** Card and content entrances, sheet bodies. */
+  standard: 260,
+  /** The hero reading settling onto its band — the one place we linger. */
+  deliberate: 420,
+
+  /**
+   * Spring configs in Reanimated's `{ duration, dampingRatio }` form rather
+   * than `{ mass, stiffness, damping }`.
+   *
+   * That is deliberate: the two-parameter form is the same model Apple's
+   * designers use (damping ratio + response), so these values can be read
+   * against Apple's published table instead of being reverse-engineered from
+   * physics constants. `dampingRatio: 1` is critically damped — it reaches the
+   * target and stops.
+   */
+  spring: {
+    /** The default. Reaches the target and stops. */
+    settle: { duration: 350, dampingRatio: 1 },
+    /** The system's only bounce, for gesture-carried momentum. */
+    carry: { duration: 400, dampingRatio: 0.8 },
+  },
+
+  /**
+   * The single press treatment, replacing the seven that drifted.
+   *
+   * Scale *and* opacity: opacity alone reads as a control dimming, scale reads
+   * as a control being pushed. 0.97 is small enough to survive on a 44pt
+   * target without looking like a toy and large enough to be felt.
+   */
+  press: { scale: 0.97, opacity: 0.9 },
 } as const;
 
 // ─── Formatting helpers ──────────────────────────────────────────────────────
@@ -439,15 +547,11 @@ export function delta(value: number | null | undefined): string | null {
 
 /** `MON 10 AUG` — the mono date stamp used across headers. */
 export function stampDate(iso: string | Date): string {
-  const d = typeof iso === "string" ? new Date(iso) : d0(iso);
+  const d = typeof iso === "string" ? new Date(iso) : iso;
   return d
     .toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })
     .toUpperCase()
     .replace(/,/g, "");
-}
-
-function d0(d: Date): Date {
-  return d;
 }
 
 /**

@@ -19,7 +19,6 @@ import {
   View,
   StyleSheet,
   ScrollView,
-  Pressable,
   ActivityIndicator,
   useWindowDimensions,
 } from "react-native";
@@ -33,6 +32,7 @@ import {
   Chevron,
   FlagRow,
   FooterFade,
+  Entering,
   FrequencyChip,
   Label,
   MetricBand,
@@ -45,6 +45,7 @@ import {
   SkeletonBlock,
   Text,
   useFooterClearance,
+  Tappable,
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font, delta } from "@/constants/caliper";
 import {
@@ -364,12 +365,12 @@ export default function AnalysisDetailScreen() {
 
           {/* Above the scrim: it is there to protect the footer text, and
               dimming the one element carrying data is the wrong trade. */}
-          <View style={s.heroBody} pointerEvents="none">
+          <View style={[s.heroBody, { pointerEvents: "none" }]}>
             <MeasureFigure findings={risks} height={168} />
           </View>
 
           {/* The open-skeleton target: everything below the top controls. */}
-          <Pressable
+          <Tappable
             onPress={() => router.push(`/analysis/skeleton/${analysis.id}`)}
             accessibilityRole="button"
             accessibilityLabel="Open the skeleton overlay for this clip"
@@ -377,7 +378,7 @@ export default function AnalysisDetailScreen() {
           />
 
           <View style={[s.heroTop, { top: insets.top + 6 }]}>
-            <Pressable
+            <Tappable
               onPress={() => router.back()}
               style={s.heroBtn}
               hitSlop={12}
@@ -385,12 +386,12 @@ export default function AnalysisDetailScreen() {
               accessibilityLabel="Back"
             >
               <Chevron direction="left" tone={color.onInk} size={16} />
-            </Pressable>
+            </Tappable>
             {/* This was a bare View styled exactly like the back button next to
                 it — same size, same fill, same radius — holding a play glyph
                 and doing nothing at all. Playback lives on the skeleton screen,
                 so it now says so and goes there. */}
-            <Pressable
+            <Tappable
               onPress={() => router.push(`/analysis/skeleton/${analysis.id}`)}
               style={s.heroBtn}
               hitSlop={12}
@@ -398,10 +399,10 @@ export default function AnalysisDetailScreen() {
               accessibilityLabel="Play this clip with the skeleton overlay"
             >
               <PlayGlyph tone={color.onInk} size={13} />
-            </Pressable>
+            </Tappable>
           </View>
 
-          <View style={s.heroFoot} pointerEvents="none">
+          <View style={[s.heroFoot, { pointerEvents: "none" }]}>
             {/* Ink scrim directly above the footer text. At large system text
                 sizes the footer grows upward into the skeleton figure and the
                 two drew over each other; the figure now dissolves into ink
@@ -449,21 +450,22 @@ export default function AnalysisDetailScreen() {
               {/* The instruction used to end here, telling the athlete to
                   re-upload with no way to do it — a dead end walked in full.
                   The clip is still on the device; offer the action itself. */}
-              <Pressable
+              <Tappable
                 onPress={() => void remeasureAs(analysis.sportMismatch!.suggestedSport)}
-                style={({ pressed }) => [s.mismatchCta, pressed && { opacity: 0.85 }]}
+                style={[s.mismatchCta]}
               >
                 <Text style={[T.buttonSmall, { color: color.onCobalt }]}>
                   Measure again as{" "}
                   {displaySport(analysis.sportMismatch.suggestedSport) ||
                     analysis.sportMismatch.suggestedSport}
                 </Text>
-              </Pressable>
+              </Tappable>
             </View>
           </View>
         )}
 
         {/* ── Form Index ── */}
+        <Entering index={0}>
         <Card style={s.indexCard}>
           {legacy && (
             <View style={s.legacyNote}>
@@ -540,6 +542,7 @@ export default function AnalysisDetailScreen() {
             </Text>
           )}
         </Card>
+        </Entering>
 
         {/* ── Muscle load ──
             The measured joints, drawn on a body. A joint is moved by the
@@ -566,10 +569,10 @@ export default function AnalysisDetailScreen() {
 
         {/* ── Summary ── */}
         {analysis.summary && (
-          <View style={s.section}>
+          <Entering index={1} style={s.section}>
             <Label style={{ marginBottom: 8 }}>READOUT</Label>
             <Text style={T.body}>{formatBiomechanicsText(analysis.summary)}</Text>
-          </View>
+          </Entering>
         )}
 
         {processing && !stalled && (
@@ -594,7 +597,7 @@ export default function AnalysisDetailScreen() {
 
         {/* ── Findings — evidence cards ── */}
         {risks.length > 0 && (
-          <View style={s.section}>
+          <Entering index={2} style={s.section}>
             <Label style={{ marginBottom: 10 }}>FINDINGS · WHAT THE TAPE SHOWS</Label>
             {risks.map((risk) => (
               <FindingCard key={risk.id} risk={risk} />
@@ -603,7 +606,7 @@ export default function AnalysisDetailScreen() {
               Measured joint positions from your video, read against bands for your sport — not
               a medical assessment or an injury prediction.
             </Text>
-          </View>
+          </Entering>
         )}
 
         {/* ── Strengths ── */}
@@ -628,7 +631,7 @@ export default function AnalysisDetailScreen() {
             switch control. The list keeps the shortcut; this is the path a user
             can actually find. */}
         <View style={s.section}>
-          <Pressable
+          <Tappable
             onPress={() =>
               alert(analysis.title, "Delete this session and its clip?", [
                 { text: "Cancel", style: "cancel" },
@@ -649,10 +652,10 @@ export default function AnalysisDetailScreen() {
             }
             accessibilityRole="button"
             accessibilityLabel="Delete this session"
-            style={({ pressed }) => [s.deleteRow, pressed && { opacity: 0.6 }]}
+            style={[s.deleteRow]}
           >
             <Text style={[T.rowTitle, { color: color.rust }]}>Delete this session</Text>
-          </Pressable>
+          </Tappable>
           <Text style={[T.bodySmall, { marginTop: 8 }]}>
             Removes the measurements, the coaching notes, and the clip stored on this phone.
             Your monthly quota is not refunded.
@@ -951,7 +954,7 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
   legacyNote: {
-    backgroundColor: "rgba(194,84,46,0.08)",
+    backgroundColor: color.rustWashFaint,
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,

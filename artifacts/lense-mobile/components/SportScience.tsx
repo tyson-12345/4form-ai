@@ -10,9 +10,9 @@
  */
 
 import React from "react";
-import { View, Text, Pressable, Linking, StyleSheet } from "react-native";
+import { View, Pressable, Linking, StyleSheet } from "react-native";
 
-import { Label } from "@/components/caliper";
+import { Label, Text } from "@/components/caliper";
 import { color, type as T, radius } from "@/constants/caliper";
 import { scienceForSport, pubmedUrl, type SportArticle } from "@/constants/sportScience";
 

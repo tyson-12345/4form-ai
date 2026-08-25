@@ -3,8 +3,18 @@
   const add=(kind,detail,el,extra={})=>{const r=el?el.getBoundingClientRect():null;
     out.findings.push({kind,detail,text:el?(el.innerText||el.getAttribute('aria-label')||'').trim().replace(/\s+/g,' ').slice(0,44):'',
       box:r?[Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)]:null,...extra});};
+  // Visibility is an ancestor question, not an element one. Checking only the
+  // element's own computed style misses the commonest way a screen is hidden:
+  // a tab navigator parks the inactive screens under a container with
+  // opacity 0, aria-hidden and pointer-events none. Every one of their text
+  // nodes still computes as visible on its own, so a four-tab app reported
+  // dozens of "text-overlap" findings between screens that are never on
+  // screen together.
   const vis=el=>{const r=el.getBoundingClientRect();if(!r.width||!r.height)return false;
-    const cs=getComputedStyle(el);return cs.visibility!=='hidden'&&cs.display!=='none'&&cs.opacity!=='0';};
+    for(let p=el;p;p=p.parentElement){const cs=getComputedStyle(p);
+      if(cs.visibility==='hidden'||cs.display==='none'||cs.opacity==='0')return false;
+      if(p.getAttribute&&p.getAttribute('aria-hidden')==='true')return false;}
+    return true;};
   // Expo's LogBox / error overlay is development chrome, not the app. Left in,
   // a single red toast contributes a dozen contrast, overlap and role findings
   // and buries the real ones.

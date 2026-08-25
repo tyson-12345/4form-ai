@@ -12,7 +12,6 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
-  Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
@@ -23,6 +22,9 @@ import {
   Label,
   Screen,
   SkeletonBlock,
+  Segmented,
+  Entering,
+  NoReading,
   Sparkline,
   StatusBarScrim,
   Text,
@@ -142,38 +144,36 @@ export default function ProgressScreen() {
       >
         <View style={s.head}>
           <Text scale="display" style={T.screenTitle}>Progress</Text>
-          <View style={s.toggle}>
-            {(["12W", "ALL"] as const).map((r) => (
-              <Pressable
-                key={r}
-                onPress={() => setRange(r)}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: range === r }}
-                accessibilityLabel={r === "12W" ? "Last 12 weeks" : "All time"}
-                style={[s.toggleItem, range === r && s.toggleItemOn]}
-              >
-                <Text
-                  style={[
-                    T.label,
-                    { letterSpacing: 1, color: range === r ? color.onInk : color.textFaint },
-                  ]}
-                >
-                  {r}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          {/*
+            Was two hand-rolled pills whose selected state was taller than the
+            container holding it, and which announced as two loose tabs with no
+            tablist around them.
+          */}
+          <Segmented
+            label="Time range"
+            value={range}
+            onChange={setRange}
+            options={[
+              { value: "12W" as Range, label: "12W" },
+              { value: "ALL" as Range, label: "ALL" },
+            ]}
+          />
         </View>
 
         {/* ── Trend ── */}
+        <Entering index={0}>
         <Card style={s.block}>
           <View style={s.trendHead}>
             <View>
               <Label>OVERALL · {range === "12W" ? "12 WEEKS" : "ALL TIME"}</Label>
               <View style={s.trendRow}>
-                <Text scale="display" style={[T.metricLarge, current === null && { color: color.textGhost }]}>
-                  {current === null ? "–" : Math.round(current)}
-                </Text>
+                {current === null ? (
+                  <NoReading />
+                ) : (
+                  <Text scale="display" style={T.metricLarge}>
+                    {Math.round(current)}
+                  </Text>
+                )}
                 {/* Neutral: this rendered every delta cobalt, so a decline
                     arrived in the colour reserved for the next action. Same
                     rule as Home. */}
@@ -247,6 +247,7 @@ export default function ProgressScreen() {
             <ProgressStages measured={values.length} />
           )}
         </Card>
+        </Entering>
 
         {/* ── Small multiples — every dimension, side by side ──
             Hidden until there is something to put in them. With no sessions the
@@ -265,6 +266,7 @@ export default function ProgressScreen() {
         )}
 
         {/* ── This week ── */}
+        <Entering index={2}>
         <Card style={s.block}>
           <View style={s.weekHead}>
             <Text style={T.cardTitle}>This week</Text>
@@ -298,6 +300,7 @@ export default function ProgressScreen() {
             ))}
           </View>
         </Card>
+        </Entering>
 
         {/* ── Closed flags ── */}
         {closed.length > 0 && (
@@ -509,17 +512,6 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  toggle: { flexDirection: "row", backgroundColor: color.card, borderRadius: 999, padding: 3 },
-  // This was a 25pt-tall control; a range switch is a real target.
-  toggleItem: {
-    paddingHorizontal: 14,
-    minHeight: 44,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  toggleItemOn: { backgroundColor: color.ink },
-
   block: { marginHorizontal: GUTTER, marginTop: 18 },
 
   stageRow: { flexDirection: "row", alignItems: "center", gap: 12 },

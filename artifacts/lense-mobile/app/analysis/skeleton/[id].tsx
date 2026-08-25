@@ -25,7 +25,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
-  Pressable,
   ActivityIndicator,
   Platform,
   useWindowDimensions,
@@ -48,6 +47,7 @@ import {
   PrimaryButton,
   Screen,
   Text,
+  Tappable,
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, bandColor, WEB_TOP_INSET } from "@/constants/caliper";
 import { profileForSport, jointKind, safeBand } from "@/constants/riskProfiles";
@@ -387,7 +387,7 @@ export default function SkeletonScreen() {
     <Screen>
       {!isLandscape && (
         <View style={[s.header, { paddingTop: topPad + 8 }]}>
-          <Pressable
+          <Tappable
             onPress={() => router.back()}
             style={s.headerBtn}
             hitSlop={12}
@@ -395,7 +395,7 @@ export default function SkeletonScreen() {
             accessibilityLabel="Back"
           >
             <Chevron direction="left" tone={color.textSecondary} size={16} />
-          </Pressable>
+          </Tappable>
           <View style={{ flex: 1, alignItems: "center" }}>
             <Label>REVIEW</Label>
             <Text style={[T.cardTitle, { marginTop: 2 }]} numberOfLines={1}>
@@ -408,7 +408,7 @@ export default function SkeletonScreen() {
             )}
           </View>
           {stage.kind === "ready" ? (
-            <Pressable
+            <Tappable
               onPress={toggleOrientation}
               style={s.headerBtn}
               hitSlop={12}
@@ -416,7 +416,7 @@ export default function SkeletonScreen() {
               accessibilityLabel={isLandscape ? "Switch to portrait" : "Switch to landscape"}
             >
               <ExpandGlyph tone={color.textSecondary} size={16} />
-            </Pressable>
+            </Tappable>
           ) : (
             <View style={s.headerBtn} />
           )}
@@ -444,7 +444,7 @@ export default function SkeletonScreen() {
           >
             {mediaBlock}
           </View>
-          <Pressable
+          <Tappable
             onPress={toggleOrientation}
             accessibilityRole="button"
             accessibilityLabel="Switch to portrait"
@@ -454,7 +454,7 @@ export default function SkeletonScreen() {
             ]}
           >
             <Text style={[T.buttonSmall, { color: color.onInk }]}>Portrait</Text>
-          </Pressable>
+          </Tappable>
         </>
       ) : (
         <ScrollView
@@ -473,7 +473,7 @@ export default function SkeletonScreen() {
                     s.pill,
                     {
                       backgroundColor:
-                        maxLvl === 2 ? "rgba(194,84,46,0.12)" : "rgba(16,19,18,0.06)",
+                        maxLvl === 2 ? color.rustWash : color.inkWash,
                     },
                   ]}
                 >
@@ -567,7 +567,7 @@ export default function SkeletonScreen() {
                           s.chip,
                           {
                             backgroundColor:
-                              lvl === 2 ? "rgba(194,84,46,0.12)" : "rgba(16,19,18,0.06)",
+                              lvl === 2 ? color.rustWash : color.inkWash,
                           },
                         ]}
                       >
@@ -575,7 +575,9 @@ export default function SkeletonScreen() {
                           style={[
                             T.label,
                             {
-                              fontSize: 9,
+                              // Was 9px, below the floor the type scale sets
+                              // for anything carrying meaning — and this
+                              // carries the joint's band verdict.
                               letterSpacing: 1,
                               color: lvl === 2 ? color.rust : color.textMuted,
                             },
@@ -683,7 +685,7 @@ const s = StyleSheet.create({
   },
   angleTileFlagged: {
     borderWidth: 1.5,
-    borderColor: "rgba(194,84,46,0.4)",
+    borderColor: color.rustEdge,
   },
 
   peakCard: { marginBottom: 10, padding: 16, borderRadius: radius.cardSmall },

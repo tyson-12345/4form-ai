@@ -17,9 +17,10 @@
  */
 
 import React from "react";
-import { View, Text } from "react-native";
+import { View } from "react-native";
 import Svg, { Path, Ellipse, Rect, Circle, G, Line } from "react-native-svg";
 
+import { Text } from "@/components/caliper";
 import { color, type as T } from "@/constants/caliper";
 import type { MuscleGroup, MuscleLoad, MuscleState } from "@/utils/muscleLoad";
 

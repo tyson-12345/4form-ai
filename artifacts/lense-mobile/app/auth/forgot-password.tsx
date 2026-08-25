@@ -10,8 +10,6 @@ import React, { useState } from "react";
 import {
   View,
   StyleSheet,
-  TextInput,
-  Pressable,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -24,6 +22,8 @@ import {
   Check,
   Label,
   PrimaryButton,
+  Tappable,
+  TextField,
   Screen,
   Text,
 } from "@/components/caliper";
@@ -92,15 +92,18 @@ export default function ForgotPasswordScreen() {
                 <PrimaryButton label="Back to sign in" onPress={() => router.replace("/auth/login")} />
               </View>
 
-              <Pressable
+              {/* Had neither a role nor a label — the weakest control in the
+                  whole auth flow to a screen reader. */}
+              <Tappable
                 onPress={() => router.push("/auth/reset-password")}
-                style={{ marginTop: 20, alignItems: "center" }}
-                hitSlop={8}
+                accessibilityRole="link"
+                accessibilityLabel="I already have a reset code"
+                style={{ marginTop: 20, alignItems: "center", justifyContent: "center", minHeight: 44 }}
               >
                 <Text style={[T.buttonSmall, { color: color.cobalt }]}>
                   I already have a reset code
                 </Text>
-              </Pressable>
+              </Tappable>
             </View>
           ) : (
             <>
@@ -112,16 +115,15 @@ export default function ForgotPasswordScreen() {
                 Enter the email you signed up with and we'll send you a link to set a new one.
               </Text>
 
-              <Label style={{ marginTop: 34, marginBottom: 8 }}>EMAIL</Label>
-              <TextInput
-                style={s.input}
+              <TextField
+                label="Email"
                 value={email}
                 onChangeText={(v) => {
                   setEmail(v);
                   setError(null);
                 }}
+                error={error}
                 placeholder="you@example.com"
-                placeholderTextColor={color.textGhost}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -129,13 +131,13 @@ export default function ForgotPasswordScreen() {
                 autoFocus
                 returnKeyType="go"
                 onSubmitEditing={submit}
+                containerStyle={{ marginTop: 34 }}
               />
-
-              {error && <Text style={s.error}>{error}</Text>}
 
               <View style={{ marginTop: 28 }}>
                 <PrimaryButton
-                  label={busy ? "Sending…" : "Send reset link"}
+                  label="Send reset link"
+                  loading={busy}
                   onPress={submit}
                   disabled={!email.trim() || busy}
                 />
@@ -150,15 +152,6 @@ export default function ForgotPasswordScreen() {
 
 const s = StyleSheet.create({
   head: { paddingHorizontal: GUTTER, paddingBottom: 10 },
-  input: {
-    backgroundColor: color.card,
-    borderRadius: radius.cardSmall,
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    fontFamily: font.body,
-    fontSize: 15,
-    color: color.textPrimary,
-  },
   sentGlyph: {
     width: 52,
     height: 52,
@@ -166,12 +159,5 @@ const s = StyleSheet.create({
     backgroundColor: color.cobaltWash,
     alignItems: "center",
     justifyContent: "center",
-  },
-  error: {
-    marginTop: 14,
-    fontFamily: font.body,
-    fontSize: 13,
-    lineHeight: 18,
-    color: color.rust,
   },
 });

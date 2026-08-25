@@ -19,18 +19,17 @@ import {
   StyleSheet,
   ScrollView,
   TextInput,
-  Pressable,
   ActivityIndicator,
   KeyboardAvoidingView,
   Keyboard,
   Platform,
   type ViewStyle,
+  FlatList,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
-import Svg, { Path, Polyline } from "react-native-svg";
+import * as haptics from "@/lib/haptics";
 
 import {
   Card,
@@ -39,6 +38,9 @@ import {
   PlayGlyph,
   Screen,
   Text,
+  SendGlyph,
+  TrashGlyph,
+  Tappable,
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
 import {
@@ -115,7 +117,7 @@ export default function CoachScreen() {
     };
   }, [locked]);
 
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<FlatList<ChatRecord>>(null);
 
   const load = useCallback(async () => {
     try {
@@ -219,15 +221,15 @@ export default function CoachScreen() {
                 Pro isn't on sale quite yet. Here's what it will include.
               </Text>
             )}
-            <Pressable
+            <Tappable
               onPress={() => router.push("/pricing")}
               accessibilityRole="button"
-              style={({ pressed }) => [s.lockCta, pressed && { opacity: 0.85 }]}
+              style={[s.lockCta]}
             >
               <Text style={[T.button, { color: color.onCobalt }]}>
                 {billingOff ? "See what's coming" : "See plans"}
               </Text>
-            </Pressable>
+            </Tappable>
           </Card>
         </View>
       </Screen>
@@ -251,7 +253,7 @@ export default function CoachScreen() {
             </Label>
           </View>
           {messages.length > 0 && (
-            <Pressable
+            <Tappable
               onPress={() =>
                 alert("Clear conversation", "This deletes your chat history with Atlas.", [
                   { text: "Cancel", style: "cancel" },
@@ -271,12 +273,24 @@ export default function CoachScreen() {
               style={s.headBtn}
             >
               <TrashGlyph />
-            </Pressable>
+            </Tappable>
           )}
         </View>
 
-        <ScrollView
+        {/*
+          A FlatList, because a transcript only grows. Every message was
+          mounted eagerly, and a coach reply carries evidence cards and a
+          prescription bubble — the heaviest rows in the app.
+
+          Not `inverted`: this transcript reads top-down and the empty state and
+          typing indicator belong at their natural ends. Sticking with the
+          upright list keeps `scrollToEnd` as the "new message arrived"
+          behaviour rather than inverting every offset in the file.
+        */}
+        <FlatList<ChatRecord>
           ref={scrollRef}
+          data={loading ? [] : messages}
+          keyExtractor={(msg) => msg.id}
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: 16 }}
           keyboardShouldPersistTaps="handled"
@@ -285,38 +299,38 @@ export default function CoachScreen() {
           // composer had no dismiss gesture at all.
           keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           showsVerticalScrollIndicator={false}
-        >
-          {loading ? (
-            <ActivityIndicator style={{ marginTop: 40 }} color={color.textFaint} />
-          ) : messages.length === 0 ? (
-            <View style={s.empty}>
-              <Text scale="display" style={[T.headlineSmall, { textAlign: "center" }]}>
-                Ask about any session.
-              </Text>
-              <Text style={[T.body, { textAlign: "center", marginTop: 10 }]}>
-                {measuredCount > 0
-                  ? "Atlas has your measurements: joint angles, bands, and every flag."
-                  : "Measure a clip first and Atlas will have something to work from."}
-              </Text>
-            </View>
-          ) : (
-            messages.map((msg) => (
-              <Message
-                key={msg.id}
-                message={msg}
-                sessions={sessions}
-                onOpenSession={(id) => router.push(`/analysis/${id}`)}
-              />
-            ))
+          renderItem={({ item: msg }) => (
+            <Message
+              message={msg}
+              sessions={sessions}
+              onOpenSession={(id) => router.push(`/analysis/${id}`)}
+            />
           )}
-
-          {sending && (
-            <View style={s.typing}>
-              <ActivityIndicator size="small" color={color.textFaint} />
-              <Text style={[T.bodySmall, { marginLeft: 8 }]}>Atlas is reading your sessions…</Text>
-            </View>
-          )}
-        </ScrollView>
+          ListEmptyComponent={
+            loading ? (
+              <ActivityIndicator style={{ marginTop: 40 }} color={color.textFaint} />
+            ) : (
+              <View style={s.empty}>
+                <Text scale="display" style={[T.headlineSmall, { textAlign: "center" }]}>
+                  Ask about any session.
+                </Text>
+                <Text style={[T.body, { textAlign: "center", marginTop: 10 }]}>
+                  {measuredCount > 0
+                    ? "Atlas has your measurements: joint angles, bands, and every flag."
+                    : "Measure a clip first and Atlas will have something to work from."}
+                </Text>
+              </View>
+            )
+          }
+          ListFooterComponent={
+            sending ? (
+              <View style={s.typing}>
+                <ActivityIndicator size="small" color={color.textFaint} accessibilityLabel="Atlas is replying" />
+                <Text style={[T.bodySmall, { marginLeft: 8 }]}>Atlas is reading your sessions…</Text>
+              </View>
+            ) : null
+          }
+        />
 
         {messages.length === 0 && !loading && (
           <ScrollView
@@ -334,14 +348,16 @@ export default function CoachScreen() {
             style={{ flexGrow: 0 }}
           >
             {STARTERS.map((starter) => (
-              <Pressable
+              <Tappable
                 key={starter}
                 onPress={() => send(starter)}
-                accessibilityRole="button"
-                style={({ pressed }) => [s.starter, pressed && { opacity: 0.8 }]}
+                // Had a role but no name, so VoiceOver announced four
+                // identical unlabelled buttons.
+                accessibilityLabel={starter}
+                style={s.starter}
               >
                 <Text style={[T.message, { fontSize: 13 }]}>{starter}</Text>
-              </Pressable>
+              </Tappable>
             ))}
           </ScrollView>
         )}
@@ -351,15 +367,15 @@ export default function CoachScreen() {
             composer is idle, and it is the one control that always works even
             if the dismiss gesture is missed. */}
         {inputFocused && (
-          <Pressable
+          <Tappable
             onPress={() => Keyboard.dismiss()}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel="Dismiss keyboard"
-            style={({ pressed }) => [s.dismissBar, pressed && { opacity: 0.7 }]}
+            style={[s.dismissBar]}
           >
             <Text style={[T.bodySmall, { color: color.textMuted }]}>Done</Text>
-          </Pressable>
+          </Tappable>
         )}
 
         {/* The tab bar floats at a fixed offset from the screen bottom, so the
@@ -382,19 +398,18 @@ export default function CoachScreen() {
             maxLength={2000}
             editable={!sending}
           />
-          <Pressable
+          <Tappable
             onPress={() => send()}
             disabled={!input.trim() || sending}
             accessibilityRole="button"
             accessibilityLabel="Send message"
             accessibilityState={{ disabled: !input.trim() || sending }}
-            style={({ pressed }) => [
-              s.sendBtn,
-              { opacity: !input.trim() || sending ? 0.35 : pressed ? 0.85 : 1 },
-            ]}
+            // The press response now comes from Tappable; what stays here is
+            // the *disabled* dimming, which is a state, not a press.
+            style={[s.sendBtn, { opacity: !input.trim() || sending ? 0.35 : 1 }]}
           >
             <SendGlyph />
-          </Pressable>
+          </Tappable>
         </View>
       </KeyboardAvoidingView>
     </Screen>
@@ -431,7 +446,7 @@ function Message({
   const [copied, setCopied] = useState(false);
   const copy = useCallback(() => {
     void Clipboard.setStringAsync(message.content);
-    void Haptics.selectionAsync().catch(() => {});
+    haptics.select();
     setCopied(true);
     const t = setTimeout(() => setCopied(false), 1600);
     return () => clearTimeout(t);
@@ -458,9 +473,9 @@ function Message({
   if (isUser) {
     return (
       <View style={{ alignItems: "flex-end" }}>
-        <Pressable {...copyProps} style={[s.userBubble, s.textCursor]}>
+        <Tappable {...copyProps} style={[s.userBubble, s.textCursor]}>
           <Text style={[T.message, { color: color.onInk }]}>{message.content}</Text>
-        </Pressable>
+        </Tappable>
         {copied && <Label style={{ marginTop: 4, marginBottom: 2 }}>COPIED</Label>}
       </View>
     );
@@ -478,15 +493,15 @@ function Message({
 
   return (
     <View style={{ marginBottom: 14 }}>
-      <Pressable {...copyProps} style={[s.coachBubble, s.textCursor]}>
+      <Tappable {...copyProps} style={[s.coachBubble, s.textCursor]}>
         <Text style={T.message}>{body}</Text>
 
         {cited && (
-          <Pressable
+          <Tappable
             onPress={() => onOpenSession(cited.id)}
             accessibilityRole="button"
             accessibilityLabel={`Open ${cited.title}, the session this refers to`}
-            style={({ pressed }) => [s.evidence, pressed && { opacity: 0.8 }]}
+            style={[s.evidence]}
           >
             <View style={s.evidenceGlyph}>
               <PlayGlyph size={13} />
@@ -502,9 +517,9 @@ function Message({
               </Text>
             </View>
             <Chevron />
-          </Pressable>
+          </Tappable>
         )}
-      </Pressable>
+      </Tappable>
 
       {prescription && (
         <View style={s.prescriptionBubble}>
@@ -551,42 +566,6 @@ function findCitedSession(
 }
 
 // ─── Glyphs ──────────────────────────────────────────────────────────────────
-
-function SendGlyph() {
-  return (
-    <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 19V5" stroke={color.onInk} strokeWidth={2} strokeLinecap="round" />
-      <Polyline
-        points="5 12 12 5 19 12"
-        stroke={color.onInk}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </Svg>
-  );
-}
-
-function TrashGlyph() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Path d="M3 6h18" stroke={color.textMuted} strokeWidth={2} strokeLinecap="round" />
-      <Path
-        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"
-        stroke={color.textMuted}
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
-      <Path
-        d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-        stroke={color.textMuted}
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
-    </Svg>
-  );
-}
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 

@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   TextInput,
-  Pressable,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -15,12 +14,16 @@ import {
   BackButton,
   Label,
   PrimaryButton,
+  Meter,
+  TextField,
+  Tappable,
   Screen,
   Text,
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { ApiError, NetworkError } from "@/lib/api";
+import * as haptics from "@/lib/haptics";
 import { PRIVACY_POLICY_URL, TERMS_URL, openLegal } from "@/constants/legal";
 // Date maths lives in utils/ so it can be tested — this screen cannot be, and
 // a bug here either admits an under-13 or silently blocks a legitimate signup.
@@ -76,8 +79,10 @@ export default function SignupScreen() {
     setError(null);
     try {
       await signup(email.trim(), password, name.trim(), toIsoDate(birthDate));
+      haptics.success();
       router.replace("/onboarding");
     } catch (err) {
+      haptics.fail();
       setError(
         err instanceof NetworkError
           ? err.message
@@ -108,40 +113,38 @@ export default function SignupScreen() {
           <Label>GET STARTED</Label>
           <Text scale="display" style={[T.headline, { marginTop: 10 }]}>Create your{"\n"}account.</Text>
 
-          <Label style={{ marginTop: 30, marginBottom: 8 }}>NAME</Label>
-          <TextInput
-            style={s.input}
+          <TextField
+            label="Name"
             value={name}
             onChangeText={(v) => {
               setName(v);
               setError(null);
             }}
             placeholder="Your name"
-            placeholderTextColor={color.textGhost}
             autoCapitalize="words"
             autoComplete="name"
             maxLength={80}
             returnKeyType="next"
             onSubmitEditing={() => emailRef.current?.focus()}
+            containerStyle={{ marginTop: 30 }}
           />
 
-          <Label style={{ marginTop: 18, marginBottom: 8 }}>EMAIL</Label>
-          <TextInput
-            ref={emailRef}
-            style={s.input}
+          <TextField
+            inputRef={emailRef}
+            label="Email"
             value={email}
             onChangeText={(v) => {
               setEmail(v);
               setError(null);
             }}
             placeholder="you@example.com"
-            placeholderTextColor={color.textGhost}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
             autoComplete="email"
             returnKeyType="next"
             onSubmitEditing={() => dobDayRef.current?.focus()}
+            containerStyle={{ marginTop: 18 }}
           />
 
           {/* ── Date of birth ──
@@ -154,6 +157,7 @@ export default function SignupScreen() {
           <View style={s.dobRow} accessibilityLabel="Date of birth, day month year">
             <TextInput
               ref={dobDayRef}
+              accessibilityLabel="Day of birth"
               style={[s.input, s.inputBordered, s.dobPart, dobInvalid && s.inputError]}
               value={dobDay}
               onChangeText={(v) => {
@@ -170,6 +174,7 @@ export default function SignupScreen() {
             />
             <TextInput
               ref={dobMonthRef}
+              accessibilityLabel="Month of birth"
               style={[s.input, s.inputBordered, s.dobPart, dobInvalid && s.inputError]}
               value={dobMonth}
               onChangeText={(v) => {
@@ -193,6 +198,7 @@ export default function SignupScreen() {
             />
             <TextInput
               ref={dobYearRef}
+              accessibilityLabel="Year of birth"
               style={[s.input, s.inputBordered, s.dobYear, dobInvalid && s.inputError]}
               value={dobYear}
               onChangeText={(v) => {
@@ -221,51 +227,35 @@ export default function SignupScreen() {
             {birthDateMessage(dobInvalid ? dobProblem : null)}
           </Text>
 
-          <Label style={{ marginTop: 18, marginBottom: 8 }}>PASSWORD</Label>
-          <View style={s.passwordWrap}>
-            <TextInput
-              ref={passwordRef}
-              style={[s.input, { paddingRight: 60 }]}
-              value={password}
-              onChangeText={(v) => {
-                setPassword(v);
-                setError(null);
-              }}
-              placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
-              placeholderTextColor={color.textGhost}
-              secureTextEntry={!show}
-              autoCapitalize="none"
-              autoComplete="new-password"
-              returnKeyType="go"
-              onSubmitEditing={submit}
-            />
-            <Pressable
-              onPress={() => setShow(!show)}
-              style={s.reveal}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel={show ? "Hide password" : "Show password"}
-              accessibilityState={{ selected: show }}
-            >
-              <Text style={[T.buttonSmall, { color: color.textMuted }]}>
-                {show ? "Hide" : "Show"}
-              </Text>
-            </Pressable>
-          </View>
+          <TextField
+            inputRef={passwordRef}
+            label="Password"
+            value={password}
+            onChangeText={(v) => {
+              setPassword(v);
+              setError(null);
+            }}
+            error={error}
+            placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+            secure
+            autoCapitalize="none"
+            autoComplete="new-password"
+            returnKeyType="go"
+            onSubmitEditing={submit}
+            containerStyle={{ marginTop: 18 }}
+          />
 
           {password.length > 0 && (
             <View style={s.strength}>
-              <View style={s.strengthTrack}>
-                <View
-                  style={[
-                    s.strengthFill,
-                    {
-                      width: `${Math.min(100, (password.length / 16) * 100)}%` as `${number}%`,
-                      backgroundColor: longEnough ? color.cobalt : color.rust,
-                    },
-                  ]}
-                />
-              </View>
+              <Meter
+                value={Math.min(1, password.length / 16)}
+                tone={longEnough ? color.cobalt : color.rust}
+                height={3}
+                label={`Password strength: ${
+                  longEnough ? (password.length >= 16 ? "strong" : "good") : "too short"
+                }`}
+                style={{ flex: 1 }}
+              />
               <Text style={[T.measuredSmall, { color: longEnough ? color.cobalt : color.rust }]}>
                 {longEnough
                   ? password.length >= 16
@@ -276,15 +266,10 @@ export default function SignupScreen() {
             </View>
           )}
 
-          {error && (
-            <Text style={s.error} accessibilityLiveRegion="assertive" accessibilityRole="alert">
-              {error}
-            </Text>
-          )}
-
           <View style={{ marginTop: 28 }}>
             <PrimaryButton
-              label={busy ? "Creating…" : "Create account"}
+              label="Create account"
+              loading={busy}
               onPress={submit}
               disabled={!canSubmit}
               trailingArrow
@@ -322,7 +307,7 @@ export default function SignupScreen() {
             injuries. See a professional about pain or injury.
           </Text>
 
-          <Pressable
+          <Tappable
             onPress={() => router.replace("/auth/login")}
             accessibilityRole="link"
             accessibilityLabel="Sign in to an existing account"
@@ -332,7 +317,7 @@ export default function SignupScreen() {
               Already have an account?{" "}
               <Text style={{ color: color.textPrimary }}>Sign in</Text>
             </Text>
-          </Pressable>
+          </Tappable>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
@@ -375,23 +360,5 @@ const s = StyleSheet.create({
     fontSize: 15,
     color: color.textPrimary,
   },
-  passwordWrap: { position: "relative", justifyContent: "center" },
-  reveal: {
-    position: "absolute",
-    right: 8,
-    paddingHorizontal: 8,
-    // The label alone was a 34x16 target inside the field.
-    minHeight: 44,
-    justifyContent: "center",
-  },
   strength: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 },
-  strengthTrack: { flex: 1, height: 3, borderRadius: 2, backgroundColor: color.rule },
-  strengthFill: { height: 3, borderRadius: 2 },
-  error: {
-    marginTop: 14,
-    fontFamily: font.body,
-    fontSize: 13,
-    lineHeight: 18,
-    color: color.rust,
-  },
 });

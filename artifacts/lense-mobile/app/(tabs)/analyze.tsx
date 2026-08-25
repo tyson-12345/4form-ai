@@ -12,15 +12,15 @@ import {
   View,
   StyleSheet,
   ScrollView,
-  Pressable,
   RefreshControl,
   TextInput,
   ActivityIndicator,
+  FlatList,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import * as Haptics from "expo-haptics";
+import * as haptics from "@/lib/haptics";
 
 import {
   Card,
@@ -31,9 +31,14 @@ import {
   PrimaryButton,
   Screen,
   Sheet,
+  Meter,
+  EmptyState,
+  Entering,
+  TextField,
+  UploadGlyph,
   StatusBarScrim,
   Text,
-  UploadGlyph,
+  Tappable,
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
 import { analyses as analysesApi, type AnalysisRecord, type UsageRecord } from "@/lib/api";
@@ -163,6 +168,7 @@ export default function SessionsScreen() {
 
   function startMeasuring() {
     if (!sport || !pendingUri) return;
+    haptics.commit();
 
     // `usage` is null when the quota request failed. The guard used to be
     // skipped entirely in that case, so the athlete filmed, picked, waited
@@ -206,7 +212,19 @@ export default function SessionsScreen() {
 
   return (
     <Screen>
-      <ScrollView
+      {/*
+        A FlatList rather than `.map()` inside a ScrollView.
+        
+        The session list is unbounded — it grows by one every time the athlete
+        films a clip — and every row was being mounted eagerly, charts and all.
+        The header below is everything that used to sit above the list; it is a
+        single element rather than a component so it keeps its closure over
+        `usage`, `measuring` and the handlers without prop-drilling.
+      */}
+      <FlatList<AnalysisRecord>
+        data={measured}
+        // Typed so `item` is an AnalysisRecord rather than any.
+        keyExtractor={(item) => item.id}
         contentContainerStyle={{
           paddingTop: insets.top + 14,
           paddingBottom: TAB_BAR.clearance + insets.bottom,
@@ -222,7 +240,8 @@ export default function SessionsScreen() {
             tintColor={color.textFaint}
           />
         }
-      >
+        ListHeaderComponent={
+          <>
         <View style={{ paddingHorizontal: GUTTER }}>
           <Text scale="display" style={T.screenTitle}>Sessions</Text>
 
@@ -237,9 +256,7 @@ export default function SessionsScreen() {
           >
             {unlimited ? (
               // Unlimited reads as a filled bar, not an empty one.
-              <View style={s.quotaTrackFull}>
-                <View style={[s.quotaProgress, { width: "100%" }]} />
-              </View>
+              <Meter value={1} tone={color.ink} height={6} style={{ width: 62 }} />
             ) : segments <= MAX_QUOTA_SEGMENTS ? (
               <View style={s.quotaTrack}>
                 {Array.from({ length: segments }, (_, i) => (
@@ -302,7 +319,10 @@ export default function SessionsScreen() {
                     <Text style={T.rowTitle} numberOfLines={1}>
                       {item.title}
                     </Text>
-                    <Text style={[T.label, { color: color.cobalt, marginTop: 3, letterSpacing: 0.8 }]}>
+                    <Text
+                      style={[T.label, { color: color.cobalt, marginTop: 3, letterSpacing: 0.8 }]}
+                      accessibilityLiveRegion="polite"
+                    >
                       TRACKING JOINTS
                     </Text>
                   </View>
@@ -313,19 +333,22 @@ export default function SessionsScreen() {
           </View>
         )}
 
-        {/* ── Measured ── */}
-        <View style={s.section}>
+            {/* ── Measured ── */}
           <Label style={{ marginBottom: 4 }}>MEASURED · {measured.length}</Label>
-
-          {measured.map((item) => (
+          </>
+        }
+        renderItem={({ item }) => (
+          <View style={{ paddingHorizontal: GUTTER }}>
             <MeasuredRow
-              key={item.id}
               item={item}
               band={band}
               best={item.id === bestId}
               onPress={() => router.push(`/analysis/${item.id}`)}
-              onDelete={async () => {
-                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              onDelete={() => {
+                // Was `await`ed, so the confirmation dialog waited on the
+                // Taptic Engine before opening. Feedback should never be on the
+                // critical path of the thing it is acknowledging.
+                haptics.warn();
                 alert(item.title, "Delete this session and its clip?", [
                   { text: "Cancel", style: "cancel" },
                   {
@@ -345,16 +368,19 @@ export default function SessionsScreen() {
                 ]);
               }}
             />
-          ))}
-
-          {loaded && measured.length === 0 && measuring.length === 0 && (
-            <Text style={[T.body, { marginTop: 10 }]}>
-              Nothing measured yet. Add a clip above and we'll track your joints frame by
-              frame.
-            </Text>
-          )}
-        </View>
-      </ScrollView>
+          </View>
+        )}
+        ListEmptyComponent={
+          loaded && measuring.length === 0 ? (
+            <EmptyState
+              glyph={<UploadGlyph tone={color.textFaint} size={30} />}
+              title="No sessions yet"
+              body="Add a clip and we'll track your joints frame by frame. Film side-on, whole body in frame, ten seconds or longer."
+              style={{ paddingVertical: 28 }}
+            />
+          ) : null
+        }
+      />
 
       {/* ── Details sheet ── */}
       <Sheet visible={pickerOpen} onClose={() => setPickerOpen(false)} title="NEW SESSION">
@@ -385,13 +411,12 @@ export default function SessionsScreen() {
           </>
         )}
 
-        <Label style={{ marginTop: 26, marginBottom: 8 }}>LABEL · OPTIONAL</Label>
-        <TextInput
-          style={s.input}
+        <TextField
+          label="Label · optional"
+          containerStyle={{ marginTop: 26 }}
           value={title}
           onChangeText={setTitle}
           placeholder={sport ? `e.g. ${exampleFor(sport)}` : "e.g. Morning session"}
-          placeholderTextColor={color.textGhost}
           autoCapitalize="sentences"
           maxLength={120}
           returnKeyType="done"
@@ -455,7 +480,7 @@ function MeasuredRow({
   const noteTone = failed || unscored ? color.rust : legacy ? color.textFaint : color.textFaint;
 
   return (
-    <Pressable
+    <Tappable
       onPress={onPress}
       onLongPress={onDelete}
       accessibilityRole="button"
@@ -470,7 +495,7 @@ function MeasuredRow({
       onAccessibilityAction={(e) => {
         if (e.nativeEvent.actionName === "delete") onDelete();
       }}
-      style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}
+      style={[s.row]}
     >
       <View style={s.dateTile}>
         <Text style={[T.measured, { fontSize: 12 }]}>{date.getDate()}</Text>
@@ -496,7 +521,7 @@ function MeasuredRow({
           bandHigh={band?.high ?? null}
         />
       </View>
-    </Pressable>
+    </Tappable>
   );
 }
 
@@ -587,13 +612,4 @@ const s = StyleSheet.create({
   },
 
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  input: {
-    backgroundColor: color.card,
-    borderRadius: radius.cardSmall,
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    fontFamily: font.body,
-    fontSize: 15,
-    color: color.textPrimary,
-  },
 });

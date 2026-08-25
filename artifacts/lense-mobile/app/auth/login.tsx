@@ -1,13 +1,5 @@
 import React, { useRef, useState } from "react";
-import {
-  View,
-  StyleSheet,
-  TextInput,
-  Pressable,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-} from "react-native";
+import { View, StyleSheet, TextInput, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
@@ -16,11 +8,14 @@ import {
   Label,
   PrimaryButton,
   Screen,
+  Tappable,
   Text,
+  TextField,
 } from "@/components/caliper";
-import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
+import { color, type as T, GUTTER, font } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { ApiError, NetworkError } from "@/lib/api";
+import * as haptics from "@/lib/haptics";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -29,7 +24,6 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,11 +37,13 @@ export default function LoginScreen() {
     setError(null);
     try {
       await login(email.trim(), password);
+      haptics.success();
       router.replace("/");
     } catch (err) {
       // The server returns one message for every credential failure — unknown
       // email, wrong password, locked account. Surface it verbatim; adding our
       // own detail here would undo that.
+      haptics.fail();
       setError(
         err instanceof NetworkError
           ? err.message
@@ -78,67 +74,61 @@ export default function LoginScreen() {
           <Label>WELCOME BACK</Label>
           <Text scale="display" style={[T.headline, { marginTop: 10 }]}>Sign in.</Text>
 
-          <Label style={{ marginTop: 34, marginBottom: 8 }}>EMAIL</Label>
-          <TextInput
-            style={s.input}
+          <TextField
+            label="Email"
             value={email}
             onChangeText={(v) => {
               setEmail(v);
               setError(null);
             }}
             placeholder="you@example.com"
-            placeholderTextColor={color.textGhost}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
             autoComplete="email"
             returnKeyType="next"
             onSubmitEditing={() => passwordRef.current?.focus()}
+            containerStyle={{ marginTop: 34 }}
           />
 
-          <Label style={{ marginTop: 18, marginBottom: 8 }}>PASSWORD</Label>
-          <View style={s.passwordWrap}>
-            <TextInput
-              ref={passwordRef}
-              style={[s.input, { flex: 1, paddingRight: 60 }]}
-              value={password}
-              onChangeText={(v) => {
-                setPassword(v);
-                setError(null);
-              }}
-              placeholder="Your password"
-              placeholderTextColor={color.textGhost}
-              secureTextEntry={!show}
-              autoCapitalize="none"
-              autoComplete="current-password"
-              returnKeyType="go"
-              onSubmitEditing={submit}
-            />
-            <Pressable
-              onPress={() => setShow(!show)}
-              style={s.reveal}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel={show ? "Hide password" : "Show password"}
-              accessibilityState={{ selected: show }}
-            >
-              <Text style={[T.buttonSmall, { color: color.textMuted }]}>
-                {show ? "Hide" : "Show"}
-              </Text>
-            </Pressable>
-          </View>
+          <TextField
+            inputRef={passwordRef}
+            label="Password"
+            value={password}
+            onChangeText={(v) => {
+              setPassword(v);
+              setError(null);
+            }}
+            placeholder="Your password"
+            secure
+            autoCapitalize="none"
+            autoComplete="current-password"
+            returnKeyType="go"
+            onSubmitEditing={submit}
+            containerStyle={{ marginTop: 18 }}
+          />
 
-          {error && <Text style={s.error}>{error}</Text>}
+          {/*
+            Announced, not just shown. signup.tsx already did this; the other
+            three auth screens rendered their failure as ordinary text, so a
+            VoiceOver user submitted the form and heard nothing back.
+          */}
+          {!!error && (
+            <Text style={s.error} accessibilityLiveRegion="assertive" accessibilityRole="alert">
+              {error}
+            </Text>
+          )}
 
           <View style={{ marginTop: 28 }}>
             <PrimaryButton
-              label={busy ? "Signing in…" : "Sign in"}
+              label="Sign in"
+              loading={busy}
               onPress={submit}
               disabled={!canSubmit}
             />
           </View>
 
-          <Pressable
+          <Tappable
             onPress={() => router.push("/auth/forgot-password")}
             accessibilityRole="link"
             accessibilityLabel="Forgot your password?"
@@ -146,9 +136,9 @@ export default function LoginScreen() {
             style={{ marginTop: 12, alignItems: "center", justifyContent: "center", minHeight: 44 }}
           >
             <Text style={[T.buttonSmall, { color: color.cobalt }]}>Forgot your password?</Text>
-          </Pressable>
+          </Tappable>
 
-          <Pressable
+          <Tappable
             onPress={() => router.replace("/auth/signup")}
             accessibilityRole="link"
             accessibilityLabel="Create an account"
@@ -157,33 +147,15 @@ export default function LoginScreen() {
             <Text style={[T.bodySmall, { textAlign: "center" }]}>
               New here? <Text style={{ color: color.textPrimary }}>Create an account</Text>
             </Text>
-          </Pressable>
+          </Tappable>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
   );
 }
 
-export const s = StyleSheet.create({
+const s = StyleSheet.create({
   head: { paddingHorizontal: GUTTER, paddingBottom: 10 },
-  input: {
-    backgroundColor: color.card,
-    borderRadius: radius.cardSmall,
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    fontFamily: font.body,
-    fontSize: 15,
-    color: color.textPrimary,
-  },
-  passwordWrap: { position: "relative", justifyContent: "center" },
-  reveal: {
-    position: "absolute",
-    right: 8,
-    paddingHorizontal: 8,
-    // The label alone was a 34x16 target inside the field.
-    minHeight: 44,
-    justifyContent: "center",
-  },
   error: {
     marginTop: 14,
     fontFamily: font.body,
