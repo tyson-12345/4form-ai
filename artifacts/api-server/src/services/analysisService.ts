@@ -160,9 +160,16 @@ const UNSCORABLE_SUMMARY =
   "Film at least ten seconds with your whole body in frame, good lighting, and the " +
   "camera steady side-on.";
 
+/**
+ * Shown on the analysis screen when the measurements landed but the coach did
+ * not. It told the reader to "Pull to refresh" — an affordance that screen does
+ * not have: `app/analysis/[id].tsx` has no `RefreshControl`, only a focus
+ * refetch and a bounded poll while the write-up is still pending. Copy that
+ * names a gesture the screen cannot receive reads as a broken screen.
+ */
 const NO_NARRATIVE_SUMMARY =
   "Your movement was measured and scored. The written coaching notes " +
-  "couldn't be generated this time. Pull to refresh in a moment, or open " +
+  "couldn't be generated this time. They will appear here shortly, or open " +
   "the skeleton overlay to review your joint angles directly.";
 
 /**

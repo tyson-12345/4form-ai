@@ -84,12 +84,12 @@ function jointInsight(key: string, deg: number): { title: string; body: string }
     if (deg <= 95) {
       return {
         title: `${side} knee: deeper than your sport's band`,
-        body: "The knee folded further than the band for your sport expects. If that depth is intentional, own it with control — slow the descent and keep the knee tracking over the toes.",
+        body: "The knee folded further than the band for your sport expects. If that depth is intentional, own it with control. Slow the descent and keep the knee tracking over the toes.",
       };
     }
     return {
       title: `${side} knee: held near full extension`,
-      body: "The knee sat near full extension for longer than your sport's band expects. For this sport that pattern is worth coaching — soften the knee slightly through the loaded part of the movement.",
+      body: "The knee sat near full extension for longer than your sport's band expects. For this sport that pattern is worth coaching. Soften the knee slightly through the loaded part of the movement.",
     };
   }
   if (key.includes("Hip")) {
@@ -101,7 +101,7 @@ function jointInsight(key: string, deg: number): { title: string; body: string }
   if (key.includes("Elbow")) {
     return {
       title: `${side} elbow: snapped to full extension`,
-      body: "The arm reached a fully locked position under speed or load — the pattern your sport's band flags. Finish just short of lockout so the muscles absorb the last few degrees instead of the joint.",
+      body: "The arm reached a fully locked position under speed or load, the pattern your sport's band flags. Finish just short of lockout so the muscles absorb the last few degrees instead of the joint.",
     };
   }
   // A joint this build doesn't know by name. Describe the reading without
@@ -603,8 +603,8 @@ export default function SkeletonScreen() {
                 ))
               )}
               <Text style={[T.bodySmall, { marginTop: 12, fontStyle: "italic" }]}>
-                Measured joint positions from your video, read against bands for your sport —
-                not a medical assessment or an injury prediction. See a coach or physio for
+                Measured joint positions from your video, read against bands for your sport.
+                Not a medical assessment or an injury prediction. See a coach or physio for
                 pain that persists.
               </Text>
             </View>
@@ -637,7 +637,7 @@ const s = StyleSheet.create({
     position: "absolute",
     top: 14,
     right: 14,
-    backgroundColor: "rgba(16,19,18,0.75)",
+    backgroundColor: color.inkVeilStrong,
     borderRadius: radius.pill,
     paddingHorizontal: 14,
     paddingVertical: 8,

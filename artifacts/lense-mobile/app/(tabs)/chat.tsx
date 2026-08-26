@@ -141,10 +141,63 @@ export default function CoachScreen() {
     }, [load]),
   );
 
+  /**
+   * Whether the reader is already at the live end of the transcript.
+   *
+   * Auto-scrolling unconditionally would yank someone out of the history they
+   * scrolled up to read the moment a reply lands.
+   *
+   * Only the reader's *own* scrolling is allowed to change this. The list also
+   * emits scroll events while it lays out, and one of those arrives at offset 0
+   * with the full content height already measured — which reads exactly like
+   * "the reader is at the top". Honouring it pinned the transcript to the top
+   * and it never stuck to the end at all.
+   *
+   * `settled` gates those out: scroll positions only count as intent once the
+   * transcript has been placed at its end for the first time. Deliberately not
+   * keyed off `onScrollBeginDrag`, which is a touch concept — on the web build
+   * a wheel never fires it, so the gate would never open.
+   */
+  const atEnd = useRef(true);
+  const settled = useRef(false);
+
+  /**
+   * Stick to the end when the content grows.
+   *
+   * This was a `setTimeout(..., 80)` keyed on `messages.length`. Eighty
+   * milliseconds is a guess about how long layout takes, and on this list it is
+   * the wrong guess: a coach reply carries an evidence card and a prescription
+   * bubble, which finish measuring after the timer has already fired against a
+   * shorter content height. Opening the Coach tab landed the transcript 16px
+   * short of the end every time, and any interaction afterwards silently
+   * corrected it — which is exactly the signature of a race.
+   *
+   * Two mechanisms, because neither is sufficient alone:
+   *
+   *  - `onContentSizeChange` is the right hook and fires on native, but
+   *    react-native-web's `FlatList` does not forward it, so on the audit
+   *    surface it never runs.
+   *  - A double `requestAnimationFrame` waits for a real committed paint rather
+   *    than guessing at one. That is what the old 80ms was reaching for.
+   *
+   * Both call the same guarded function, so a duplicate is a no-op.
+   */
+  const stickToEnd = useCallback(() => {
+    if (!atEnd.current) return;
+    scrollRef.current?.scrollToEnd({ animated: true });
+    settled.current = true;
+  }, []);
+
   useEffect(() => {
-    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
-    return () => clearTimeout(timer);
-  }, [messages.length, sending]);
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(stickToEnd);
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
+  }, [messages.length, sending, stickToEnd]);
 
   async function send(text?: string) {
     const content = (text ?? input).trim();
@@ -166,13 +219,46 @@ export default function CoachScreen() {
       const { userMessage, assistantMessage } = await chatApi.send(content);
       setMessages((prev) => [...prev.filter((m) => m.id !== pending.id), userMessage, assistantMessage]);
     } catch (err) {
-      setMessages((prev) => prev.filter((m) => m.id !== pending.id));
-      setInput(content);
-
       if (err instanceof ApiError && err.code === "UPGRADE_REQUIRED") {
+        setMessages((prev) => prev.filter((m) => m.id !== pending.id));
+        setInput(content);
         setServerLocked(true);
         return;
       }
+
+      /**
+       * The coach failed, but the message did not.
+       *
+       * `POST /api/chat` writes the athlete's message *before* asking the coach
+       * and deliberately keeps it on failure — "losing what someone typed is
+       * worse than showing them an error" — then returns it on the 503 so the
+       * client can keep showing it. This screen used to discard all of that: it
+       * removed the optimistic bubble, put the text back in the composer, and
+       * said "your message wasn't sent" about a message that had been stored.
+       *
+       * Three things were wrong with that. The sentence was untrue. The message
+       * silently reappeared, unanswered, on the next load. And retyping it sent
+       * a second copy — the exact duplication the server's design was avoiding.
+       *
+       * So: swap the optimistic bubble for the row the server actually stored,
+       * leave the composer empty, and say what happened.
+       */
+      const stored =
+        err instanceof ApiError && (err.body.userMessage as ChatRecord | undefined);
+      if (stored) {
+        setMessages((prev) => prev.map((m) => (m.id === pending.id ? stored : m)));
+        alert(
+          "Atlas couldn't reply",
+          `${err instanceof ApiError ? err.message : ""} Your message is saved, so just ask again when you're ready.`.trim(),
+        );
+        return;
+      }
+
+      // Nothing was stored, so the optimistic echo has to go and the athlete
+      // gets their words back.
+      setMessages((prev) => prev.filter((m) => m.id !== pending.id));
+      setInput(content);
+
       if (err instanceof NetworkError) {
         alert("Can't reach Atlas", err.message);
         return;
@@ -299,6 +385,16 @@ export default function CoachScreen() {
           // composer had no dismiss gesture at all.
           keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           showsVerticalScrollIndicator={false}
+          onContentSizeChange={stickToEnd}
+          scrollEventThrottle={100}
+          onScroll={(e) => {
+            if (!settled.current) return;
+            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+            // A generous threshold: "near the end" should survive the rubber
+            // band and a half-finished momentum scroll.
+            atEnd.current =
+              contentOffset.y >= contentSize.height - layoutMeasurement.height - 48;
+          }}
           renderItem={({ item: msg }) => (
             <Message
               message={msg}
@@ -362,17 +458,28 @@ export default function CoachScreen() {
           </ScrollView>
         )}
 
-        {/* A multiline field has no return-key dismiss, so give the keyboard an
-            explicit exit. Shown only while focused: it costs nothing when the
-            composer is idle, and it is the one control that always works even
-            if the dismiss gesture is missed. */}
-        {inputFocused && (
+        {/*
+          A multiline field has no return-key dismiss, so give the keyboard an
+          explicit exit. Shown only while focused, and only where a software
+          keyboard exists: on the web build `Keyboard.dismiss()` is a no-op, so
+          this was a button that appeared on focus and did nothing.
+
+          Absolutely positioned, so appearing does not reflow the transcript.
+          In flow it shortened the list by its own height at the moment of
+          focus, which pushed the reader further from the end than they were
+          before they tapped the composer.
+
+          `minTarget` rather than `hitSlop`: the label alone measured 60x30, and
+          hitSlop does not exist on web and is invisible to the audit — the same
+          argument `Tappable`'s own docblock makes.
+        */}
+        {inputFocused && Platform.OS !== "web" && (
           <Tappable
             onPress={() => Keyboard.dismiss()}
-            hitSlop={8}
+            minTarget
             accessibilityRole="button"
             accessibilityLabel="Dismiss keyboard"
-            style={[s.dismissBar]}
+            style={s.dismissBar}
           >
             <Text style={[T.bodySmall, { color: color.textMuted }]}>Done</Text>
           </Tappable>
@@ -404,9 +511,10 @@ export default function CoachScreen() {
             accessibilityRole="button"
             accessibilityLabel="Send message"
             accessibilityState={{ disabled: !input.trim() || sending }}
-            // The press response now comes from Tappable; what stays here is
-            // the *disabled* dimming, which is a state, not a press.
-            style={[s.sendBtn, { opacity: !input.trim() || sending ? 0.35 : 1 }]}
+            // The dim comes from Tappable too: an opacity set here is composed
+            // before the press style and was being overwritten by it, so the
+            // send button looked ready with an empty composer.
+            style={s.sendBtn}
           >
             <SendGlyph />
           </Tappable>
@@ -655,14 +763,15 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
 
+  /** Floats over the transcript's last few pixels rather than displacing them. */
   dismissBar: {
-    alignSelf: "flex-end",
-    marginRight: GUTTER,
-    marginBottom: 2,
+    position: "absolute",
+    right: GUTTER,
+    bottom: TAB_BAR.clearance + 14 + 62,
     paddingHorizontal: 14,
-    paddingVertical: 6,
     borderRadius: radius.pill,
     backgroundColor: color.card,
+    zIndex: 3,
   },
 
   composer: {

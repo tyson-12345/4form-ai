@@ -313,7 +313,9 @@ const s = StyleSheet.create({
   // must also grow rather than clip when the label wraps or the system text
   // size is turned up. Padding alone did neither — chips were 40pt and mono
   // chips 27pt.
-
-  pressed: { opacity: 0.82 },
+  //
+  // `pressed: { opacity: 0.82 }` used to live here — the last survivor of the
+  // seven drifted press opacities that `motion.press` replaced. Nothing
+  // referenced it; a dead style is an invitation to use it again.
 
 });

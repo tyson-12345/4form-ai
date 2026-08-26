@@ -133,6 +133,18 @@ export class ApiError extends Error {
     message: string,
     public status: number,
     public code?: string,
+    /**
+     * The parsed error body.
+     *
+     * Kept because some failures carry state the caller needs, not just a
+     * sentence to show. `POST /api/chat` is the case that forced it: when the
+     * coach cannot answer, the server deliberately *keeps* the athlete's
+     * message and returns it as `userMessage` so the client can leave it in
+     * the transcript instead of re-sending it. Discarding the body meant the
+     * app told the athlete "your message wasn't sent" about a message that had
+     * been sent and stored.
+     */
+    public body: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = "ApiError";
@@ -190,6 +202,7 @@ async function request<T>(
       (body.error as string) ?? fallback,
       res.status,
       body.code as string | undefined,
+      body,
     );
   }
 

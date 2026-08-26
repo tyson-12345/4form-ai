@@ -211,6 +211,11 @@ export default function ProgressScreen() {
               <Sparkline
                 values={values}
                 width={trendWidth}
+                // This screen's one hero instrument, so it carries the reserved
+                // colour. The four sub-metric tiles below take Sparkline's ink
+                // default: five cobalt endpoints on one screen would make the
+                // reservation meaningless.
+                tone={color.cobalt}
                 bandLow={band?.low ?? null}
                 bandHigh={band?.high ?? null}
               />
@@ -234,7 +239,7 @@ export default function ProgressScreen() {
                   silently lacks its most important feature. */}
               {!band && (
                 <Text style={[T.bodySmall, { marginTop: 12 }]}>
-                  One more measured session and your band appears here — the range you
+                  One more measured session and your band appears here: the range you
                   usually work in, drawn behind the line.
                 </Text>
               )}
@@ -344,7 +349,7 @@ function ProgressStages({ measured }: { measured: number }) {
   const stages = [
     { at: 1, label: "Your first reading" },
     { at: 2, label: "The trend line" },
-    { at: 3, label: "Your band — the range you usually work in" },
+    { at: 3, label: "Your band: the range you usually work in" },
   ];
 
   return (

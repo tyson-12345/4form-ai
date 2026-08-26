@@ -113,7 +113,22 @@ export const color = {
 
   /** On-dark text, for ink surfaces. */
   onInk: "#EDECE7",
-  onInkMuted: "#75787A",
+  /**
+   * The quiet tone on ink furniture — unselected tab glyphs, the joint chips on
+   * the analysis hero.
+   *
+   * Was #75787A, chosen against solid ink (#101312), where it measures 4.20:1.
+   * But the surface it actually sits on is the tab bar, and the tab bar is not
+   * solid ink: it is ink at 0.82 over paper, which composites to rgb(56,58,56).
+   * Against *that* the old value is **2.58:1** — under the 3:1 WCAG 1.4.11 asks
+   * of a graphic that identifies a control, for the four controls the app is
+   * navigated with. The audit measured it in the browser against the real
+   * composited ground rather than against the colour the token was named for.
+   *
+   * #8A8D8F is 3.43:1 on the bar and 5.59:1 on solid ink, and is still visibly
+   * the quiet tier beside `onInk`.
+   */
+  onInkMuted: "#8A8D8F",
   onInkFaint: "rgba(237,236,231,0.55)",
 
   /**
@@ -157,6 +172,13 @@ export const color = {
   inkWash: "rgba(16,19,18,0.06)",
   inkWashFaint: "rgba(16,19,18,0.055)",
   inkWashSoft: "rgba(16,19,18,0.07)",
+  /**
+   * The firmest neutral fill. Added for the muscle map's unmeasured groups,
+   * which need to sit a step above the silhouette without reading as tinted.
+   * It was a literal in that file, which is how the map drifted out of the
+   * system in the first place — see `rustWash` above for the same lesson.
+   */
+  inkWashStrong: "rgba(16,19,18,0.10)",
 
   /** Ink veils, for scrims laid over film and video. */
   inkVeil: "rgba(16,19,18,0.35)",
@@ -523,7 +545,22 @@ export const motion = {
    * as a control being pushed. 0.97 is small enough to survive on a 44pt
    * target without looking like a toy and large enough to be felt.
    */
-  press: { scale: 0.97, opacity: 0.9 },
+  press: {
+    scale: 0.97,
+    opacity: 0.9,
+    /**
+     * What an unavailable control looks like.
+     *
+     * A token because it has to be applied *inside* the press response. The
+     * press style is composed last in `Tappable` so a caller cannot break the
+     * one press treatment — but that also meant a caller's own `opacity` was
+     * silently overwritten by the press style's `opacity: 1`. Every disabled
+     * `PrimaryButton` in the app was therefore drawn at full strength: the
+     * delete-account confirm looked armed before anything had been typed, and
+     * the chat send button looked ready with an empty composer.
+     */
+    disabled: 0.4,
+  },
 } as const;
 
 // ─── Formatting helpers ──────────────────────────────────────────────────────

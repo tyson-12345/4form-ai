@@ -588,21 +588,35 @@ function Row({
   last?: boolean;
   tone?: string;
 }) {
-  return (
-    <Tappable
-      onPress={onPress}
-      disabled={!onPress}
-      // A non-pressable Row (the version line) is not a button and must not
-      // announce as one.
-      accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={onPress ? (value ? `${label}, ${value}` : label) : undefined}
-      style={[s.row, last && { borderBottomWidth: 0 }]}
-    >
+  const body = (
+    <>
       <Text style={[T.rowTitle, { flex: 1, fontSize: 15 }, tone ? { color: tone } : null]}>
         {label}
       </Text>
       {value && <Text style={[T.measured, { fontSize: 11, color: color.textMuted }]}>{value}</Text>}
       {onPress && <Chevron />}
+    </>
+  );
+  const style = [s.row, last && { borderBottomWidth: 0 }];
+
+  /**
+   * A row with nothing to do is a line of information, not a dead control.
+   *
+   * It used to render as `<Tappable disabled>` with the role stripped, which
+   * announced correctly but is still a *disabled control* to everything that
+   * styles one — so once the disabled dim started working, the version number
+   * faded to 40%. "Version 1.0.0" is not unavailable; it is just a fact.
+   */
+  if (!onPress) return <View style={style}>{body}</View>;
+
+  return (
+    <Tappable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={value ? `${label}, ${value}` : label}
+      style={style}
+    >
+      {body}
     </Tappable>
   );
 }
