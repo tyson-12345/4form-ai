@@ -38,6 +38,7 @@ import {
   Tappable,
 } from "@/components/caliper";
 import { color, type as T, GUTTER, TAB_BAR, delta, stampDate, stampDay } from "@/constants/caliper";
+import { usualBand } from "@/utils/usualBand";
 import { useAuth } from "@/lib/authContext";
 import { analyses as analysesApi, type AnalysisRecord } from "@/lib/api";
 import { provenance } from "@/utils/provenance";
@@ -93,13 +94,10 @@ export default function HomeScreen() {
   const previous = measuredSessions[1];
 
   const scores = measuredSessions.map((a) => a.overallScore!);
-  const band = useMemo(() => {
-    // The athlete's own working range across their measured history. With fewer
-    // than three sessions there isn't a band yet — showing one would imply more
-    // certainty than two readings support.
-    if (scores.length < 3) return null;
-    return { low: Math.min(...scores), high: Math.max(...scores) };
-  }, [scores]);
+  // The athlete's own working range across their measured history. Shared with
+  // Progress, Sessions and the analysis screen, which each used to compute it
+  // themselves and disagree — see utils/usualBand.
+  const band = useMemo(() => usualBand(scores), [scores]);
 
   const change = latest && previous ? latest.overallScore! - previous.overallScore! : null;
 

@@ -48,6 +48,7 @@ import {
   Tappable,
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, font, delta } from "@/constants/caliper";
+import { usualBand } from "@/utils/usualBand";
 import {
   analyses as analysesApi,
   ApiError,
@@ -168,8 +169,7 @@ export default function AnalysisDetailScreen() {
           a.overallScore !== null,
       )
       .map((a) => a.overallScore!);
-    if (scores.length < 3) return null;
-    return { low: Math.min(...scores), high: Math.max(...scores) };
+    return usualBand(scores);
   }, [history]);
 
   /**

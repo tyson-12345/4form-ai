@@ -245,18 +245,25 @@ export default function SignupScreen() {
             containerStyle={{ marginTop: 18 }}
           />
 
+          {/*
+            Ink when the password is long enough, not cobalt. A strength meter
+            is a score, and rule 1 names "a score" as one of the three things
+            cobalt is never for. Rust still marks too-short, because that is the
+            alarm meaning and this is the one place on the screen something can
+            be wrong.
+          */}
           {password.length > 0 && (
             <View style={s.strength}>
               <Meter
                 value={Math.min(1, password.length / 16)}
-                tone={longEnough ? color.cobalt : color.rust}
+                tone={longEnough ? color.ink : color.rust}
                 height={3}
                 label={`Password strength: ${
                   longEnough ? (password.length >= 16 ? "strong" : "good") : "too short"
                 }`}
                 style={{ flex: 1 }}
               />
-              <Text style={[T.measuredSmall, { color: longEnough ? color.cobalt : color.rust }]}>
+              <Text style={[T.measuredSmall, { color: longEnough ? color.ink : color.rust }]}>
                 {longEnough
                   ? password.length >= 16
                     ? "STRONG"

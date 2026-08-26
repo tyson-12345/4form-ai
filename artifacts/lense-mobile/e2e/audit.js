@@ -481,6 +481,55 @@ async scroll() {
   return out;
 },
 
+// ─── Verdict ─────────────────────────────────────────────────────────────────
+
+/**
+ * Run everything and return a pass/fail rather than a pile of data.
+ *
+ * The harness has always reported and never judged, which is why a clean run
+ * was a matter of somebody reading the numbers and agreeing they looked fine.
+ * A driver can now ask one question and get one answer, and a CI job that grows
+ * a Playwright dependency later only has to translate `pass` into an exit code.
+ *
+ * The split between hard and informational is the whole of the opinion here:
+ *
+ *  - **contrast-dimmed** is informational because WCAG 1.4.3 exempts an
+ *    inactive control, and the disabled buttons that trip it are meant to look
+ *    exactly that dim.
+ *  - **nonTextInk** is informational because this app draws a lot of
+ *    deliberately faint furniture and a blanket 3:1 rule would be wrong most of
+ *    the times it fired. Read it, do not gate on it.
+ *  - **no-focus-indicator** is informational because the product ships to a
+ *    phone. It matters on the web build and on an external keyboard, and it is
+ *    not a reason to fail a run.
+ */
+async check() {
+  const HARD = ['page-h-overflow','escapes-viewport','escapes-viewport-v','clipped','clipped-v',
+    'tap-target','no-role','no-name','contrast','placeholder-contrast','text-overlap',
+    'nested-vscroll','unreachable-content','scroll-blocked'];
+  const a = this.audit();
+  const s = await this.scroll();
+  const f = this.focus();
+  const all = [...a.findings, ...s.findings];
+  const failures = all.filter((x) => HARD.includes(x.kind));
+  const informational = [
+    ...all.filter((x) => !HARD.includes(x.kind)),
+    ...f.findings,
+    ...a.nonTextInk.filter((i) => i.ratio < 3).map((i) => ({ kind: 'nonTextInk', detail: `${i.ink} ${i.ratio}:1 on ${i.on}`, text: i.near })),
+  ];
+  const counts = {};
+  for (const x of failures) counts[x.kind] = (counts[x.kind] || 0) + 1;
+  return {
+    url: a.url, vw: a.vw, vh: a.vh,
+    pass: failures.length === 0,
+    counts,
+    failures: failures.map((x) => `${x.kind} | ${x.detail} | ${x.text}`),
+    informational: informational.map((x) => `${x.kind} | ${x.detail} | ${x.text || ''}`),
+    pressableCount: a.pressableCount,
+    scrollers: s.scrollers.length,
+  };
+},
+
 // ─── Focus ───────────────────────────────────────────────────────────────────
 
 /**

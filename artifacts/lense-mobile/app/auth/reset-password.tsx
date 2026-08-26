@@ -139,12 +139,12 @@ export default function ResetPasswordScreen() {
             <View style={s.strength}>
               <Meter
                 value={Math.min(1, password.length / 16)}
-                tone={longEnough ? color.cobalt : color.rust}
+                tone={longEnough ? color.ink : color.rust}
                 height={3}
                 label={`Password strength: ${longEnough ? "good" : "too short"}`}
                 style={{ flex: 1 }}
               />
-              <Text style={[T.measuredSmall, { color: longEnough ? color.cobalt : color.rust }]}>
+              <Text style={[T.measuredSmall, { color: longEnough ? color.ink : color.rust }]}>
                 {longEnough ? "GOOD" : `${MIN_PASSWORD_LENGTH - password.length} MORE`}
               </Text>
             </View>

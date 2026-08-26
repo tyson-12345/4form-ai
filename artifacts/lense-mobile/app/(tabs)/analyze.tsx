@@ -41,6 +41,7 @@ import {
   Tappable,
 } from "@/components/caliper";
 import { color, type as T, radius, GUTTER, TAB_BAR, font } from "@/constants/caliper";
+import { usualBand } from "@/utils/usualBand";
 import { analyses as analysesApi, type AnalysisRecord, type UsageRecord } from "@/lib/api";
 import { MIN_CLIP_SECONDS } from "@/lib/poseTracker";
 import { deleteVideo } from "@/lib/videoStore";
@@ -96,8 +97,7 @@ export default function SessionsScreen() {
   const scores = measured
     .filter((a) => a.analysisMethod === "pose-measured" && a.overallScore !== null)
     .map((a) => a.overallScore!);
-  const band =
-    scores.length < 3 ? null : { low: Math.min(...scores), high: Math.max(...scores) };
+  const band = usualBand(scores);
   const bestId =
     scores.length < 2
       ? null
