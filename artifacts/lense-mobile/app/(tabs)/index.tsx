@@ -308,7 +308,10 @@ export default function HomeScreen() {
                 // margin keeps the label optically aligned with the heading.
                 style={s.allLink}
               >
-                <Text style={[T.buttonSmall, { color: color.cobalt }]}>All</Text>
+                {/* Ink, not cobalt. "See all sessions" is navigation, not the
+                    one thing to do next, and it sat the same colour as the
+                    capture button and the prescription card. */}
+                <Text style={[T.buttonSmall, { color: color.textBody }]}>All</Text>
               </Tappable>
             </View>
 
@@ -468,7 +471,7 @@ const s = StyleSheet.create({
   },
   metricRow: { flexDirection: "row", alignItems: "baseline", gap: 10, marginTop: 4 },
   deltaPill: {
-    backgroundColor: "rgba(16,19,18,0.06)",
+    backgroundColor: color.inkWash,
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 4,

@@ -497,9 +497,20 @@ function MeasuredRow({
       }}
       style={[s.row]}
     >
+      {/*
+        Both stamps take the type ladder unmodified. The month was overridden to
+        `fontSize: 8` — below the 9px the system had already rejected as "below
+        the floor for anything a user has to read", and this is a date, which is
+        content. The `fontSize: 12` on the day was a no-op restating `measured`.
+
+        The hierarchy between them is now carried the way `caliper.ts` says it
+        should be: weight (monoBold against mono) and colour (textPrimary
+        against textGhost), not a size step that costs legibility. "AUG" at 11px
+        measures ~22pt in a 42pt tile.
+      */}
       <View style={s.dateTile}>
-        <Text style={[T.measured, { fontSize: 12 }]}>{date.getDate()}</Text>
-        <Text style={[T.measuredSmall, { fontSize: 8, letterSpacing: 0.8 }]}>
+        <Text style={T.measured}>{date.getDate()}</Text>
+        <Text style={T.measuredSmall}>
           {date.toLocaleDateString("en-GB", { month: "short" }).toUpperCase()}
         </Text>
       </View>

@@ -1,5 +1,31 @@
-() => {
-  const MIN=44, out={url:location.pathname,vw:innerWidth,findings:[]};
+/**
+ * UI invariant harness.
+ *
+ * Three entry points, because they need three different things from the page:
+ *
+ *   window.__ui.audit()   — synchronous, measures what is currently painted.
+ *   window.__ui.scroll()  — async, drives every scroller to its end and reports
+ *                           what is left unreachable underneath floating chrome.
+ *   window.__ui.focus()   — synchronous, focuses each control in turn and
+ *                           reports the ones that look identical focused.
+ *
+ * `window.__audit()` remains an alias for the first, so the old call site keeps
+ * working.
+ *
+ * ── Why scroll() is separate ────────────────────────────────────────────────
+ * The harness used to *inventory* scroll containers and stop there — it reported
+ * `scrollHeight`, `clientHeight` and `max`, and left the actual question ("can
+ * you reach the bottom?") to whoever was reading the numbers. That is the one
+ * defect class this app is most exposed to, because every screen floats its tab
+ * bar or its dock over the scroll view and reserves clearance by hand. Geometry
+ * at rest cannot answer it. You have to scroll.
+ */
+({
+
+// ─── Static checks ───────────────────────────────────────────────────────────
+
+audit() {
+  const MIN=44, out={url:location.pathname,vw:innerWidth,vh:innerHeight,findings:[]};
   const add=(kind,detail,el,extra={})=>{const r=el?el.getBoundingClientRect():null;
     out.findings.push({kind,detail,text:el?(el.innerText||el.getAttribute('aria-label')||'').trim().replace(/\s+/g,' ').slice(0,44):'',
       box:r?[Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)]:null,...extra});};
@@ -15,6 +41,16 @@
       if(cs.visibility==='hidden'||cs.display==='none'||cs.opacity==='0')return false;
       if(p.getAttribute&&p.getAttribute('aria-hidden')==='true')return false;}
     return true;};
+  /**
+   * Cumulative opacity down the ancestor chain.
+   *
+   * `vis()` rejects only a hard `opacity: 0`, so anything dimmed short of
+   * invisible — a disabled PrimaryButton at 0.4, a "coming soon" CTA at 0.55 —
+   * was being measured for contrast at full strength. That is the one reading
+   * guaranteed not to be what the user sees.
+   */
+  const alphaOf=el=>{let a=1;for(let p=el;p;p=p.parentElement){const o=parseFloat(getComputedStyle(p).opacity);
+    if(!isNaN(o))a*=o;}return a;};
   // Expo's LogBox / error overlay is development chrome, not the app. Left in,
   // a single red toast contributes a dozen contrast, overlap and role findings
   // and buries the real ones.
@@ -33,6 +69,7 @@
   const all=[...document.querySelectorAll('*')].filter(el=>vis(el)&&!inDevChrome(el));
   out.devChromePresent = devChrome.length>0;
   const ptr=el=>getComputedStyle(el).cursor==='pointer';
+  const hasText=el=>[...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());
 
   const de=document.documentElement;
   if(de.scrollWidth>de.clientWidth+1) add('page-h-overflow',`${de.scrollWidth} > ${de.clientWidth}`,null);
@@ -43,6 +80,24 @@
     if(r.width>0&&(r.left<-1||r.right>innerWidth+1)){
       let sc=false;for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll/.test(getComputedStyle(p).overflowX)){sc=true;break;}}
       if(!sc&&!esc.has(el.parentElement)) {esc.add(el); add('escapes-viewport',`l=${Math.round(r.left)} r=${Math.round(r.right)} vw=${innerWidth}`,el);}}}
+
+  /**
+   * Vertical escape, for content with nowhere to scroll.
+   *
+   * Almost everything on a scrolling page extends below the fold, which is not
+   * a defect — so this only fires when there is no scrollable ancestor at all.
+   * That is the `+not-found` case: a plain View whose content runs off the
+   * bottom of a screen that cannot scroll.
+   */
+  for(const el of all){
+    if(!hasText(el))continue;
+    const r=el.getBoundingClientRect();
+    if(r.bottom<=innerHeight+1&&r.top>=-1)continue;
+    let sc=false;for(let p=el.parentElement;p;p=p.parentElement){
+      const cs=getComputedStyle(p);
+      if(/auto|scroll/.test(cs.overflowY)&&p.scrollHeight>p.clientHeight+2){sc=true;break;}}
+    if(!sc) add('escapes-viewport-v',`t=${Math.round(r.top)} b=${Math.round(r.bottom)} vh=${innerHeight}`,el);
+  }
 
   // Clipped by an overflow:hidden ancestor. A horizontally scrollable ancestor
   // is excluded: content extending past a carousel's edge is the point of a
@@ -60,9 +115,50 @@
         if(r.left<pr.left-1||r.right>pr.right+1) add('clipped',`el[${Math.round(r.left)},${Math.round(r.right)}] in [${Math.round(pr.left)},${Math.round(pr.right)}]`,el);
         break;}}}
 
-  // A pressable is the OUTERMOST element of a cursor:pointer subtree.
+  /**
+   * Vertically clipped text.
+   *
+   * Restricted to elements that carry their own text, because that is where a
+   * clip costs a reader something. `numberOfLines` is a deliberate truncation
+   * and renders as `-webkit-line-clamp` or an ellipsis, so both are exempt.
+   */
+  for(const el of all){
+    if(!hasText(el))continue;
+    const r=el.getBoundingClientRect();
+    for(let p=el.parentElement;p;p=p.parentElement){const cs=getComputedStyle(p);
+      if(/auto|scroll/.test(cs.overflowY)||p.scrollHeight>p.clientHeight+2) break;
+      if(cs.overflowY==='hidden'||cs.overflow==='hidden'){
+        const own=getComputedStyle(el);
+        const clamped=cs.webkitLineClamp&&cs.webkitLineClamp!=='none'
+          ||own.webkitLineClamp&&own.webkitLineClamp!=='none'
+          ||cs.textOverflow==='ellipsis'||own.textOverflow==='ellipsis';
+        if(!clamped){
+          const pr=p.getBoundingClientRect();
+          if(r.top<pr.top-1||r.bottom>pr.bottom+1)
+            add('clipped-v',`el[${Math.round(r.top)},${Math.round(r.bottom)}] in [${Math.round(pr.top)},${Math.round(pr.bottom)}]`,el);}
+        break;}}}
+
+  /**
+   * The control set.
+   *
+   * Was "the outermost element of a cursor:pointer subtree", which missed two
+   * whole categories:
+   *
+   *  - **Disabled controls.** `Tappable` applies `cursor: pointer` only when it
+   *    is interactive, so every disabled control fell out of the set entirely
+   *    and was never sized or named. A disabled button is still a button on
+   *    screen, and it is exactly the state most likely to be badly drawn.
+   *  - **Nested controls.** A control inside a larger pressable was skipped by
+   *    the outermost rule. An element carrying its own interactive role is its
+   *    own control regardless of what encloses it.
+   */
+  const INTERACTIVE=['button','link','tab','checkbox','switch','radio','menuitem','option'];
   const pressables=all.filter(el=>{
     if(el.matches('input,textarea,select')) return true;
+    const role=el.getAttribute('role');
+    const explicit=INTERACTIVE.includes(role);
+    const dis=el.getAttribute('aria-disabled')==='true'||el.hasAttribute('disabled');
+    if(explicit||dis) return true;
     if(!ptr(el)) return false;
     return !(el.parentElement && ptr(el.parentElement));
   });
@@ -76,10 +172,25 @@
     const p=el.parentElement;
     return !!p && (p.innerText||'').trim().length > (el.innerText||'').trim().length;
   };
+  /**
+   * What a screen reader would announce this control as.
+   *
+   * `no-role` never asked this. A `role="button"` with no text, no aria-label
+   * and an SVG child passed every check the harness had, and is announced as
+   * "button" and nothing else.
+   */
+  const nameOf=el=>{
+    const lb=el.getAttribute('aria-labelledby');
+    const byId=lb?(document.getElementById(lb)||{}).innerText||'':'';
+    return (el.getAttribute('aria-label')||el.getAttribute('title')||(el.innerText||'').trim()
+      ||byId||[...el.querySelectorAll('img,svg')].map(n=>n.getAttribute('aria-label')||n.getAttribute('alt')||'').join(' ')
+      ||el.getAttribute('placeholder')||'').trim();
+  };
   for(const el of pressables){
     const r=el.getBoundingClientRect();
+    const dis=el.getAttribute('aria-disabled')==='true'||el.hasAttribute('disabled');
     if((r.width<MIN||r.height<MIN)&&!inlineInProse(el))
-      add('tap-target',`${Math.round(r.width)}x${Math.round(r.height)}`,el);
+      add('tap-target',`${Math.round(r.width)}x${Math.round(r.height)}`,el,dis?{disabled:true}:{});
     const role=el.getAttribute('role');
     // Roles that legitimately describe an interactive control. `tab` matters
     // here: the tab bar is a tablist, not five buttons.
@@ -89,43 +200,158 @@
     const OK=['button','link','tab','checkbox','switch','radio','menuitem','option','text','img','image'];
     if(!el.matches('input,textarea,select')&&!OK.includes(role))
       add('no-role',`role=${role||'none'}`,el);
+    if((INTERACTIVE.includes(role)||el.matches('input,textarea,select'))&&!nameOf(el))
+      add('no-name',`role=${role||el.tagName.toLowerCase()}`,el,dis?{disabled:true}:{});
   }
 
   // Contrast.
   const pc=c=>{const m=c.match(/[\d.]+/g);return m?{r:+m[0],g:+m[1],b:+m[2],a:m[3]===undefined?1:+m[3]}:null;};
   const lum=({r,g,b})=>{const f=v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4);};return .2126*f(r)+.7152*f(g)+.0722*f(b);};
   const ov=(f,b)=>({r:f.r*f.a+b.r*(1-f.a),g:f.g*f.a+b.g*(1-f.a),b:f.b*f.a+b.b*(1-f.a),a:1});
-  const bgOf=el=>{for(let p=el;p;p=p.parentElement){const c=pc(getComputedStyle(p).backgroundColor);
-    if(c&&c.a>0){if(c.a===1)return c;return ov(c,p.parentElement?bgOf(p.parentElement):{r:255,g:255,b:255,a:1});}}
+  /**
+   * Painted grounds that are not ancestors.
+   *
+   * `bgOf` walked the ancestor chain and nothing else, which cannot see the
+   * commonest way this app paints a dark surface: an absolutely-positioned
+   * sibling laid under the content. The tab bar is exactly that — a paper
+   * screen, a `barTint` overlay at `rgba(16,19,18,0.82)`, and the icons on top
+   * as siblings of the tint, not children of it. So every tab icon measured as
+   * `onInk` on *paper*: a 1.00:1 reading for furniture that is actually correct.
+   * The same shape covers the analysis hero's scrim.
+   *
+   * Collected once per run, smallest first, so the tightest enclosing ground
+   * wins.
+   */
+  const grounds=all.filter(el=>{
+    const cs=getComputedStyle(el);
+    if(!/absolute|fixed/.test(cs.position))return false;
+    const c=pc(cs.backgroundColor);
+    return !!c&&c.a>=0.5;
+  }).map(el=>({el,r:el.getBoundingClientRect(),c:pc(getComputedStyle(el).backgroundColor)}))
+    .sort((a,b)=>a.r.width*a.r.height-b.r.width*b.r.height);
+  const overlayGround=el=>{
+    const r=el.getBoundingClientRect();
+    for(const g of grounds){
+      if(g.el===el||g.el.contains(el)||el.contains(g.el))continue;
+      if(r.left>=g.r.left-1&&r.right<=g.r.right+1&&r.top>=g.r.top-1&&r.bottom<=g.r.bottom+1)return g;
+    }
+    return null;
+  };
+  const bgOf=el=>{
+    const g=overlayGround(el);
+    for(let p=el;p;p=p.parentElement){
+      // An overlay ground counts when it is painted *between* this ancestor and
+      // the element — i.e. it lives inside the ancestor. Checked before the
+      // ancestor's own colour is returned, because otherwise the walk always
+      // reaches the opaque page first and the overlay is never consulted.
+      if(g&&p.contains(g.el)&&!g.el.contains(el)){
+        const under=pc(getComputedStyle(p).backgroundColor);
+        const base=under&&under.a===1?under:(p.parentElement?bgOf(p.parentElement):{r:255,g:255,b:255,a:1});
+        return g.c.a===1?g.c:ov(g.c,base);
+      }
+      const c=pc(getComputedStyle(p).backgroundColor);
+      if(c&&c.a>0){
+        if(c.a===1)return c;
+        return ov(c,p.parentElement?bgOf(p.parentElement):{r:255,g:255,b:255,a:1});}}
     return{r:255,g:255,b:255,a:1};};
+  const ratioOf=(fg,bg)=>{const eff=fg.a<1?ov(fg,bg):fg;
+    const l1=lum(eff),l2=lum(bg);return (Math.max(l1,l2)+.05)/(Math.min(l1,l2)+.05);};
   const seen=new Map();
   for(const el of all){
-    if(![...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))continue;
+    if(!hasText(el))continue;
     const cs=getComputedStyle(el),fg=pc(cs.color);if(!fg)continue;
-    const bg=bgOf(el),eff=fg.a<1?ov(fg,bg):fg;
-    const l1=lum(eff),l2=lum(bg);
-    const ratio=(Math.max(l1,l2)+.05)/(Math.min(l1,l2)+.05);
+    const bg=bgOf(el);
     const size=parseFloat(cs.fontSize),bold=+cs.fontWeight>=700;
     const need=(size>=24||(size>=18.66&&bold))?3:4.5;
+    // Dimming is reported separately. WCAG exempts an inactive control from
+    // 1.4.3, so folding these in with the real failures would be wrong — but
+    // "exempt" is not "legible", and a 0.4 dim is worth looking at once.
+    const a=alphaOf(el);
+    const ratio=ratioOf(fg,bg);
+    const dimRatio=a<0.99?ratioOf({...fg,a:fg.a*a},bg):ratio;
     if(ratio<need){
       // Group by colour pair + size: the same token failing 12 times is one defect.
       const key=`${cs.color}|${Math.round(bg.r)},${Math.round(bg.g)},${Math.round(bg.b)}|${size}`;
-      if(!seen.has(key)){seen.set(key,{n:0,sample:''});
+      if(!seen.has(key)){seen.set(key,{n:0});
         add('contrast',`${ratio.toFixed(2)}:1 need ${need} — ${cs.color} on rgb(${Math.round(bg.r)},${Math.round(bg.g)},${Math.round(bg.b)}) @${size}px`,el,{key});}
-      seen.get(key).n++;}
+      seen.get(key).n++;
+    } else if(dimRatio<need){
+      const key=`dim|${cs.color}|${a.toFixed(2)}|${size}`;
+      if(!seen.has(key)){seen.set(key,{n:0});
+        add('contrast-dimmed',`${dimRatio.toFixed(2)}:1 need ${need} at opacity ${a.toFixed(2)} (${ratio.toFixed(2)}:1 undimmed) @${size}px`,el,{key});}
+      seen.get(key).n++;
+    }
   }
   out.contrastGroups=[...seen].map(([k,v])=>({token:k,instances:v.n}));
+
+  /**
+   * Placeholder text.
+   *
+   * `bgOf` walks up looking for a background and the contrast loop only visits
+   * elements with a text *child node* — a placeholder is neither, so every
+   * placeholder in the app was unmeasured. They are set to `textGhost`, the
+   * lightest tier in the system, on `card`.
+   */
+  for(const el of all){
+    if(!el.matches('input,textarea')||!el.getAttribute('placeholder'))continue;
+    const ps=getComputedStyle(el,'::placeholder'),fg=pc(ps.color);if(!fg)continue;
+    const bg=bgOf(el),size=parseFloat(getComputedStyle(el).fontSize);
+    const ratio=ratioOf(fg,bg);
+    if(ratio<4.5) add('placeholder-contrast',`${ratio.toFixed(2)}:1 need 4.5 — ${ps.color} @${size}px`,el);
+  }
+
+  /**
+   * Non-text ink, reported rather than judged.
+   *
+   * WCAG 1.4.11 wants 3:1 for anything that identifies a control or a state,
+   * but not for decoration — and this app draws a great deal of deliberately
+   * faint furniture (ticks at 0.28 alpha, hairlines at 0.10). A blanket
+   * assertion would be wrong most of the time it fired. So this groups every
+   * distinct SVG ink by its effective colour and lets the reader decide which
+   * ones carry meaning.
+   */
+  const inks=new Map();
+  for(const svg of document.querySelectorAll('svg')){
+    if(!vis(svg)||inDevChrome(svg))continue;
+    if(svg.closest('[aria-hidden="true"]'))continue;
+    const bg=bgOf(svg),a0=alphaOf(svg);
+    for(const n of svg.querySelectorAll('path,rect,circle,ellipse,line,polygon,polyline')){
+      const cs=getComputedStyle(n);
+      for(const prop of ['fill','stroke']){
+        // Only ink the element actually asks for. A bare `<line>` has no fill
+        // attribute, so its *computed* fill is the CSS initial value, black —
+        // and a line is never filled. Trusting the computed value reported
+        // every stroked glyph on the ink hero as black-on-black at 1.12:1.
+        // react-native-svg always writes the attribute when it means it.
+        const attr=n.getAttribute(prop);
+        if(attr===null||attr==='none')continue;
+        const raw=cs[prop];if(!raw||raw==='none')continue;
+        const col=pc(raw);if(!col||col.a===0)continue;
+        const opAttr=parseFloat(n.getAttribute(prop+'-opacity')??cs[prop+'Opacity']??'1');
+        const a=col.a*(isNaN(opAttr)?1:opAttr)*a0;
+        if(a<0.02)continue;
+        const ratio=ratioOf({...col,a},bg);
+        const key=`${prop} rgb(${Math.round(col.r)},${Math.round(col.g)},${Math.round(col.b)}) a=${a.toFixed(2)}`;
+        const prev=inks.get(key);
+        if(prev)prev.n++;
+        else inks.set(key,{n:1,ratio:+ratio.toFixed(2),
+          on:`rgb(${Math.round(bg.r)},${Math.round(bg.g)},${Math.round(bg.b)})`,
+          near:(svg.getAttribute('aria-label')||svg.parentElement&&(svg.parentElement.innerText||'').trim().slice(0,28)||'')});
+      }
+    }
+  }
+  out.nonTextInk=[...inks].map(([k,v])=>({ink:k,...v})).sort((x,y)=>x.ratio-y.ratio);
 
   // Text nodes that visually overlap another text node.
   //
   // A floating dock, footer or tab bar deliberately sits *over* a scroll view,
   // so an overlap between something inside a scroller and something outside it
   // is layering, not a defect. What matters for those is whether content is
-  // still reachable at full scroll, which the scrollers report covers.
+  // still reachable at full scroll, which scroll() now actually tests.
   const scrollerOf=el=>{for(let p=el.parentElement;p;p=p.parentElement){
     const cs=getComputedStyle(p);
     if(/auto|scroll/.test(cs.overflowY)&&p.scrollHeight>p.clientHeight+2) return p;} return null;};
-  const texts=all.filter(el=>[...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()));
+  const texts=all.filter(hasText);
   for(let i=0;i<texts.length;i++)for(let j=i+1;j<texts.length;j++){
     const a=texts[i],b=texts[j];
     if(a.contains(b)||b.contains(a))continue;
@@ -146,6 +372,157 @@
       return{box:[Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)],
         scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,max:el.scrollHeight-el.clientHeight};});
 
+  // Same-axis nesting. Two vertical scrollers inside one another means the
+  // inner one eats the gesture and the outer one can never be reached past it.
+  const vscroll=all.filter(el=>/auto|scroll/.test(getComputedStyle(el).overflowY)&&el.scrollHeight>el.clientHeight+2);
+  for(const a of vscroll)for(const b of vscroll){
+    if(a!==b&&a.contains(b)) add('nested-vscroll',`a ${a.scrollHeight}px scroller inside a ${b.scrollHeight}px one`,b);
+  }
+
   const c={};for(const f of out.findings)c[f.kind]=(c[f.kind]||0)+1;out.counts=c;
   return out;
-}
+},
+
+// ─── Reachability ────────────────────────────────────────────────────────────
+
+/**
+ * Drive every scroller to its end and report what is still underneath the
+ * floating chrome when it gets there.
+ *
+ * "Floating chrome" is anything positioned, pinned near the bottom edge and
+ * wide enough to cover content: the tab bar, the analysis dock, the onboarding
+ * footer. The fades above them are excluded — a `FooterFade` is transparent by
+ * design and content passing under it is the effect, not a defect.
+ */
+async scroll() {
+  const out={url:location.pathname,vw:innerWidth,vh:innerHeight,findings:[],scrollers:[],chrome:[]};
+  const settle=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  const vis=el=>{const r=el.getBoundingClientRect();if(!r.width||!r.height)return false;
+    for(let p=el;p;p=p.parentElement){const cs=getComputedStyle(p);
+      if(cs.visibility==='hidden'||cs.display==='none'||cs.opacity==='0')return false;
+      if(p.getAttribute&&p.getAttribute('aria-hidden')==='true')return false;}
+    return true;};
+  const opaque=el=>{const c=getComputedStyle(el).backgroundColor.match(/[\d.]+/g);
+    return !!c&&(c[3]===undefined||+c[3]>0.5);};
+
+  const all=[...document.querySelectorAll('*')].filter(vis);
+  const scrollersAll=all.filter(el=>/auto|scroll/.test(getComputedStyle(el).overflowY)&&el.scrollHeight>el.clientHeight+2);
+  const chrome=all.filter(el=>{
+    const cs=getComputedStyle(el);
+    if(!/fixed|absolute/.test(cs.position))return false;
+    const r=el.getBoundingClientRect();
+    // Pinned to the bottom, wide enough to hide something, and actually opaque
+    // somewhere — either itself or in a child.
+    if(!(r.width>innerWidth*0.35&&r.height>18&&r.bottom>innerHeight-90&&r.top<innerHeight-8))return false;
+    // A bar, not the page. Every screen root is absolutely positioned and
+    // reaches the bottom edge, so without a height cap the whole screen was
+    // classified as chrome covering itself — and every route reported all of
+    // its content as unreachable.
+    if(r.height>innerHeight*0.35)return false;
+    // Nor is anything that contains the scroll view it would be covering.
+    if(scrollersAll.some(sc=>el.contains(sc)))return false;
+    if(!(opaque(el)||[...el.querySelectorAll('*')].some(opaque)))return false;
+    /**
+     * And it only counts if it is actually painted on top *right now*.
+     *
+     * A `Modal` leaves the tab bar in the DOM at its usual coordinates while
+     * covering it, so geometry alone reported the delete-account sheet's
+     * confirm button as buried under a bar that is not on screen — a false
+     * finding on the most dangerous control in the app, which is precisely
+     * the kind of noise that buries the true ones.
+     */
+    const cx=r.left+r.width/2, cy=Math.min(r.top+r.height/2,innerHeight-2);
+    const hit=document.elementFromPoint(cx,cy);
+    return !!hit&&(el===hit||el.contains(hit));
+  });
+  // Keep only the outermost of each nested chrome stack.
+  const outer=chrome.filter(el=>!chrome.some(o=>o!==el&&o.contains(el)));
+  out.chrome=outer.map(el=>{const r=el.getBoundingClientRect();
+    return{top:Math.round(r.top),bottom:Math.round(r.bottom),
+      text:(el.innerText||el.getAttribute('aria-label')||'').trim().replace(/\s+/g,' ').slice(0,40)};});
+  const chromeTop=outer.length?Math.min(...outer.map(e=>e.getBoundingClientRect().top)):innerHeight;
+  out.chromeTop=Math.round(chromeTop);
+
+  const scrollers=all.filter(el=>/auto|scroll/.test(getComputedStyle(el).overflowY)&&el.scrollHeight>el.clientHeight+2);
+  for(const sc of scrollers){
+    const before=sc.scrollTop, max=sc.scrollHeight-sc.clientHeight;
+    sc.scrollTop=sc.scrollHeight;
+    await settle();
+    const reached=sc.scrollTop;
+    // The lowest thing inside this scroller that a reader has to be able to see.
+    let low=null,lowEl=null;
+    for(const el of sc.querySelectorAll('*')){
+      if(!vis(el))continue;
+      // The element that owns the text, not every container above it. A
+      // wrapper reports the union of its children and always wins "lowest",
+      // which named the screen root as the trapped content on every route.
+      const own=[...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());
+      if(!own&&!el.matches('input,textarea,svg'))continue;
+      const r=el.getBoundingClientRect();
+      if(r.height<1)continue;
+      if(low===null||r.bottom>low){low=r.bottom;lowEl=el;}
+    }
+    const rec={box:[...(()=>{const r=sc.getBoundingClientRect();return[Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)];})()],
+      scrollHeight:sc.scrollHeight,clientHeight:sc.clientHeight,max,
+      reachedEnd:Math.abs(reached-max)<2,
+      lowestContentBottom:low===null?null:Math.round(low),
+      lowestContentText:lowEl?(lowEl.innerText||lowEl.getAttribute('aria-label')||lowEl.tagName).trim().replace(/\s+/g,' ').slice(0,40):null};
+    out.scrollers.push(rec);
+    if(!rec.reachedEnd)
+      out.findings.push({kind:'scroll-blocked',detail:`stopped at ${Math.round(reached)} of ${max}`,text:rec.lowestContentText});
+    if(low!==null&&low>chromeTop+2)
+      out.findings.push({kind:'unreachable-content',
+        detail:`content bottom ${Math.round(low)} sits ${Math.round(low-chromeTop)}px under chrome starting at ${Math.round(chromeTop)}`,
+        text:rec.lowestContentText});
+    sc.scrollTop=before;
+  }
+  await settle();
+  const c={};for(const f of out.findings)c[f.kind]=(c[f.kind]||0)+1;out.counts=c;
+  return out;
+},
+
+// ─── Focus ───────────────────────────────────────────────────────────────────
+
+/**
+ * Focus each control and report the ones that look identical focused.
+ *
+ * `TextField` has a documented, deliberate focus ring. Nothing else in the app
+ * has any focus treatment at all, which on a browser (and for anyone driving
+ * the app from a keyboard) means the focus position is simply invisible.
+ */
+focus() {
+  const out={url:location.pathname,vw:innerWidth,findings:[],focusableCount:0};
+  const vis=el=>{const r=el.getBoundingClientRect();if(!r.width||!r.height)return false;
+    for(let p=el;p;p=p.parentElement){const cs=getComputedStyle(p);
+      if(cs.visibility==='hidden'||cs.display==='none'||cs.opacity==='0')return false;
+      if(p.getAttribute&&p.getAttribute('aria-hidden')==='true')return false;}
+    return true;};
+  const sig=el=>{const cs=getComputedStyle(el);
+    return [cs.outlineStyle,cs.outlineWidth,cs.outlineColor,cs.boxShadow,cs.borderColor,cs.borderWidth,cs.backgroundColor].join('|');};
+  const focusables=[...document.querySelectorAll('a[href],button,input,textarea,select,[tabindex]:not([tabindex="-1"])')]
+    .filter(el=>vis(el)&&!el.hasAttribute('disabled'));
+  out.focusableCount=focusables.length;
+  const active=document.activeElement;
+  for(const el of focusables){
+    const before=sig(el);
+    try{el.focus({preventScroll:true});}catch{continue;}
+    if(document.activeElement!==el)continue;
+    // A ring that animates in needs a beat, but this is synchronous by design:
+    // report the resting difference and treat an animated ring as a miss only
+    // if it still reads identical after the caller re-runs.
+    const after=sig(el);
+    if(before===after){
+      const r=el.getBoundingClientRect();
+      out.findings.push({kind:'no-focus-indicator',
+        detail:el.getAttribute('role')||el.tagName.toLowerCase(),
+        text:(el.getAttribute('aria-label')||el.innerText||'').trim().replace(/\s+/g,' ').slice(0,40),
+        box:[Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)]});
+    }
+    el.blur();
+  }
+  if(active&&active.focus)try{active.focus({preventScroll:true});}catch{}
+  const c={};for(const f of out.findings)c[f.kind]=(c[f.kind]||0)+1;out.counts=c;
+  return out;
+},
+
+})

@@ -69,6 +69,18 @@ import { formatBiomechanicsText } from "@/utils/formatBiomechanics";
 import { provenance } from "@/utils/provenance";
 import { MeasureFigure } from "@/components/MeasureFigure";
 
+/**
+ * Usable hero height, *below* the safe-area inset.
+ *
+ * The hero bleeds to the top edge on purpose, so on a device with a notch or a
+ * Dynamic Island the drawn height has to be `HERO_H + insets.top` for the
+ * content inside it to get the 340pt it was designed against. Without that the
+ * figure's head and shoulders were drawn behind the island: `heroBody` sat at a
+ * flat `top: 14` while every other layer in the hero already used `insets.top`.
+ *
+ * Invisible on the web build, where `insets.top` is 0 — which is exactly why it
+ * survived the browser sweep and only showed up on the simulator.
+ */
 const HERO_H = 340;
 
 /**
@@ -234,7 +246,7 @@ export default function AnalysisDetailScreen() {
       if (video.status !== "ready") {
         alert(
           "This clip isn't on this phone anymore",
-          "Videos stay on your device, not our servers, and this one is gone — likely a reinstall or cleared storage. Film or upload it again from Analyze.",
+          "Videos stay on your device, not our servers, and this one is gone. Likely a reinstall or cleared storage. Film or upload it again from Analyze.",
         );
         return;
       }
@@ -251,7 +263,7 @@ export default function AnalysisDetailScreen() {
       <Screen>
         {/* Shaped like the screen that is coming — hero, index card, prose —
             rather than a spinner alone on paper. */}
-        <SkeletonBlock height={HERO_H} style={{ borderRadius: 0 }} />
+        <SkeletonBlock height={HERO_H + insets.top} style={{ borderRadius: 0 }} />
         <View style={{ paddingHorizontal: GUTTER }}>
           <SkeletonBlock height={188} style={{ marginTop: -16, borderRadius: 26 }} />
           <SkeletonBlock height={13} width="34%" style={{ marginTop: 28 }} />
@@ -359,24 +371,32 @@ export default function AnalysisDetailScreen() {
             went back *and* pushed the skeleton screen. The tappable area is now
             a sibling of the controls rather than their ancestor, so the two
             cannot both fire. */}
-        <View style={s.hero}>
-          <FilmBackdrop width={screenW} />
+        <View style={[s.hero, { height: HERO_H + insets.top }]}>
+          <FilmBackdrop width={screenW} height={HERO_H + insets.top} />
           <View style={s.heroScrim} />
 
           {/* Above the scrim: it is there to protect the footer text, and
-              dimming the one element carrying data is the wrong trade. */}
-          <View style={[s.heroBody, { pointerEvents: "none" }]}>
+              dimming the one element carrying data is the wrong trade.
+
+              Offset by the inset like the controls below it. The figure's head
+              sits 13pt from its own top, so at a flat `top: 14` it landed at
+              28pt — inside the 59pt the Dynamic Island occupies. */}
+          <View style={[s.heroBody, { top: insets.top + 14, pointerEvents: "none" }]}>
             <MeasureFigure findings={risks} height={168} />
           </View>
 
-          {/* The open-skeleton target: everything below the top controls. */}
-          <Tappable
-            onPress={() => router.push(`/analysis/skeleton/${analysis.id}`)}
-            accessibilityRole="button"
-            accessibilityLabel="Open the skeleton overlay for this clip"
-            style={[StyleSheet.absoluteFill, { top: insets.top + 52 }]}
-          />
+          {/*
+            The controls come before the full-screen target in source order,
+            and that ordering is load-bearing rather than cosmetic: VoiceOver
+            traverses the view hierarchy, not the screen. Declared after it, the
+            first thing a screen-reader user met on this screen was a
+            viewport-sized "Open the skeleton overlay" button, with Back
+            announced third — behind it, and nowhere near where it is drawn.
 
+            Safe to reorder because the two do not overlap: the controls sit at
+            `insets.top + 6` and are 44pt tall, and the target starts at
+            `insets.top + 52`. Nothing about touch changes.
+          */}
           <View style={[s.heroTop, { top: insets.top + 6 }]}>
             <Tappable
               onPress={() => router.back()}
@@ -402,13 +422,21 @@ export default function AnalysisDetailScreen() {
             </Tappable>
           </View>
 
+          {/* The open-skeleton target: everything below the top controls. */}
+          <Tappable
+            onPress={() => router.push(`/analysis/skeleton/${analysis.id}`)}
+            accessibilityRole="button"
+            accessibilityLabel="Open the skeleton overlay for this clip"
+            style={[StyleSheet.absoluteFill, { top: insets.top + 52 }]}
+          />
+
           <View style={[s.heroFoot, { pointerEvents: "none" }]}>
             {/* Ink scrim directly above the footer text. At large system text
                 sizes the footer grows upward into the skeleton figure and the
                 two drew over each other; the figure now dissolves into ink
                 instead of crossing the words. */}
             <FooterFade height={64} tone={color.ink} />
-              <Label tone="rgba(237,236,231,0.6)">
+              <Label tone={color.onInkFaint}>
                 {displaySport(analysis.sport).toUpperCase()}
                 {" · "}
                 {new Date(analysis.uploadedAt)
@@ -603,8 +631,8 @@ export default function AnalysisDetailScreen() {
               <FindingCard key={risk.id} risk={risk} />
             ))}
             <Text style={[T.bodySmall, { marginTop: 12, fontStyle: "italic" }]}>
-              Measured joint positions from your video, read against bands for your sport — not
-              a medical assessment or an injury prediction.
+              Measured joint positions from your video, read against bands for your sport.
+              Not a medical assessment or an injury prediction.
             </Text>
           </Entering>
         )}
@@ -705,9 +733,9 @@ export default function AnalysisDetailScreen() {
 // ─── Hero pieces ─────────────────────────────────────────────────────────────
 
 /** Diagonal film-strip texture — the dark ground the reading sits on. */
-function FilmBackdrop({ width }: { width: number }) {
+function FilmBackdrop({ width, height }: { width: number; height: number }) {
   return (
-    <Svg width={width} height={HERO_H} style={StyleSheet.absoluteFill}>
+    <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
       <Defs>
         <Pattern
           id="film"
@@ -720,7 +748,7 @@ function FilmBackdrop({ width }: { width: number }) {
           <Rect width={4} height={8} fill="#1C1F21" />
         </Pattern>
       </Defs>
-      <Rect width={width} height={HERO_H} fill="url(#film)" />
+      <Rect width={width} height={height} fill="url(#film)" />
     </Svg>
   );
 }
@@ -881,8 +909,9 @@ function FindingCard({ risk }: { risk: RiskRecord }) {
 const s = StyleSheet.create({
   centre: { alignItems: "center", justifyContent: "center", padding: 32 },
 
-  hero: { height: HERO_H, backgroundColor: color.ink, overflow: "hidden" },
-  heroScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(16,19,18,0.35)" },
+  // Height is applied at the call site: it depends on the safe-area inset.
+  hero: { backgroundColor: color.ink, overflow: "hidden" },
+  heroScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: color.inkVeil },
   heroTop: {
     position: "absolute",
     left: GUTTER,
@@ -903,7 +932,8 @@ const s = StyleSheet.create({
   },
   // Sized and placed to clear the footer block entirely — at HERO_H 340 the
   // sport line starts near y=205, and the figures plus caption end by ~176.
-  heroBody: { position: "absolute", left: 0, right: 0, top: 14, alignItems: "center" },
+  // `top` is applied at the call site, from the safe-area inset.
+  heroBody: { position: "absolute", left: 0, right: 0, alignItems: "center" },
   // Full bleed, then padded in, so the ink scrim above it reaches both screen
   // edges. Inset by GUTTER the fade stopped short and the figure stayed visible
   // in the two margins.
@@ -963,7 +993,7 @@ const s = StyleSheet.create({
   // Cobalt, not rust: this is a "check this" prompt, not a finding about the
   // athlete's movement, and it should not compete with a flagged joint.
   mismatchNote: {
-    backgroundColor: "rgba(36,54,232,0.07)",
+    backgroundColor: color.cobaltWashFaint,
     borderLeftWidth: 3,
     borderLeftColor: color.cobalt,
     borderRadius: 0,

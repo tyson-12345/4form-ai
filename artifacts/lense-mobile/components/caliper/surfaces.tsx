@@ -54,7 +54,15 @@ export function Card({
   );
 }
 
-/** Paper background with the standard gutter. */
+/**
+ * The paper ground every screen sits on. Nothing else.
+ *
+ * The docstring used to say "with the standard gutter", which it has never
+ * applied — every screen pads its own scroll content by `GUTTER`, because the
+ * gutter belongs to the *content* and the paper has to run full-bleed behind
+ * the hero images and the status-bar scrim. Believing the docstring means
+ * double-padding a screen by 22pt.
+ */
 export function Screen({
   children,
   style,
@@ -513,7 +521,7 @@ const s = StyleSheet.create({
   statusScrim: { position: "absolute", left: 0, right: 0, top: 0, zIndex: 5 },
 
 
-  skeleton: { backgroundColor: "rgba(16,19,18,0.055)", borderRadius: 12 },
+  skeleton: { backgroundColor: color.inkWashFaint, borderRadius: 12 },
 
 
   sheetHead: {

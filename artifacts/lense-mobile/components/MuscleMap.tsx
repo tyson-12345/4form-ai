@@ -24,24 +24,61 @@ import { Text } from "@/components/caliper";
 import { color, type as T } from "@/constants/caliper";
 import type { MuscleGroup, MuscleLoad, MuscleState } from "@/utils/muscleLoad";
 
-const INK_FAINT = "rgba(16,19,18,0.07)";
-const INK_SOFT = "rgba(16,19,18,0.10)";
-const OUTLINE = "rgba(16,19,18,0.16)";
+const INK_FAINT = color.inkWashSoft;
+const INK_SOFT = color.inkWashStrong;
+const OUTLINE = color.ruleStrong;
 
 /**
- * Traffic-light semantics, because that is what everyone already knows:
- * amber = watch it, red = outside the band. The first version used the app's
- * gray/rust band colours, and gray read as "inactive" rather than "caution".
+ * ── Why this is not a traffic light ─────────────────────────────────────────
+ * It used to be: `#E8A33D` for caution and `#D63A2F` for flagged, on the
+ * argument that "amber = watch it, red = outside the band" is what everyone
+ * already knows. Three things were wrong with it, and the 2026-08-26 audit
+ * measured all three:
+ *
+ *  - **The amber was invisible.** `#E8A33D` on paper is **1.82:1** — under even
+ *    the 3:1 WCAG asks of a graphic that carries meaning. The state it marked
+ *    could not be seen.
+ *  - **It invented a second red.** `caliper.ts` rule 2 keeps one alarm colour so
+ *    that "something is wrong" reads as one thing; `#D63A2F` is a different red
+ *    competing with rust, and `bandColor` says caution is deliberately *not*
+ *    amber precisely so it cannot dilute the flag.
+ *  - **The caption was already lying.** The analysis screen says "Rust means the
+ *    joint a muscle crosses spent real time outside this sport's band" while
+ *    this file painted `#D63A2F`.
+ *
+ * So the map now says what the system says: neutral ink for work done, one rust
+ * at two strengths for the two degrees of wrong. The original objection — that
+ * grey read as "inactive" — is answered by depth rather than hue: an unmeasured
+ * group sits at 0.10, a worked one ramps from 0.15 to 0.65, which is a far wider
+ * separation than the old grey-on-grey it was rejected for.
+ *
+ * Effort is ink and not cobalt for the same reason: rule 1 reserves cobalt for
+ * the one next action and names "a score, a chart line, or a decorative accent"
+ * as what it is never for. A muscle fill is a reading.
  */
-const CAUTION = "#E8A33D";
-const FLAGGED = "#D63A2F";
+/**
+ * One colour, two strengths.
+ *
+ * The two cannot both clear 3:1 against the card *and* against each other —
+ * that is arithmetic, not a preference, the same arithmetic that forced
+ * `rustOnInk` to exist. At 0.4 caution separates from flagged (3.13:1) but
+ * washes out against paper (1.87:1); at 0.7 it clears paper and collapses into
+ * flagged (1.80:1).
+ *
+ * So severity is carried by alpha and legibility by an edge: every tinted shape
+ * already takes the `OUTLINE` stroke, and the legend swatches now take it too,
+ * which is what defines a pale caution tint against a white card. On the figure
+ * itself these are large shapes, where 2.4:1 between the two reads clearly.
+ */
+const CAUTION_ALPHA = 0.55;
+const FLAGGED_ALPHA = 1;
 
 /** Colour for one muscle group. Flags outrank caution outranks effort. */
 function fillFor(s: MuscleState): { fill: string; opacity: number; tinted: boolean } {
-  if (s.lvl === 2) return { fill: FLAGGED, opacity: 0.9, tinted: true };
-  if (s.lvl === 1) return { fill: CAUTION, opacity: 0.85, tinted: true };
+  if (s.lvl === 2) return { fill: color.rust, opacity: FLAGGED_ALPHA, tinted: true };
+  if (s.lvl === 1) return { fill: color.rust, opacity: CAUTION_ALPHA, tinted: true };
   if (s.work > 0.12)
-    return { fill: color.cobalt, opacity: 0.15 + 0.5 * Math.min(1, s.work), tinted: true };
+    return { fill: color.ink, opacity: 0.15 + 0.5 * Math.min(1, s.work), tinted: true };
   return { fill: INK_SOFT, opacity: 1, tinted: false };
 }
 
@@ -198,23 +235,34 @@ export function MuscleMap({ load }: { load: MuscleLoad }) {
 
 /** The colour key. Rendered by the analysis screen under the map. */
 export function MuscleMapLegend() {
-  const items: { swatch: string; opacity: number; label: string }[] = [
-    { swatch: color.cobalt, opacity: 0.55, label: "WORKED" },
-    { swatch: CAUTION, opacity: 0.85, label: "CAUTION" },
-    { swatch: FLAGGED, opacity: 0.9, label: "FLAGGED" },
-    { swatch: INK_SOFT, opacity: 1, label: "NOT MEASURED" },
+  /**
+   * Fill and edge are separate here, where on the figure they are not.
+   *
+   * A swatch is 14pt of colour on a white card, so the palest of them —
+   * caution at 0.55 rust — measures 2.4:1 against the card and cannot be
+   * trusted to define its own shape. Ringing it in the *same colour at full
+   * strength* gives it a 5.8:1 edge and says what the tint means: the same
+   * alarm, less of it. The neutral swatches keep the hairline the map uses.
+   */
+  const items: { fill: string; edge: string; label: string }[] = [
+    { fill: "rgba(16,19,18,0.55)", edge: color.ink, label: "WORKED" },
+    { fill: "rgba(168,71,38,0.55)", edge: color.rust, label: "CAUTION" },
+    { fill: color.rust, edge: color.rust, label: "FLAGGED" },
+    { fill: INK_SOFT, edge: OUTLINE, label: "NOT MEASURED" },
   ];
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14, marginTop: 14 }}>
       {items.map((it) => (
         <View key={it.label} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          {/* 14, not 10: a 10pt dot is too small to carry a tonal distinction. */}
           <View
             style={{
-              width: 10,
-              height: 10,
-              borderRadius: 5,
-              backgroundColor: it.swatch,
-              opacity: it.opacity,
+              width: 14,
+              height: 14,
+              borderRadius: 7,
+              backgroundColor: it.fill,
+              borderWidth: 1,
+              borderColor: it.edge,
             }}
           />
           <Text style={[T.measuredSmall, { color: color.textMuted }]}>{it.label}</Text>

@@ -205,11 +205,21 @@ export function useEntrance(index = 0) {
  * Scale *and* opacity together — opacity alone reads as a control dimming,
  * scale reads as a control being pushed.
  */
-export function usePressResponse(enabled = true) {
+export function usePressResponse(enabled = true, base = 1) {
   const pressed = useSharedValue(0);
 
+  /**
+   * `base` is the control's resting opacity — 1 normally, lower when it is
+   * disabled or deliberately dimmed.
+   *
+   * It has to be applied here rather than by the caller. This style is composed
+   * last so that nothing can override the single press treatment, which also
+   * means it overrode any `opacity` the caller set. Folding the resting value
+   * in keeps both properties: the press response is still the last word, and a
+   * disabled control still looks disabled.
+   */
   const style = useAnimatedStyle(() => ({
-    opacity: 1 - pressed.value * (1 - motion.press.opacity),
+    opacity: base * (1 - pressed.value * (1 - motion.press.opacity)),
     transform: [{ scale: 1 - pressed.value * (1 - motion.press.scale) }],
   }));
 

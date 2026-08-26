@@ -283,14 +283,21 @@ export function MicroAxis({
   max = 100,
   bandLow,
   bandHigh,
-  tone = color.cobalt,
+  tone = color.ink,
 }: {
   value: number;
   min?: number;
   max?: number;
   bandLow?: number | null;
   bandHigh?: number | null;
-  /** Marker colour — ink for live readings, rust for a flagged one. */
+  /**
+   * Marker colour — ink for a reading, rust for a flagged one.
+   *
+   * The default was cobalt, which this comment never listed and rule 1
+   * forbids. The skeleton player always passed a tone and was correct; the
+   * analysis screen omits it, so its four sub-score tiles each drew a cobalt
+   * marker.
+   */
   tone?: string;
 }) {
   const { pct, fillWidth } = bandScale(min, max, [value, bandLow, bandHigh]);
@@ -460,11 +467,17 @@ export function ReferenceRow({
 }
 
 /**
- * Progress trend. Ink line, cobalt endpoint — the endpoint is "where you are
- * now", which is the actionable part.
+ * Progress trend. Ink line, and an endpoint marking "where you are now".
+ *
+ * The endpoint used to be cobalt unconditionally. That is fine on the one hero
+ * trend and wrong on the four sub-metric tiles beneath it, which render the
+ * same component — five cobalt endpoints on one screen, against rule 1's "if
+ * cobalt appears twice, one of them is decoration". `tone` now defaults to ink
+ * and the hero passes cobalt, so the reservation survives repetition.
  */
 export function Sparkline({
   values,
+  tone = color.ink,
   // A default that fitted one screen. Callers should measure and pass a width
   // — both do now — but if one forgets, 100% of whatever holds it is a far
   // better guess than a fixed 306 that overflows every phone under ~390pt.
@@ -474,6 +487,8 @@ export function Sparkline({
   bandHigh,
 }: {
   values: number[];
+  /** Endpoint marker. Cobalt only on a screen's single hero trend. */
+  tone?: string;
   width?: number;
   height?: number;
   bandLow?: number | null;
@@ -547,8 +562,8 @@ export function Sparkline({
         />
       )}
       <Path d={d} fill="none" stroke={color.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-      <Circle cx={x(values.length - 1)} cy={y(values[values.length - 1]!)} r={10} fill={color.cobalt} fillOpacity={0.16} />
-      <Circle cx={x(values.length - 1)} cy={y(values[values.length - 1]!)} r={5} fill={color.cobalt} />
+      <Circle cx={x(values.length - 1)} cy={y(values[values.length - 1]!)} r={10} fill={tone} fillOpacity={0.16} />
+      <Circle cx={x(values.length - 1)} cy={y(values[values.length - 1]!)} r={5} fill={tone} />
     </Svg>
     </View>
   );
@@ -616,7 +631,7 @@ const s = StyleSheet.create({
     width: 2,
     height: 18,
     marginLeft: -1,
-    backgroundColor: "rgba(16,19,18,0.32)",
+    backgroundColor: color.tick,
   },
   // Wide enough for "THIS CLIP", the longest marker label — 44 wrapped it.
   /**
@@ -688,16 +703,19 @@ const s = StyleSheet.create({
 
   miniBand: {
     height: 2,
-    backgroundColor: "rgba(16,19,18,0.12)",
+    backgroundColor: color.inkWashStrong,
     borderRadius: 1,
     marginTop: 4,
   },
 
+  // Ink, not cobalt. This scale is drawn once per list row — twelve times on a
+  // full Sessions screen — and rule 1's test for decoration is that cobalt
+  // appears more than once. A row scale is a reading, not a prescription.
   miniBandFill: {
     position: "absolute",
     top: 0,
     height: 2,
-    backgroundColor: "rgba(36,54,232,0.28)",
+    backgroundColor: color.tick,
     borderRadius: 1,
   },
 
@@ -707,7 +725,7 @@ const s = StyleSheet.create({
     width: 2,
     height: 5,
     marginLeft: -1,
-    backgroundColor: color.cobalt,
+    backgroundColor: color.ink,
     borderRadius: 1,
   },
 
@@ -721,14 +739,14 @@ const s = StyleSheet.create({
     right: 0,
     top: 4,
     height: 1,
-    backgroundColor: "rgba(16,19,18,0.14)",
+    backgroundColor: color.ruleStrong,
   },
 
   microAxisFill: {
     position: "absolute",
     top: 1,
     height: 7,
-    backgroundColor: color.cobaltWash,
+    backgroundColor: color.inkWashStrong,
     borderRadius: 2,
   },
 
@@ -762,11 +780,14 @@ const s = StyleSheet.create({
     backgroundColor: color.ruleStrong,
   },
 
+  // The safe band on an evidence card. Ink, because a finding list draws one
+  // of these per flagged joint — up to six on an analysis — and cobalt that
+  // repeats six times is no longer reserved for anything.
   rangeRulerBand: {
     position: "absolute",
     top: 6,
     height: 11,
-    backgroundColor: color.cobaltWash,
+    backgroundColor: color.inkWashStrong,
     borderRadius: 3,
   },
 

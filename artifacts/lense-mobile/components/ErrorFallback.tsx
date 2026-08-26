@@ -64,7 +64,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
 
         <Text scale="display" style={[T.headline, { marginTop: 28 }]}>Something went{"\n"}wrong.</Text>
         <Text style={[T.body, { marginTop: 12, maxWidth: 310 }]}>
-          The app hit a problem and stopped. Nothing you have measured is lost — your sessions
+          The app hit a problem and stopped. Nothing you have measured is lost: your sessions
           and scores are stored on our servers, and your clips are still on this phone.
         </Text>
 

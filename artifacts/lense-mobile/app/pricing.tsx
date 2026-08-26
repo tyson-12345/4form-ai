@@ -259,7 +259,17 @@ export default function PricingScreen() {
                 accessibilityLabel={
                   billingEnabled ? "Start free week" : "Coming soon. Not available to buy yet."
                 }
-                style={[s.proCta, { opacity: billingEnabled ? 1 : 0.55 }]}
+                /*
+                  Full strength, deliberately.
+                  
+                  It used to be dimmed to 0.55 to signal "not on sale yet" —
+                  except the control is still pressable, and tapping it is how
+                  you learn why. A dimmed-but-live control reads as broken, and
+                  at 0.55 the label measured 2.87:1, which WCAG exempts only for
+                  controls that are genuinely inactive. This one is not.
+                  The label already says "Coming soon"; that is the signal.
+                */
+                style={s.proCta}
               >
                 <Text style={[T.button, { color: color.cobalt }]}>
                   {billingEnabled ? "Start free week" : "Coming soon"}
@@ -374,7 +384,7 @@ const s = StyleSheet.create({
     color: color.onCobalt,
   },
   badge: {
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: color.onCobaltWash,
     borderRadius: radius.pill,
     paddingHorizontal: 11,
     paddingVertical: 6,

@@ -168,7 +168,17 @@ export function buildPoseHtml(options: {
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{width:100%;height:100%;overflow:hidden;background:#101312;font-family:-apple-system,sans-serif;color:#EDECE7}
-#wrap{position:relative;width:100%;background:#000}
+/* The stage takes whatever height the controls leave, as a flex child.
+   It used to be sized imperatively - wrap.style.height = innerHeight minus the
+   control bar, on load and on resize - against a viewport that was still the
+   INITIAL WebView height. The native side starts from a 16/9 guess for the clip
+   and re-lays-out once the real aspect arrives, and that second layout produced
+   no resize event the page saw, so the stage stayed at its first-guess height:
+   on a portrait clip the video rendered about 236pt tall inside a 542pt area,
+   with roughly 300pt of dead black between it and the transport bar.
+   Flex has no first guess to be stale about. */
+body{display:flex;flex-direction:column}
+#wrap{position:relative;width:100%;flex:1;min-height:0;background:#000}
 video,canvas{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain}
 canvas{pointer-events:none}
 #badge{position:absolute;top:10px;left:10px;display:flex;align-items:center;gap:6px;
@@ -187,7 +197,7 @@ canvas{pointer-events:none}
 .load-sub{font-size:11px;color:#75787A;line-height:1.5}
 .retry{margin-top:14px;background:#2436E8;border:none;color:#101312;padding:9px 20px;
   border-radius:10px;font-size:13px;font-weight:700;cursor:pointer}
-#ctrl{position:fixed;bottom:0;left:0;right:0;background:rgba(16,19,18,.96);
+#ctrl{flex:none;background:rgba(16,19,18,.96);
   padding:10px 14px 14px;display:flex;flex-direction:column;gap:9px}
 .row{display:flex;align-items:center;gap:8px}
 #timeL,#timeR{font-size:11px;color:#75787A;font-variant-numeric:tabular-nums;min-width:32px}
@@ -226,8 +236,8 @@ canvas{pointer-events:none}
        <div id="legend">
          <div class="lg"><span class="ld" style="background:#5B8DEF"></span>LEFT</div>
          <div class="lg"><span class="ld" style="background:#4CAF82"></span>RIGHT</div>
-         <div class="lg lgsep"><span class="ld" style="background:#E8A33D"></span>CAUTION</div>
-         <div class="lg"><span class="ld" style="background:#D63A2F"></span>FLAGGED</div>
+         <div class="lg lgsep"><span class="ld" style="background:#8A8D8F"></span>CAUTION</div>
+         <div class="lg"><span class="ld" style="background:#D2683F"></span>FLAGGED</div>
        </div>`
        }`
       : `<div id="empty"><p>No video available</p></div>`
@@ -329,7 +339,20 @@ ${
   //     same colour.
   // Traffic-light risk colours, matching the muscle map on the analysis
   // screen: amber = caution, red = flagged. One vocabulary everywhere.
-  var RL=["#EDECE7","#E8A33D","#D63A2F"];
+  // Limb colour by risk level, mirroring bandColor in constants/caliper.ts on a
+  // dark ground: within band is onInk, caution is the muted neutral, and only
+  // level 2 takes the alarm colour.
+  //
+  // Was ["#EDECE7","#E8A33D","#D63A2F"], a traffic light. caliper.ts names that
+  // arrangement as the thing not to do - "an amber tier would compete with the
+  // flag colour and dilute rule 2" - and this legend sat two taps from the
+  // muscle map's legend saying the same two states in rust. Amber-and-red is
+  // also the worst pairing for red-green colour blindness; neutral-and-rust
+  // separates by saturation instead.
+  //
+  // #D2683F is rustOnInk: rust proper is only 3.20:1 against ink, which is why
+  // the dark-ground variant exists.
+  var RL=["#EDECE7","#8A8D8F","#D2683F"];
 
   // Body-part identity. These are the base colours; a flagged joint overrides
   // them so a finding still outranks anatomy. Right is green rather than the
@@ -749,7 +772,6 @@ ${
     } else {
       loading.classList.add("hide");
       if (btxt) btxt.textContent = "Ready. Press play";
-      sizeWrap();
       setTimeout(detect, 100);
     }
   }).catch(function(err){
@@ -792,7 +814,6 @@ ${
       if (scrub) scrub.max = video.duration;
       var timeR = document.getElementById("timeR");
       if (timeR) timeR.textContent = fmt(video.duration);
-      sizeWrap();
     }
   });
 
@@ -825,13 +846,9 @@ ${
     return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0");
   }
 
-  function sizeWrap(){
-    var ctrl = document.getElementById("ctrl");
-    var h = ctrl ? ctrl.offsetHeight : 0;
-    document.getElementById("wrap").style.height = (window.innerHeight - h) + "px";
-  }
-  window.addEventListener("resize", sizeWrap);
-  sizeWrap();
+  // The stage sizes itself: body is a flex column and #wrap is flex:1. See the
+  // comment on #wrap in the stylesheet for what the imperative version got
+  // wrong.
 
   // ── Interactive controls ──
   var raf = 0;

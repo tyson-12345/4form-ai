@@ -65,6 +65,7 @@ export function Tappable({
   disabled = false,
   haptic,
   minTarget = false,
+  dim,
   style,
   accessibilityRole = "button",
   accessibilityLabel,
@@ -84,6 +85,16 @@ export function Tappable({
   haptic?: "tap" | "select" | "commit";
   /** Pads the control out to 44pt rather than relying on hitSlop. */
   minTarget?: boolean;
+  /**
+   * Resting opacity, for a control that is deliberately quiet while still
+   * being pressable — the "Coming soon" plan button, which explains itself on
+   * tap. A disabled control does not need this: it dims to
+   * `motion.press.disabled` on its own.
+   *
+   * Set here rather than in the caller's `style` because the press response is
+   * composed last and would overwrite it.
+   */
+  dim?: number;
   style?: StyleProp<ViewStyle>;
   accessibilityRole?: AccessibilityRole;
   accessibilityLabel?: string;
@@ -95,8 +106,11 @@ export function Tappable({
   accessibilityActions?: readonly { name: string; label?: string }[];
   onAccessibilityAction?: (e: { nativeEvent: { actionName: string } }) => void;
 }) {
-  const press = usePressResponse(!disabled);
   const interactive = !disabled && (!!onPress || !!onLongPress);
+  // Only an *explicitly* disabled control dims. A `Tappable` with no handler is
+  // also treated as disabled below, but that is decoration — a heading, a
+  // wrapper — and dimming it would be wrong.
+  const press = usePressResponse(!disabled, dim ?? (disabled ? motion.press.disabled : 1));
 
   return (
     <AnimatedPressable
@@ -177,6 +191,20 @@ export function IconButton({
   );
 }
 
+/**
+ * A pill. Interactive when given an `onPress`, a plain label when not.
+ *
+ * ── Why the two shapes ─────────────────────────────────────────────────────
+ * This used to render a `Tappable` either way, and `Tappable` treats a handler-
+ * less control as genuinely disabled — correct for a control, wrong for a
+ * label. Two screens use chips as decoration: the welcome screen shows eight
+ * sports plus a "+13 more" tag to say what the app covers, and Compare tags a
+ * reference athlete's attributes. Both rendered as `<button aria-disabled>`,
+ * so the landing screen announced **nine dimmed buttons** to a screen reader
+ * before it announced either of its two real actions.
+ *
+ * A chip that cannot be pressed is not a broken button, it is a word.
+ */
 export function Chip({
   label,
   selected = false,
@@ -185,9 +213,23 @@ export function Chip({
 }: {
   label: string;
   selected?: boolean;
+  /** Omit to render a non-interactive label rather than a disabled control. */
   onPress?: () => void;
   tone?: string;
 }) {
+  const style = [
+    s.chip,
+    selected ? s.chipSelected : s.chipIdle,
+    tone ? { backgroundColor: tone } : null,
+  ];
+  const body = (
+    <Text style={[T.chip, { color: selected ? color.onInk : color.textPrimary }]}>
+      {label}
+    </Text>
+  );
+
+  if (!onPress) return <View style={style}>{body}</View>;
+
   return (
     <Tappable
       onPress={onPress}
@@ -197,16 +239,10 @@ export function Chip({
       // Without the role a screen reader reads a chip as plain text, and
       // without the state it cannot tell a chosen sport from an unchosen one.
       accessibilityLabel={label}
-      accessibilityState={{ selected, disabled: !onPress }}
-      style={[
-        s.chip,
-        selected ? s.chipSelected : s.chipIdle,
-        tone ? { backgroundColor: tone } : null,
-      ]}
+      accessibilityState={{ selected }}
+      style={style}
     >
-      <Text style={[T.chip, { color: selected ? color.onInk : color.textPrimary }]}>
-        {label}
-      </Text>
+      {body}
     </Tappable>
   );
 }
@@ -255,7 +291,9 @@ export function PrimaryButton({
       haptic={haptic}
       accessibilityLabel={label}
       accessibilityState={{ disabled: blocked, busy: loading }}
-      style={[s.primaryBtn, { backgroundColor: tone, opacity: disabled ? 0.4 : 1 }, style]}
+      // No `opacity` here: `Tappable` applies the disabled dim inside the press
+      // response, which is the only place it survives.
+      style={[s.primaryBtn, { backgroundColor: tone }, style]}
     >
       {loading && <ActivityIndicator size="small" color={labelTone} />}
       <Text style={[T.button, { color: labelTone }]}>{label}</Text>
