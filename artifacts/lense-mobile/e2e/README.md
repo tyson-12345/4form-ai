@@ -4,13 +4,50 @@
 structured report of every invariant this app's UI audit asserts, so coverage is
 mechanical rather than a matter of what someone remembered to look at.
 
-## Three entry points
+## Entry points
 
-`window.__ui.audit()` measures what is painted, synchronously.
-`window.__ui.scroll()` is async: it drives every scroller to its end and reports
-what is left underneath the floating chrome when it gets there.
-`window.__ui.focus()` focuses each control in turn and reports the ones that look
-identical focused. `window.__audit()` remains an alias for the first.
+`window.__ui.check()` is the one to reach for: it runs all three passes below and
+returns `{ pass, failures, informational }`. Ask it one question, get one answer.
+
+The three it wraps, when you want the raw data: `audit()` measures what is
+painted, synchronously; `scroll()` is async and drives every scroller to its end,
+reporting what is left underneath the floating chrome; `focus()` focuses each
+control in turn and reports the ones that look identical focused.
+`window.__audit()` remains an alias for `audit()`.
+
+### What fails a run, and what does not
+
+`check()` treats three kinds as **informational** rather than failures, and the
+split is the whole of the opinion:
+
+- `contrast-dimmed` — WCAG 1.4.3 exempts an inactive control, and the disabled
+  buttons that trip it are meant to look exactly that dim.
+- `nonTextInk` — this app draws a lot of deliberately faint furniture, so a
+  blanket 3:1 rule would be wrong most of the times it fired. Read it; do not
+  gate on it. It is also where a correct-by-design knockout shows up, such as
+  the ink-on-ink circle `MeasureFigure` punches out of a limb line.
+- `no-focus-indicator` — the product ships to a phone. It matters on the web
+  build and with an external keyboard, and it is not a reason to fail a run.
+
+Everything else is a hard failure.
+
+## The sweep target list
+
+`sweep.json` holds the routes, the four phone widths, the accounts each pass
+needs, and — deliberately — what is *not* covered, so a green sweep is never
+mistaken for full coverage. It is data rather than code so that a CI job, this
+README and somebody driving the browser by hand all sweep the same thing.
+
+Widths are phones only: `app.json` sets `supportsTablet: false` and
+`orientation: portrait`, so auditing a tablet would be auditing a surface the
+product does not sell. The heights are real devices rather than round numbers,
+because a short screen is where bottom clearance actually fails.
+
+**Not yet wired to CI.** That needs `playwright` as a devDependency, which is a
+call for whoever owns this workspace: `pnpm-workspace.yaml` sets
+`minimumReleaseAge: 1440` as a supply-chain defence and the browser binaries are
+a few hundred megabytes. Once it is in, a runner is thin — walk `sweep.json`,
+call `check()` per route, exit non-zero if any `pass` is false.
 
 ## Checks
 

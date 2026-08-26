@@ -1,0 +1,39 @@
+{
+  "$comment": [
+    "The target list a sweep runs over. Data rather than code so the harness,",
+    "a CI job and a human driving the browser by hand all sweep the same thing.",
+    "",
+    "Widths are the phones this app ships to. app.json sets supportsTablet:",
+    "false and orientation: portrait, so tablet and landscape are deliberately",
+    "absent — auditing them would be auditing a surface the product does not",
+    "sell. Heights are the real devices, not round numbers: a short screen is",
+    "where bottom clearance actually fails."
+  ],
+  "viewports": [
+    { "name": "iPhone SE (1st gen)", "width": 320, "height": 568 },
+    { "name": "iPhone SE (2nd/3rd gen)", "width": 375, "height": 667 },
+    { "name": "iPhone 15/16/17", "width": 390, "height": 844 },
+    { "name": "iPhone Pro Max", "width": 430, "height": 932 }
+  ],
+  "routes": {
+    "signedOut": ["/welcome", "/auth/login", "/auth/signup", "/auth/forgot-password", "/auth/reset-password", "/onboarding"],
+    "signedIn": ["/", "/progress", "/analyze", "/chat", "/profile", "/compare", "/pricing", "/nope"],
+    "signedInWithId": ["/analysis/{analysisId}"]
+  },
+  "nativeOnly": {
+    "$comment": "Not reachable on the web build: both drive MediaPipe through react-native-webview, which has no web implementation. Web renders only their failure states. Audit these on a simulator with a clip added via `xcrun simctl addmedia`.",
+    "routes": ["/analysis/measure", "/analysis/skeleton/{analysisId}"]
+  },
+  "accounts": {
+    "$comment": "Created against a local api-server on .env.local. Never the Railway URL: signing up and deleting accounts writes real rows.",
+    "empty": { "tier": "free", "sport": "running", "analyses": 0, "covers": "every empty state, and the Coach paywall" },
+    "populated": { "tier": "pro", "sport": "weightlifting", "analyses": 12, "covers": "trend, band, deltas, a full transcript" },
+    "noSport": { "tier": "free", "sport": null, "covers": "the onboarding redirect out of /" }
+  },
+  "notAudited": {
+    "$comment": "Stated so a green sweep is not mistaken for full coverage.",
+    "voiceOverSpeech": "The iOS Simulator ships no VoiceOver engine. Names, roles, grouping and traversal order are checked; what it says is not.",
+    "android": "Never swept. app.json declares com.athleteai.app for Android.",
+    "dynamicType": "Simulator only, via `xcrun simctl ui <udid> content_size`, and the app must be relaunched to pick it up."
+  }
+}

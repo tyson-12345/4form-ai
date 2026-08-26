@@ -30,6 +30,7 @@ import {
   Text,
 } from "@/components/caliper";
 import { color, type as T, GUTTER, TAB_BAR, delta } from "@/constants/caliper";
+import { usualBand } from "@/utils/usualBand";
 import { progress as progressApi, analyses as analysesApi, type ProgressRecord, type AnalysisRecord } from "@/lib/api";
 import { parseLocalDate } from "@/utils/localDate";
 import { closedFlags } from "@/utils/closedFlags";
@@ -105,14 +106,11 @@ export default function ProgressScreen() {
   const best = values.length > 0 ? Math.max(...values) : null;
   const bestEntry = best !== null ? series.find((p) => p.value === best) : undefined;
 
-  const band = useMemo(() => {
-    if (values.length < 3) return null;
-    const sorted = [...values].sort((a, b) => a - b);
-    // Interquartile band — the range the athlete typically operates in, rather
-    // than min/max, which one bad clip would blow open.
-    const q = (f: number) => sorted[Math.floor((sorted.length - 1) * f)]!;
-    return { low: q(0.25), high: q(0.75) };
-  }, [values]);
+  // This screen already argued for an interquartile band over min/max. The
+  // argument was right and the other three screens never followed it, so the
+  // maths moved to utils/usualBand where all four share it — and gained the
+  // interpolation this floor-indexed version was missing at small n.
+  const band = useMemo(() => usualBand(values), [values]);
 
   // ── This week ──
   const week = useMemo(() => buildWeek(sessions), [sessions]);
