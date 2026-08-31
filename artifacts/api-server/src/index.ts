@@ -6,7 +6,7 @@ initObservability();
 
 import app from "./app";
 import { logger } from "./lib/logger";
-import { warnOnPartialMailConfig } from "./lib/mailer";
+import { warnOnPartialMailConfig, drainMail } from "./lib/mailer";
 import { startResetTokenCleanup } from "./lib/tokenCleanup";
 import { runMigrations } from "./lib/migrate";
 
@@ -78,7 +78,7 @@ async function start(): Promise<void> {
       : "Schema already up to date",
   );
 
-  app.listen(port, (err) => {
+  const server = app.listen(port, (err) => {
     if (err) {
       logger.error({ err }, "Error listening on port");
       process.exit(1);
@@ -91,6 +91,65 @@ async function start(): Promise<void> {
     // coming up.
     startResetTokenCleanup();
   });
+
+  installShutdownHandler(server);
+}
+
+/**
+ * Stop accepting connections, then wait for scheduled email before exiting.
+ *
+ * ── Why this exists ─────────────────────────────────────────────────────────
+ * Transactional mail is dispatched *after* the response, so that a password
+ * reset for a registered address does not take measurably longer than one for
+ * an unregistered address (see lib/mailer.ts). The consequence is that at any
+ * moment there may be a send in flight belonging to a request that has already
+ * been answered. Exiting on SIGTERM without waiting drops it — and the user
+ * sees a reset that was accepted and then simply never arrived, which is the
+ * single hardest failure in this system to diagnose from the outside.
+ *
+ * Every deploy sends SIGTERM, so without this the loss is routine rather than
+ * exceptional. Bounded well under Railway's kill timeout: a drain that outlives
+ * its grace period is killed anyway, and then the wait bought nothing.
+ */
+function installShutdownHandler(server: { close: (cb: () => void) => void }): void {
+  let shuttingDown = false;
+
+  const shutdown = (signal: string): void => {
+    // A second signal during a drain means someone is impatient, or the
+    // platform is escalating. Either way, honour it rather than restarting the
+    // wait from the beginning.
+    if (shuttingDown) {
+      logger.warn({ signal, event: "shutdown_forced" }, "Second signal; exiting immediately");
+      process.exit(0);
+    }
+    shuttingDown = true;
+
+    logger.info({ signal, event: "shutdown_started" }, "Shutting down");
+
+    server.close(() => {
+      void (async () => {
+        const outstanding = await drainMail(8_000);
+        if (outstanding > 0) {
+          logger.error(
+            { outstanding, event: "shutdown_mail_dropped" },
+            "Exited with email still in flight; those messages were not delivered",
+          );
+        }
+        logger.info({ event: "shutdown_complete" }, "Shutdown complete");
+        process.exit(0);
+      })();
+    });
+
+    // Backstop: a connection that never closes must not hold the process open
+    // past the platform's patience.
+    setTimeout(() => {
+      logger.warn({ event: "shutdown_timeout" }, "Shutdown timed out; exiting");
+      process.exit(0);
+    }, 12_000).unref();
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 start().catch((err) => {

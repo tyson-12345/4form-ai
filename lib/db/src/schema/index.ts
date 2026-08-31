@@ -10,6 +10,7 @@ import {
   uuid,
   pgEnum,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -58,7 +59,17 @@ export const chatRoleEnum = pgEnum("chat_role", ["user", "assistant"]);
 export const usersTable = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  /**
+   * NULL for an account that only ever signs in through a federated provider
+   * (see `identitiesTable`). Such an account has no password at all.
+   *
+   * The login route needs no branch for this. It already substitutes a real
+   * dummy bcrypt hash whenever the stored hash is absent, so a password attempt
+   * against a social-only account burns the same ~250ms and returns the same
+   * INVALID_CREDENTIALS string as a wrong password on a password account —
+   * which is what stops "does this address use Google?" from being answerable.
+   */
+  passwordHash: text("password_hash"),
   /**
    * Which algorithm produced `passwordHash`. Anything other than "bcrypt" is a
    * legacy hash that must be re-hashed the next time the user authenticates
@@ -125,6 +136,64 @@ export const passwordResetTokensTable = pgTable("password_reset_tokens", {
 });
 
 export type PasswordResetToken = typeof passwordResetTokensTable.$inferSelect;
+
+// ─── Federated identities ───────────────────────────────────────────────────
+
+/**
+ * A link between one of our users and one account at an external identity
+ * provider (Apple, Google).
+ *
+ * ── Why this is keyed on `subject`, not email ───────────────────────────────
+ * Apple returns the user's email address only on the *first* authorization for
+ * an app, and omits it from every token afterwards. An email-keyed table would
+ * therefore fail to recognise a returning user and try to create a duplicate
+ * account on their second sign-in. `subject` — the `sub` claim — is stable for
+ * the lifetime of the relationship and is the only key that survives.
+ *
+ * `providerEmail` is descriptive: kept so support can see what the provider
+ * asserted, and so drift is visible. It is deliberately not unique and must
+ * never be looked up. Apple Private Relay hands out a per-app forwarding
+ * address, and a user can switch relay off later — same person, same `subject`,
+ * different email.
+ */
+export const identitiesTable = pgTable(
+  "identities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    /** "apple" | "google". Text rather than an enum so adding a provider is a code change, not a migration. */
+    provider: text("provider").notNull(),
+    /** The provider's `sub` claim. Opaque, stable, and scoped to our team. */
+    subject: text("subject").notNull(),
+    providerEmail: text("provider_email"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [
+    // One provider account maps to exactly one user. Without this two users
+    // could both claim the same Apple ID and sign-in would resolve by row
+    // order — silently, and differently on each query plan.
+    uniqueIndex("identities_provider_subject_key").on(t.provider, t.subject),
+    // One identity per provider per user, so revoking "their Google login"
+    // is unambiguous.
+    uniqueIndex("identities_user_provider_key").on(t.userId, t.provider),
+    index("identities_user_id_idx").on(t.userId),
+  ],
+);
+
+export type Identity = typeof identitiesTable.$inferSelect;
+
+/**
+ * Providers this server accepts tokens from.
+ *
+ * A type, not a runtime list: the list of *configured* providers belongs with
+ * the code that knows their issuers, key endpoints and audiences
+ * (api-server/src/lib/oauthProviders.ts), and a second copy here would be a
+ * copy that can silently disagree.
+ */
+export type IdentityProvider = "apple" | "google";
 
 // ─── Athlete Profiles ───────────────────────────────────────────────────────
 

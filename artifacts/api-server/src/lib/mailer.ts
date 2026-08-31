@@ -19,11 +19,34 @@
  * identical whether or not the address exists, and a provider error that leaked
  * through would undo that. Failures are logged and counted for alerting.
  *
+ * ── Nothing is delivered inside a request ───────────────────────────────────
+ * Callers use `deferEmail`, which schedules the work and returns immediately.
+ * Two reasons, and the first is a security property rather than a performance
+ * one:
+ *
+ *  1. **Timing.** `POST /auth/forgot-password` returns the same body whether or
+ *     not the address is registered — that is the whole point of its wording.
+ *     But it only *sends* when the account exists, so awaiting delivery makes
+ *     the registered case take a provider round-trip (a few hundred ms) and the
+ *     unregistered case take none. That difference is trivially measurable, and
+ *     it would hand back exactly the fact the response text refuses to state.
+ *     The endpoint was not enumerable before only because mail was unconfigured
+ *     and `sendEmail` returned instantly; turning delivery on is what creates
+ *     the oracle, so the fix ships with it.
+ *  2. **Retries.** Transient failures are retried with backoff (below). Doing
+ *     that inside the request would hold it open for tens of seconds.
+ *
+ * The cost is that a send in flight when the process dies is lost. `drainMail`
+ * is awaited on SIGTERM so an ordinary deploy does not drop one; a hard kill
+ * still can, which is the accepted trade for not having a durable queue.
+ *
  * ── Deliverability ──────────────────────────────────────────────────────────
  * Reset mail that lands in spam is the same as no reset mail. SPF, DKIM, and
  * DMARC must be configured on the sending domain before launch — see
  * docs/EMAIL-SETUP.md for the exact records and a verification procedure.
  */
+
+import { randomUUID } from "node:crypto";
 
 import { logger } from "./logger.js";
 import { recordAlert } from "./alerting.js";
@@ -37,6 +60,30 @@ export interface Email {
 }
 
 export type MailProvider = "resend" | "postmark" | "ses" | "none";
+
+/**
+ * What happened to one message.
+ *
+ * Returned rather than thrown, because `sendEmail`'s contract is that it never
+ * throws (see the module header) — but "never throws" must not mean "gives the
+ * caller nothing to work with". Every caller in the request path ignores this;
+ * `scripts/verifyEmail.ts` is the one that reads it, and it exists so setup
+ * failures can be diagnosed from a return value instead of by scraping the log
+ * stream, which is written on pino's transport thread and is not reliably
+ * interceptable.
+ *
+ * `error` is already redacted by `assertOk` — no address, no key — so it is
+ * safe to print.
+ */
+export interface SendOutcome {
+  delivered: boolean;
+  provider: MailProvider;
+  /** How many attempts were made. 0 when no provider is configured. */
+  attempts: number;
+  error?: string;
+  /** True when the failure will recur identically and was not retried. */
+  permanent?: boolean;
+}
 
 /**
  * Which provider the current environment resolves to.
@@ -93,52 +140,229 @@ export function warnOnPartialMailConfig(): void {
  * See the module header: an auth route's response must not vary with mail
  * outcome, so every failure path here is swallowed after being logged.
  */
-export async function sendEmail(email: Email): Promise<void> {
+export async function sendEmail(email: Email): Promise<SendOutcome> {
   const provider = activeProvider();
 
-  try {
-    if (provider === "none") {
-      logger.warn(
-        { to: redactEmail(email.to), subject: email.subject, event: "email_not_sent" },
-        "Email provider not configured; message logged but NOT delivered",
-      );
-      return;
-    }
-
-    switch (provider) {
-      case "resend":
-        await sendViaResend(email);
-        break;
-      case "postmark":
-        await sendViaPostmark(email);
-        break;
-      case "ses":
-        await sendViaSes(email);
-        break;
-    }
-
-    logger.info(
-      { to: redactEmail(email.to), subject: email.subject, provider, event: "email_sent" },
-      "Email sent",
+  if (provider === "none") {
+    logger.warn(
+      { to: redactEmail(email.to), subject: email.subject, event: "email_not_sent" },
+      "Email provider not configured; message logged but NOT delivered",
     );
-  } catch (err) {
-    // Counted so repeated delivery failure is visible in monitoring rather than
-    // only in the log stream — a silently broken mailer locks users out.
-    recordAlert("email_delivery_failed");
-    logger.error(
-      { err, to: redactEmail(email.to), provider, event: "email_failed" },
-      "Email delivery failed",
-    );
+    return { delivered: false, provider, attempts: 0, error: "No mail provider configured" };
   }
+
+  /**
+   * One key for the whole message, reused across retries.
+   *
+   * Without it, a retry after a lost *response* — the request succeeded, the
+   * reply never arrived — sends a second copy. Two password-reset mails for one
+   * request is confusing on its own, and it also mints a second valid token, so
+   * the one the user is most likely to click (the first) may not be the one
+   * they expect. Resend deduplicates on this header; Postmark and SES have no
+   * equivalent, so for those the duplicate is the accepted cost of retrying.
+   */
+  const idempotencyKey = randomUUID();
+
+  for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+    try {
+      switch (provider) {
+        case "resend":
+          await sendViaResend(email, idempotencyKey);
+          break;
+        case "postmark":
+          await sendViaPostmark(email);
+          break;
+        case "ses":
+          await sendViaSes(email);
+          break;
+      }
+
+      logger.info(
+        {
+          to: redactEmail(email.to),
+          subject: email.subject,
+          provider,
+          attempt,
+          event: "email_sent",
+        },
+        "Email sent",
+      );
+      return { delivered: true, provider, attempts: attempt };
+    } catch (err) {
+      const retryable = err instanceof TransientMailError || isNetworkFailure(err);
+      const lastAttempt = attempt === MAX_SEND_ATTEMPTS;
+
+      if (retryable && !lastAttempt) {
+        const wait = backoffMs(attempt);
+        logger.warn(
+          {
+            err,
+            to: redactEmail(email.to),
+            provider,
+            attempt,
+            retryInMs: wait,
+            event: "email_retrying",
+          },
+          "Email delivery failed with a transient error; retrying",
+        );
+        await sleep(wait);
+        continue;
+      }
+
+      // Counted so repeated delivery failure is visible in monitoring rather
+      // than only in the log stream — a silently broken mailer locks users out.
+      recordAlert("email_delivery_failed");
+      logger.error(
+        {
+          err,
+          to: redactEmail(email.to),
+          provider,
+          attempts: attempt,
+          permanent: !retryable,
+          event: "email_failed",
+        },
+        retryable
+          ? "Email delivery failed after every retry"
+          : "Email delivery failed permanently; not retrying",
+      );
+      return {
+        delivered: false,
+        provider,
+        attempts: attempt,
+        error: err instanceof Error ? err.message : String(err),
+        permanent: !retryable,
+      };
+    }
+  }
+
+  // Unreachable: the loop either returns or exhausts into the branch above.
+  return { delivered: false, provider, attempts: MAX_SEND_ATTEMPTS };
+}
+
+// ─── Background delivery ─────────────────────────────────────────────────────
+
+/**
+ * Work that has been scheduled but has not finished.
+ *
+ * Tracked so shutdown can wait for it. An untracked fire-and-forget send is
+ * dropped on every deploy, and the one it drops is a password reset someone is
+ * sitting there waiting for.
+ */
+const inFlight = new Set<Promise<void>>();
+
+/**
+ * Run `work` after the current request has been answered.
+ *
+ * `work` is the whole job, not just the send — for a password reset that
+ * includes minting the token, because doing that inside the request would put
+ * a database write on the registered-address path and none on the other, which
+ * is the same timing tell in a smaller form.
+ *
+ * Never throws and never rejects: callers use it in a position where they have
+ * already decided what to return.
+ */
+export function deferEmail(label: string, work: () => Promise<void>): void {
+  const task = (async () => {
+    try {
+      await work();
+    } catch (err) {
+      recordAlert("email_delivery_failed");
+      logger.error({ err, label, event: "email_task_failed" }, "Deferred email task threw");
+    }
+  })();
+
+  inFlight.add(task);
+  void task.finally(() => inFlight.delete(task));
+}
+
+/**
+ * Wait for scheduled sends to finish, up to `timeoutMs`.
+ *
+ * Called on SIGTERM, and by tests that need to assert on what was sent without
+ * depending on microtask ordering. Returns how many were still outstanding when
+ * it gave up — nonzero means mail was probably lost, which is worth a log line
+ * rather than a silent exit.
+ */
+export async function drainMail(timeoutMs = 10_000): Promise<number> {
+  if (inFlight.size === 0) return 0;
+
+  let timer: NodeJS.Timeout | undefined;
+  const expired = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+
+  await Promise.race([Promise.allSettled([...inFlight]), expired]);
+  if (timer) clearTimeout(timer);
+
+  return inFlight.size;
 }
 
 // ─── Providers ───────────────────────────────────────────────────────────────
 
-/** Abort a hung provider call rather than holding the request open. */
+/** Abort a hung provider call rather than leaking a pending request forever. */
 const SEND_TIMEOUT_MS = 10_000;
 
 function withTimeout(): AbortSignal {
   return AbortSignal.timeout(SEND_TIMEOUT_MS);
+}
+
+/**
+ * Total attempts per message, including the first.
+ *
+ * Three, because the failure this exists for is a blip — a 429 from a burst, a
+ * 502 while the provider redeploys — and the cost of not retrying it is a
+ * password reset that silently never arrives. The user's only signal is an
+ * email that does not come, and their only recourse is to ask again, which is
+ * indistinguishable from the request having worked.
+ *
+ * Not more than three: past that it stops being a blip and the alert counter is
+ * the right response, not a longer queue of doomed retries.
+ */
+const MAX_SEND_ATTEMPTS = 3;
+const RETRY_BASE_MS = 500;
+
+/**
+ * A failure worth trying again. Anything else — a bad key, an unverified
+ * domain, a malformed address — will fail identically forever, and retrying it
+ * just triples the log noise while delaying the alert.
+ */
+class TransientMailError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TransientMailError";
+  }
+}
+
+function isRetryableStatus(status: number): boolean {
+  // 408 timeout, 425 too early, 429 rate limited, and anything 5xx.
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+/**
+ * A network-level failure: DNS, connection reset, or our own abort timer.
+ *
+ * These never reached `assertOk`, so they arrive as ordinary `Error`s and would
+ * otherwise be classed as permanent — which is backwards, since a dropped
+ * connection is the most retryable failure there is.
+ */
+function isNetworkFailure(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return (
+    err.name === "AbortError" ||
+    err.name === "TimeoutError" ||
+    err.name === "TypeError" || // fetch's "failed to fetch" / connection errors
+    /network|socket|ECONN|ETIMEDOUT|EAI_AGAIN|fetch failed/i.test(err.message)
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Exponential, with jitter so retries from a burst do not resynchronise. */
+function backoffMs(attempt: number): number {
+  const base = RETRY_BASE_MS * 2 ** (attempt - 1);
+  return base + Math.floor(Math.random() * RETRY_BASE_MS);
 }
 
 /**
@@ -200,16 +424,27 @@ async function assertOk(res: Response, provider: string): Promise<void> {
     .slice(0, 300)
     .trim();
 
-  throw new Error(`${provider} returned ${res.status}${safe ? `: ${safe}` : ""}`);
+  const message = `${provider} returned ${res.status}${safe ? `: ${safe}` : ""}`;
+
+  // Classified here rather than at the call site, because the status is the
+  // only thing that distinguishes "try again in a second" from "this will fail
+  // identically forever". Retrying a 422 for a malformed address just delays
+  // the alert that says the address is malformed.
+  throw isRetryableStatus(res.status)
+    ? new TransientMailError(message)
+    : new Error(message);
 }
 
-async function sendViaResend(email: Email): Promise<void> {
+async function sendViaResend(email: Email, idempotencyKey?: string): Promise<void> {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     signal: withTimeout(),
     headers: {
       Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       "Content-Type": "application/json",
+      // Resend deduplicates on this for 24h, so a retry after a lost response
+      // does not send a second copy (and does not mint a second reset token).
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
     },
     body: JSON.stringify({
       from: process.env.MAIL_FROM,

@@ -246,6 +246,87 @@ export const auth = {
     }),
 };
 
+// ─── Federated sign-in ───────────────────────────────────────────────────────
+
+export interface AuthSuccess {
+  token: string;
+  user: { id: string; email: string; name?: string };
+}
+
+/**
+ * The two "not finished yet" outcomes of `POST /auth/oauth`.
+ *
+ * Both arrive as an `ApiError` — 409 and 428 — because they are not successes;
+ * the caller distinguishes them by `code` and reads the continuation token out
+ * of `body`. See `startOAuth` below, which does that unwrapping once so no
+ * screen has to know the status codes.
+ */
+export type OAuthOutcome =
+  | { kind: "signed-in"; result: AuthSuccess }
+  /** The provider is verified, but there is no account yet: collect a birth date. */
+  | { kind: "needs-registration"; registration: string; email: string; suggestedName: string | null }
+  /** The address already has an account: prove its password once, then link. */
+  | { kind: "needs-link"; challenge: string; email: string; message: string };
+
+export const oauth = {
+  /** Which providers this deployment can verify. Asked before drawing buttons. */
+  providers: () => request<{ providers: string[] }>("/auth/oauth/providers"),
+
+  /**
+   * Hand a provider identity token to the server and interpret the answer.
+   *
+   * The three outcomes are returned as data rather than thrown, because all
+   * three are ordinary paths a user walks — only a *real* failure (bad token,
+   * offline, rate limited) throws.
+   */
+  start: async (credential: {
+    provider: string;
+    identityToken: string;
+    nonce?: string;
+    fullName?: string;
+  }): Promise<OAuthOutcome> => {
+    try {
+      const result = await request<AuthSuccess>("/auth/oauth", {
+        method: "POST",
+        body: JSON.stringify(credential),
+      });
+      return { kind: "signed-in", result };
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "REGISTRATION_REQUIRED") {
+        return {
+          kind: "needs-registration",
+          registration: err.body.registration as string,
+          email: err.body.email as string,
+          suggestedName: (err.body.suggestedName as string | null) ?? null,
+        };
+      }
+      if (err instanceof ApiError && err.code === "LINK_REQUIRED") {
+        return {
+          kind: "needs-link",
+          challenge: err.body.challenge as string,
+          email: err.body.email as string,
+          message: err.message,
+        };
+      }
+      throw err;
+    }
+  },
+
+  /** Redeem a registration token with the birth date the provider could not give us. */
+  complete: (registration: string, dateOfBirth: string, name: string) =>
+    request<AuthSuccess>("/auth/oauth/complete", {
+      method: "POST",
+      body: JSON.stringify({ registration, dateOfBirth, name }),
+    }),
+
+  /** Redeem a link challenge by proving the existing account's password. */
+  link: (challenge: string, password: string) =>
+    request<AuthSuccess>("/auth/oauth/link", {
+      method: "POST",
+      body: JSON.stringify({ challenge, password }),
+    }),
+};
+
 // ─── Profile ─────────────────────────────────────────────────────────────────
 
 export interface Profile {

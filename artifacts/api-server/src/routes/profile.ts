@@ -9,6 +9,11 @@ import { z } from "zod";
 import { authenticate, type AuthRequest } from "../middlewares/authenticate.js";
 import { parseOrReject, safeText } from "../lib/validate.js";
 import { verifyPassword, type PasswordAlgo } from "../lib/auth.js";
+import {
+  verifyIdentityToken,
+  IDENTITY_PROVIDERS,
+  isIdentityProvider,
+} from "../lib/oauthProviders.js";
 import { logger } from "../lib/logger.js";
 import { clientIp } from "../lib/rateLimit.js";
 import {
@@ -18,6 +23,8 @@ import {
   findUserById,
   deleteUser,
 } from "../repositories/userRepository.js";
+import { and, eq } from "drizzle-orm";
+import { db, identitiesTable } from "@workspace/db";
 
 const router = Router();
 
@@ -59,9 +66,23 @@ router.patch("/profile", authenticate, async (req: AuthRequest, res) => {
 
 // ─── DELETE /api/profile/account ─────────────────────────────────────────────
 
+/**
+ * Re-authentication for account deletion. A stolen phone must not be able to
+ * erase the account with nothing but an unlocked session.
+ *
+ * Two accepted proofs, because there are now two kinds of account. A password
+ * account sends its password. An account created through Apple or Google has no
+ * password at all — demanding one there would leave those users unable to
+ * delete their own account, which both stores require to be possible in-app.
+ * They re-authenticate the only way they can: by signing in with the provider
+ * again and sending that fresh identity token.
+ *
+ * Exactly one proof is required; supplying neither is refused below.
+ */
 const deleteAccountSchema = z.object({
-  /** Re-authentication. A stolen phone must not be able to erase the account. */
-  password: z.string().min(1).max(200),
+  password: z.string().min(1).max(200).optional(),
+  provider: z.enum(IDENTITY_PROVIDERS as [string, ...string[]]).optional(),
+  identityToken: z.string().min(20).max(8192).optional(),
 });
 
 /**
@@ -87,11 +108,7 @@ router.delete("/profile/account", authenticate, async (req: AuthRequest, res) =>
     return;
   }
 
-  const valid = await verifyPassword(
-    data.password,
-    user.passwordHash,
-    user.passwordAlgo as PasswordAlgo,
-  );
+  const valid = await reauthenticate(user, data, req.userId!);
 
   if (!valid) {
     logger.warn(
@@ -112,5 +129,48 @@ router.delete("/profile/account", authenticate, async (req: AuthRequest, res) =>
 
   res.json({ deleted: true });
 });
+
+/**
+ * Confirm the caller is the account owner, not merely the holder of a session.
+ *
+ * Returns false for every failure, without distinguishing them: "you sent no
+ * proof", "your password was wrong" and "that Apple account is not linked to
+ * this one" all mean the same thing to the caller.
+ */
+async function reauthenticate(
+  user: { passwordHash: string | null; passwordAlgo: string },
+  data: { password?: string; provider?: string; identityToken?: string },
+  userId: string,
+): Promise<boolean> {
+  if (user.passwordHash !== null && data.password) {
+    return verifyPassword(data.password, user.passwordHash, user.passwordAlgo as PasswordAlgo);
+  }
+
+  if (data.identityToken && isIdentityProvider(data.provider)) {
+    let identity;
+    try {
+      identity = await verifyIdentityToken(data.provider, data.identityToken);
+    } catch {
+      return false;
+    }
+    // The token being valid is not enough — it must belong to an identity
+    // already linked to *this* account. Without this check, anyone with any
+    // valid Apple token could delete any account whose session they held.
+    const [linked] = await db
+      .select({ id: identitiesTable.id })
+      .from(identitiesTable)
+      .where(
+        and(
+          eq(identitiesTable.userId, userId),
+          eq(identitiesTable.provider, identity.provider),
+          eq(identitiesTable.subject, identity.subject),
+        ),
+      )
+      .limit(1);
+    return Boolean(linked);
+  }
+
+  return false;
+}
 
 export default router;

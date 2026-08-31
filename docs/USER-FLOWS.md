@@ -152,6 +152,32 @@ landing) → `POST /api/auth/reset-password`
 
 ---
 
+## Flow 5b — Apple / Google sign-in
+
+Added 2026-08-31. **Requires a native build** (Expo Go cannot do either) and the
+client IDs from `docs/FEDERATED-SIGN-IN.md`; the buttons are hidden until those
+are set, so on a build without them this flow correctly does not exist.
+
+One entry point, `POST /api/auth/oauth`, with three outcomes:
+
+| What the tester does | Expected |
+|---|---|
+| Tap Continue with Apple/Google, new person | Name + date-of-birth screen, then straight into onboarding |
+| Same person signs in again later | Straight in, no second birth-date prompt |
+| Tap it with an address that already has a password account | "Connect your account" — asks for that account's password once |
+| Enter the wrong password on that screen | The **same** message as a failed sign-in, and it counts toward the lockout |
+| Connect successfully, then sign out | Both the password *and* the provider now open the same account |
+| Cancel out of the provider sheet | Returns to the screen with no error shown — cancelling is not a failure |
+| Reload the browser on the link/birth-date screen (web) | Bounces back to sign-in; the continuation token is deliberately not in the URL |
+| Apple, second time as a "new" user | Revoke under iOS Settings → your name → Sign in with Apple first, or Apple returns no email and the flow stops |
+
+The one to watch on iOS: Apple returns the user's **name and email only on the
+first authorization**. If the birth-date screen is abandoned, the next attempt
+has no name to prefill — that is Apple's behaviour, not a bug, and the field is
+editable.
+
+---
+
 ## Flow 6 — Measure a clip (the core loop)
 
 This is the flow the product is for. Test it most.

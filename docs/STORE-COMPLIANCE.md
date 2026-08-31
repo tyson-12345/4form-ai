@@ -147,7 +147,29 @@ a claim that it *detects* or *prevents* an injury, that stops being true.
 
 ---
 
-## 6. Account deletion
+## 6. Sign in with Apple — Guideline 4.8
+
+Added 2026-08-31. Google Sign-In is now offered, which makes **Sign in with
+Apple mandatory** rather than optional: 4.8 requires an equivalent
+privacy-preserving login option wherever a third-party one is offered, and
+Apple's is the one that qualifies. Both are built — `docs/FEDERATED-SIGN-IN.md`.
+
+The operational constraint: **ship Apple in the same release as Google, or
+before it.** A build offering Google alone is a rejection. Concretely, set
+`APPLE_CLIENT_IDS` on the server and enable the App ID capability *before*
+setting `GOOGLE_CLIENT_IDS` — the app hides a provider's button when its client
+ID is unset, so the order the two are configured in is the order they ship in.
+
+4.8 also requires the option to limit data collection to name and email and to
+let the user keep their address private. Sign in with Apple does both by design
+(Private Relay), and the app stores only what Apple returns — see the
+`identities` table. Note that this makes the **Data safety and App Privacy
+answers in §2 and §3 still correct**: no new category is collected, and the
+provider is a processor for authentication only.
+
+---
+
+## 7. Account deletion
 
 Both stores require it, and it is **done** — `DELETE /profile/account`, wired to
 Profile → Delete account.
@@ -157,9 +179,14 @@ only via a website. It is. Play requires a **publicly reachable web URL**
 describing the process, even for in-app deletion — create that page and put it
 in the Data safety form.
 
+Re-authentication accepts a password **or** a fresh identity token from a linked
+provider, because an account created through Apple or Google has no password —
+without that, those users could not delete their account and the requirement
+would be failed for exactly the users 4.8 asks you to support.
+
 ---
 
-## 7. What's left, and why I couldn't do it
+## 8. What's left, and why I couldn't do it
 
 Each of these needs a logged-in account:
 

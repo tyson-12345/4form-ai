@@ -5,8 +5,20 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
-import { auth, profile as profileApi, setToken, clearToken, getToken, ApiError, type Profile, type SubscriptionRecord } from "./api";
+import {
+  auth,
+  oauth,
+  profile as profileApi,
+  setToken,
+  clearToken,
+  getToken,
+  ApiError,
+  type AuthSuccess,
+  type Profile,
+  type SubscriptionRecord,
+} from "./api";
 import { loadAvatar, removeAvatar, saveAvatar } from "./avatarStore";
+import { clearOAuth } from "./oauthHandoff";
 
 interface AuthUser {
   id: string;
@@ -29,6 +41,20 @@ interface AuthActions {
   /** `dateOfBirth` is `YYYY-MM-DD`; the server enforces the minimum age. */
   signup: (email: string, password: string, name: string, dateOfBirth: string) => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * Take up a session the server has already issued.
+   *
+   * The federated flows finish in three different places — signed straight in,
+   * after a birth date, after a password proof — and every one of them ends
+   * with the same token and the same need to load the profile behind it. This
+   * is that shared tail, exposed so a screen that holds a fresh `AuthSuccess`
+   * does not have to reimplement it.
+   */
+  adoptSession: (result: AuthSuccess) => Promise<void>;
+  /** Redeem a registration token together with the birth date the provider withheld. */
+  completeOAuthSignup: (registration: string, dateOfBirth: string, name: string) => Promise<void>;
+  /** Redeem a link challenge with the existing account's password. */
+  linkOAuthIdentity: (challenge: string, password: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfile: (data: Partial<Omit<Profile, "id" | "userId">>) => Promise<void>;
   /** Persist a picked photo (base64 required on web) and update every screen. */
@@ -46,6 +72,9 @@ const AuthContext = createContext<AuthState & AuthActions>({
   login: async () => {},
   signup: async () => {},
   logout: async () => {},
+  adoptSession: async () => {},
+  completeOAuthSignup: async () => {},
+  linkOAuthIdentity: async () => {},
   refreshProfile: async () => {},
   updateProfile: async () => {},
   setAvatarPhoto: async () => {},
@@ -106,14 +135,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function login(email: string, password: string) {
-    const { token, user: u } = await auth.login(email, password);
-    await setToken(token);
+  /**
+   * Store the token, then load the profile behind it.
+   *
+   * The order matters: `profileApi.get()` is an authenticated call, so the
+   * token has to be persisted before it runs, not after.
+   */
+  async function adoptSession(result: AuthSuccess) {
+    await setToken(result.token);
     setHasStoredToken(true);
     const { profile: p, subscription: s } = await profileApi.get();
-    setUser(u);
+    setUser({ id: result.user.id, email: result.user.email, name: p?.name ?? result.user.name ?? "" });
     setUserProfile(p);
     setSubscription(s);
+  }
+
+  async function login(email: string, password: string) {
+    await adoptSession(await auth.login(email, password));
+  }
+
+  async function completeOAuthSignup(registration: string, dateOfBirth: string, name: string) {
+    await adoptSession(await oauth.complete(registration, dateOfBirth, name));
+  }
+
+  async function linkOAuthIdentity(challenge: string, password: string) {
+    await adoptSession(await oauth.link(challenge, password));
   }
 
   async function signup(email: string, password: string, name: string, dateOfBirth: string) {
@@ -127,6 +173,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function logout() {
+    // Drop any half-finished federated flow. Its token is single-use and tied
+    // to the session being ended; leaving it would offer the next person at
+    // this device a link challenge for the account that just signed out.
+    clearOAuth();
     await clearToken();
     setHasStoredToken(false);
     setUser(null);
@@ -177,6 +227,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         signup,
         logout,
+        adoptSession,
+        completeOAuthSignup,
+        linkOAuthIdentity,
         refreshProfile,
         updateProfile,
         setAvatarPhoto,

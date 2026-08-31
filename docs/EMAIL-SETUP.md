@@ -10,6 +10,18 @@ Resend only delivers **to the address that owns the account**. That is fine for
 development and useless for users. Swapping to your own domain is §1–§3 below,
 and it is the only thing left.
 
+**Hardened 2026-08-31.** No new setup steps; the delivery path around them
+changed. Sends are now dispatched *after* the response rather than awaited
+inside it — required, because awaiting one made `/auth/forgot-password` slower
+for a registered address than an unregistered one and turned a deliberately
+non-enumerating endpoint into a timing oracle the moment mail worked. Transient
+failures are retried with an idempotency key, a deploy drains in-flight mail
+instead of dropping it, and `pnpm mail:verify` (§4) diagnoses a misconfiguration
+in one command. Details in `docs/SECURITY.md` → Transactional email.
+
+Note the local checkout carries no mail credentials — `.env` has no
+`RESEND_API_KEY` — so mail only actually sends from the deployed server.
+
 > ### Two things that cost time, so you don't repeat them
 >
 > **1. `403: You can only send testing emails to your own email address.`**
@@ -198,8 +210,37 @@ Variables), never in a commit, and never in a screenshot.
 
 ## 4. Verify
 
-Boot the server. A partial configuration now fails loudly at startup rather than
-at the first password reset.
+### Fastest check: `pnpm mail:verify`
+
+```bash
+cd artifacts/api-server
+pnpm mail:verify you@example.com
+```
+
+Sends one real message through the same `sendEmail` the app uses, and names the
+specific thing that is wrong when it fails. Every setup mistake below presents
+to the app as the identical symptom — "the email did not arrive" — so this
+exists to tell them apart in one command instead of one password-reset round
+trip per guess:
+
+| What it says | What is actually wrong |
+|---|---|
+| `401 / API key rejected` | Wrong key, a trailing newline, or a key scoped to a different domain |
+| `403 / domain not verified` | Resend → Domains still says *Pending*; DNS has not propagated |
+| `422 / invalid from` | `MAIL_FROM`'s domain is not the domain you verified — `mail.example.com` and `example.com` are different domains to the provider |
+| `testing mode` | No domain verified yet, so Resend only delivers to the account owner's own address |
+| `gmail.com cannot be used` | Caught before sending: you cannot prove you own a consumer domain |
+
+It also warns when `APP_PUBLIC_URL` is unset, because reset links are built from
+it and a missing value produces links that go nowhere.
+
+**Accepted is not delivered.** A pass means the provider took the message; it
+says nothing about whether it reached the inbox. Do the header check below.
+
+### Then confirm the running server agrees
+
+Boot it. A partial configuration fails loudly at startup rather than at the
+first password reset.
 
 Confirm from outside:
 
@@ -253,8 +294,27 @@ the domain authentication has broken — users are being locked out silently.
 - **`sendEmail` never throws.** A provider outage must not turn a reset request
   into a 500, and must not change the response — the response is identical
   whether or not the address is registered, and an error leaking through would
-  break that guarantee.
-- **Provider errors are not propagated verbatim.** They routinely echo the
-  recipient address; only the HTTP status is logged.
-- **Expired reset tokens are never pruned.** The table grows forever. Not urgent,
-  but see `docs/TODO-PRODUCTION.md` §3.
+  break that guarantee. It returns a `SendOutcome` instead, which is what
+  `pnpm mail:verify` reads.
+- **Nothing is delivered inside a request.** Sends are dispatched *after* the
+  response, via `deferEmail`. This is a security property, not a performance
+  one: `/auth/forgot-password` only does work when the address is registered, so
+  awaiting a provider round-trip there would make a registered address reliably
+  slower than an unregistered one — an oracle for exactly the fact the response
+  text refuses to state, which would have appeared the day this document was
+  first followed. It also lets retries take as long as they need.
+- **Transient failures are retried**, three attempts with jittered backoff, on
+  429, 5xx, timeouts and dropped connections. A 401, 403 or 422 is not retried:
+  it will fail identically forever, and retrying only delays the alert. Resend
+  sends get an `Idempotency-Key` reused across retries, so a retry after a lost
+  response does not deliver a second copy or mint a second reset token.
+- **A deploy does not drop mail in flight.** SIGTERM stops the listener, then
+  waits up to 8s for scheduled sends. A hard kill can still lose one — that is
+  the accepted cost of not running a durable queue.
+- **Provider errors are not propagated verbatim.** The status is kept, plus a
+  bounded reason with anything address-shaped or key-shaped redacted. That is a
+  deliberate widening from status-only: a bare `403` does not distinguish a bad
+  key from an unverified domain from a rate limit, and each has a different fix.
+  The reason goes to the server log only; the caller's response is unchanged.
+- **Expired reset tokens are pruned on a timer** — `startResetTokenCleanup`,
+  started after the server binds.

@@ -62,12 +62,25 @@ export default tseslint.config(
     // Tests mock aggressively and assert on shapes the type system cannot see.
     files: ["**/*.test.ts", "src/test-setup.ts", "test/**"],
     rules: {
+      // A stub is async because the thing it stands in for is async, not
+      // because it has anything to await. `fetch` and `Response.text` are the
+      // cases here: a non-async stub would not match the contract under test.
+      "@typescript-eslint/require-await": "off",
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unsafe-assignment": "off",
       "@typescript-eslint/no-unsafe-member-access": "off",
       "@typescript-eslint/no-unsafe-argument": "off",
       "@typescript-eslint/no-unsafe-call": "off",
       "@typescript-eslint/no-unsafe-return": "off",
+      "no-console": "off",
+    },
+  },
+  {
+    // Operator-facing CLIs. Their output *is* the product — `pnpm mail:verify`
+    // exists to print a diagnosis to a terminal — so routing it through the
+    // structured request logger would be the wrong tool, not the right one.
+    files: ["src/scripts/**/*.ts"],
+    rules: {
       "no-console": "off",
     },
   },

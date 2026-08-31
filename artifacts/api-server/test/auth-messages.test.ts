@@ -163,9 +163,16 @@ describe("passwords are never logged", () => {
     },
   );
 
-  it("has no console.log statements left in the source", () => {
+  it("has no console.log statements left in the server source", () => {
     // console.log bypasses the logger's redaction entirely.
+    //
+    // `src/scripts/` is excluded: those are operator CLIs run from a terminal,
+    // never in a request, and printing to stdout is the entire point of one —
+    // `pnpm mail:verify` exists to put a diagnosis in front of a person. The
+    // property this rule protects for them is asserted separately below, since
+    // the exclusion must not become a place credentials can be printed.
     const offenders = FILES.filter((file) => {
+      if (relative(SRC, file).startsWith("scripts/")) return false;
       const source = readFileSync(file, "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/^\s*\/\/.*$/gm, "");
@@ -173,5 +180,41 @@ describe("passwords are never logged", () => {
     }).map((f) => relative(SRC, f));
 
     expect(offenders).toEqual([]);
+  });
+
+  it("operator scripts never print a credential", () => {
+    // The reason the rule above exists, applied to the files it exempts. A
+    // setup script is exactly where someone would reach for "just log the key
+    // so I can see what it's sending" — and its output is pasted into issues.
+    const scripts = FILES.filter((f) => relative(SRC, f).startsWith("scripts/"));
+    expect(scripts.length).toBeGreaterThan(0);
+
+    const offenders: string[] = [];
+    for (const file of scripts) {
+      const source = readFileSync(file, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+
+      for (const call of source.matchAll(/console\.\w+\s*\(([\s\S]*?)\)\s*;/g)) {
+        const raw = call[1];
+        // Keep template interpolations, drop the literal text around them.
+        // Stripping whole quoted strings is right for prose — `hint("RESEND_API_KEY
+        // is not set")` names the variable without printing it — but a blanket
+        // strip would also swallow `${RESEND_API_KEY}`, which is the exact thing
+        // being looked for.
+        const interpolations = [...raw.matchAll(/\$\{([\s\S]*?)\}/g)].map((m) => m[1]).join(" ");
+        const args =
+          raw.replace(/(["'`])(?:\\.|(?!\1)[\s\S])*\1/g, '""') + " " + interpolations;
+        if (
+          /\b(?:RESEND_API_KEY|POSTMARK_SERVER_TOKEN|AWS_SECRET_ACCESS_KEY|JWT_SECRET|ANTHROPIC_API_KEY|password|apiKey|secret|token)\b/i.test(
+            args,
+          )
+        ) {
+          offenders.push(`${relative(SRC, file)}: ${call[1].trim().slice(0, 80)}`);
+        }
+      }
+    }
+
+    expect(offenders, offenders.join(" | ")).toEqual([]);
   });
 });

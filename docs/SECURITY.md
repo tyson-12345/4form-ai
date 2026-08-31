@@ -393,6 +393,97 @@ Fixed:
 
 ---
 
+## Transactional email
+
+Delivery is **dispatched after the response, never inside it** (`deferEmail` in
+lib/mailer.ts). That is a security property, not a latency optimisation.
+
+`POST /auth/forgot-password` returns the same body whether or not the address is
+registered — that is what its wording is for. But it only does work in the
+registered branch: mint a token, hand a message to the provider. Awaiting that
+would make a registered address take a provider round-trip longer than an
+unregistered one, on every request, which answers precisely the question the
+response refuses to. The endpoint was uniform before only because mail was
+unconfigured and `sendEmail` returned instantly — so the oracle would have
+appeared on the day an API key was pasted in, with no code change to blame.
+Pinned by a behavioural test in `test/login-lockout.test.ts` and a structural
+one in `test/authorization-invariants.test.ts`.
+
+The lockout notice is deferred for the same reason: it is the attempt that
+*transitions* an account into lockout, so awaiting delivery would make that one
+response measurably longer than the locked responses that follow it.
+
+The consequence is that a send may be in flight for a request already answered,
+so SIGTERM stops the listener and then drains (see index.ts). Every deploy sends
+SIGTERM, so without that the loss would be routine rather than exceptional.
+
+Transient failures (429, 5xx, timeouts, dropped connections) are retried three
+times with jittered backoff; permanent ones (401, 403, 422) are not, because
+they will fail identically forever and retrying only delays the
+`email_delivery_failed` alert. Resend sends carry an `Idempotency-Key` reused
+across retries, so a retry after a lost response does not deliver a second copy
+— which for a reset would also mint a second valid token.
+
+Provider error text is logged with addresses and key-shaped strings redacted,
+and never reaches the caller.
+
+---
+
+## Federated sign-in (Apple, Google)
+
+Added 2026-08-31. Full design and setup: `docs/FEDERATED-SIGN-IN.md`.
+
+The server verifies the provider's identity token itself and then issues its own
+JWT, so nothing above is bypassed — the same lockout, progressive delay, session
+revocation and response uniformity apply to an account reached through Apple as
+to one reached by password.
+
+**Five checks on every identity token** (`lib/oauthProviders.ts`): signature
+against the provider's currently published JWKS, issuer, **audience**, expiry
+with a 30s tolerance, and the nonce when the client supplied one. The audience
+check is the one that must never be skipped: Google issues valid, correctly
+signed ID tokens for the same user to *every* app that asks, so without it a
+token handed to any other Google-integrated app would be accepted here as that
+user. An unset `GOOGLE_CLIENT_IDS` / `APPLE_CLIENT_IDS` therefore throws rather
+than defaulting to "accept any audience" — a misconfiguration must be an outage,
+not a silent authentication bypass.
+
+**A verified provider email never silently takes over an account.** When the
+address already belongs to a user, the response is a *challenge*: the caller
+must prove that account's password once before the identity is linked. Email
+matches are wrong more often than people assume — recycled domains, addresses a
+Workspace admin can create — and each of those would otherwise be an account
+takeover. An address the provider has **not** verified is refused outright:
+linking it is that takeover, and registering it either collides with the unique
+index or creates an account under someone else's address.
+
+**The link challenge cannot authenticate.** It names a user and is handed to an
+unauthenticated caller, so it is signed with a key *derived* from `JWT_SECRET`
+(`HMAC(JWT_SECRET, "athleteai-oauth-flow-v1")`) rather than with it — cross-use
+is arithmetically impossible, not merely checked. Three further guards sit on
+top: a distinct issuer, a `purpose` claim `verifyToken` rejects, and the user id
+carried as `uid` rather than `userId`. All four are asserted separately in
+`test/oauth-flow-token-isolation.test.ts`, including against a fixture that
+simulates someone later "simplifying" the two secrets into one.
+
+**The link endpoint is not a cheaper password oracle than login.** Both call the
+same `lib/passwordAuth.ts` — one implementation, not two — and it carries the
+login rate-limit budget. A second endpoint checking passwords with its own copy
+of that logic is how a rate limit gets bypassed.
+
+**A federated-only account has a NULL `password_hash`, not a random one.** A
+fabricated hash would make the row lie about how the account is reachable. NULL
+needs no special case in the login route: the existing dummy-hash substitution
+means a password attempt against such an account burns the same ~250ms and
+returns the same `INVALID_CREDENTIALS`, so social-only accounts are not
+enumerable by trying to sign into them.
+
+**Account deletion** accepts a password *or* a fresh identity token from a
+provider already linked to that account — never merely a valid token, which
+would let any Apple sign-in delete any account whose session the caller held.
+
+---
+
 ## Known limitations
 
 Things a reader should not assume are covered.
@@ -404,11 +495,23 @@ Things a reader should not assume are covered.
    respond identically in both cases and deliver the outcome by email. That needs
    a configured mail provider.
 
-2. **Email is not configured.** `RESEND_API_KEY` and `MAIL_FROM` are unset, so
-   `sendEmail` logs and returns without delivering. Lockout notifications and
-   password reset links **are generated but not sent**. The reset flow is built
-   and tested end to end — screens included — but cannot complete until a
-   provider is wired up.
+2. **Email reaches only one person.** Corrected 2026-08-31: this entry used to
+   say email was unconfigured, which contradicted `docs/EMAIL-SETUP.md` and
+   `docs/TODO-PRODUCTION.md` §1.3. Both of those are right and this was stale.
+
+   Resend **is** configured in production and a real password reset has been
+   completed end to end. But `MAIL_FROM` is still Resend's test sender
+   (`onboarding@resend.dev`), which delivers **only to the address that owns the
+   Resend account**. So for every user other than the account owner, a reset
+   link is generated, accepted, and silently never arrives — which is the same
+   outcome as no mail at all, and harder to notice.
+
+   The local checkout has no mail credentials, so `sendEmail` logs and returns
+   there; that is a dev gap, not the production state.
+
+   Nothing on the code side is outstanding — retries, redaction, off-response
+   dispatch and a `pnpm mail:verify` diagnostic all exist. What remains is a
+   verified sending domain and its DNS records. See `docs/EMAIL-SETUP.md`.
 
 3. **Rate-limit state is in-process.** Horizontal scaling needs Redis.
 
@@ -427,12 +530,27 @@ Things a reader should not assume are covered.
 8. **No automated dependency scanning.** Run `pnpm audit` and wire up
    Dependabot before launch.
 
+9. **Federated sign-in has not been exercised against a real provider.** The
+   verification logic is unit tested against genuinely signed tokens and a
+   stubbed JWKS, but no live Apple or Google token has been through it — that
+   needs credentials only the account owner can create, and a native build.
+   Treat the first real sign-in as the first real test. Note also that the nonce
+   is client-chosen: it defeats replay of a token from an earlier attempt, not
+   replay by the token's own holder, and the audience check is what carries the
+   weight there. See `docs/FEDERATED-SIGN-IN.md` → "What is not covered".
+
 ### Account deletion
 
 `DELETE /api/profile/account` permanently removes the user row; every child
 table cascades from it (profile, subscription, analyses, tips, injury risks,
-progress entries, chat, achievements, reset tokens). Clips live on the device
-and are removed by the client.
+progress entries, chat, achievements, reset tokens, linked identities). Clips
+live on the device and are removed by the client.
+
+Re-authentication is required and accepts either the account's password or a
+fresh identity token from a provider **already linked to that account** — a
+federated-only account has no password, and both stores require deletion to be
+possible in-app. A valid token alone is not enough: without the linked check,
+any Apple sign-in would delete any account whose session the caller held.
 
 Deletion requires the current password. A stolen unlocked phone must not be able
 to erase someone's history, and the UI adds a typed `DELETE` confirmation on top

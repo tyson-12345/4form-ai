@@ -142,6 +142,18 @@ app.use("/api/auth/login", rateLimit({ name: "auth-login", max: 10 }));
 app.use("/api/auth/signup", rateLimit({ name: "auth-signup", max: 5 }));
 app.use("/api/auth/forgot-password", rateLimit({ name: "auth-forgot", max: 3 }));
 app.use("/api/auth/reset-password", rateLimit({ name: "auth-reset", max: 5 }));
+
+// Federated sign-in. `/link` checks a password, so it gets the login budget —
+// otherwise it would be a cheaper endpoint to guess against than /auth/login,
+// and attackers would simply move here. `/providers` is a cheap read the app
+// makes once on launch, so it is mounted first with a wider budget rather than
+// inheriting the tight one below.
+app.use("/api/auth/oauth/providers", rateLimit({ name: "auth-oauth-providers", max: 30 }));
+app.use("/api/auth/oauth/link", rateLimit({ name: "auth-oauth-link", max: 10 }));
+app.use("/api/auth/oauth/complete", rateLimit({ name: "auth-oauth-complete", max: 5 }));
+// Each attempt costs an outbound JWKS lookup on a cold cache.
+app.use("/api/auth/oauth", rateLimit({ name: "auth-oauth", max: 15 }));
+
 app.use("/api/auth", rateLimit({ name: "auth", max: 20 }));
 
 // Endpoints that cost us money on every call (Claude inference).

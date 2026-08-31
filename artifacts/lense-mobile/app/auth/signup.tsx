@@ -23,6 +23,8 @@ import {
 import { color, type as T, radius, GUTTER, font } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { ApiError, NetworkError } from "@/lib/api";
+import { SocialSignIn } from "@/components/SocialSignIn";
+import { useSocialSignIn } from "@/lib/useSocialSignIn";
 import * as haptics from "@/lib/haptics";
 import { PRIVACY_POLICY_URL, TERMS_URL, openLegal } from "@/constants/legal";
 // Date maths lives in utils/ so it can be tested — this screen cannot be, and
@@ -41,6 +43,7 @@ export default function SignupScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { signup } = useAuth();
+  const handleSocialCredential = useSocialSignIn();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -282,6 +285,15 @@ export default function SignupScreen() {
               trailingArrow
             />
           </View>
+
+          {/* Above the assent text, so the terms below cover both ways of
+              creating an account rather than only the form. */}
+          <SocialSignIn
+            onCredential={handleSocialCredential}
+            busy={busy}
+            onStart={() => setError(null)}
+            onError={setError}
+          />
 
           {/* ── Assent ──
               Placed immediately below the button, not in a settings screen. Two

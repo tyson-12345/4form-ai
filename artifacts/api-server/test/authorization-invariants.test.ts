@@ -137,11 +137,29 @@ describe("credentials never reach a log or a response", () => {
   });
 
   it("the reset token is stored only as a hash", () => {
-    const src = read("routes/auth.ts");
     // The raw token goes in the email; only its SHA-256 is persisted. Storing
     // the raw value would make a database dump a set of working reset links.
-    expect(src).toMatch(/tokenHash:\s*hash/);
-    expect(src).not.toMatch(/tokenHash:\s*raw\b/);
+    //
+    // Scanned across every source file rather than pinned to one: the minting
+    // code moved to lib/passwordAuth.ts when the login path became shared with
+    // the account-link challenge, and a file-bound assertion turns a move into
+    // a silent loss of the check.
+    const sources: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(path.join(SRC, dir), { withFileTypes: true })) {
+        const rel = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(rel);
+        else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
+          sources.push(read(rel));
+        }
+      }
+    };
+    walk(".");
+
+    expect(sources.some((src) => /tokenHash:\s*hash/.test(src))).toBe(true);
+    for (const src of sources) {
+      expect(src).not.toMatch(/tokenHash:\s*raw\b/);
+    }
   });
 });
 
@@ -150,13 +168,48 @@ describe("auth responses are uniform", () => {
     const src = read("routes/auth.ts");
     const loginSection = src.slice(
       src.indexOf('router.post("/auth/login"'),
-      src.indexOf("async function registerFailure"),
+      // The handler now ends at the next route; the failure/lockout helpers it
+      // used to be followed by live in lib/passwordAuth.ts.
+      src.indexOf("// ─── POST /api/auth/forgot-password"),
     );
     const messages = [...loginSection.matchAll(/res\.status\(4\d\d\)\.json\(\{\s*error:\s*([^,}]+)/g)].map(
       (m) => m[1].trim(),
     );
     // Every 4xx out of the login handler must be the same constant.
     expect(new Set(messages)).toEqual(new Set(["INVALID_CREDENTIALS"]));
+  });
+
+  it("does not put email delivery on the forgot-password response path", () => {
+    /**
+     * The timing counterpart to the "identical message" rule, asserted
+     * structurally so it cannot regress quietly.
+     *
+     * Only the registered branch mints a token and sends mail. Awaiting either
+     * makes that branch measurably slower than the unregistered one, which
+     * discloses the very thing the shared response string exists to withhold —
+     * and it would only start doing so once a mail provider was configured, so
+     * no test that ran with mail disabled would have caught it.
+     *
+     * The behavioural version lives in test/login-lockout.test.ts.
+     */
+    const src = read("routes/auth.ts");
+    const section = src.slice(
+      src.indexOf('router.post("/auth/forgot-password"'),
+      src.indexOf("// ─── POST /api/auth/reset-password"),
+    );
+    expect(section.length).toBeGreaterThan(0);
+
+    // The send is awaited *inside* the deferred callback, which is correct and
+    // necessary — so the property is not "sendEmail is never awaited here", it
+    // is "no delivery work happens before the handler defers". Everything from
+    // the handler's first line up to the `deferEmail(` call runs on the
+    // response path and must therefore be branch-symmetric.
+    const deferAt = section.indexOf("deferEmail(");
+    expect(deferAt, "the reset mail must be dispatched with deferEmail").toBeGreaterThan(-1);
+
+    const onResponsePath = section.slice(0, deferAt);
+    expect(onResponsePath).not.toMatch(/sendEmail\(/);
+    expect(onResponsePath).not.toMatch(/createResetUrl\(/);
   });
 
   it("uses the exact agreed strings", () => {

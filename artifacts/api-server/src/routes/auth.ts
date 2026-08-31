@@ -14,7 +14,10 @@
  * ── Passwords ───────────────────────────────────────────────────────────────
  * Passwords are never logged, never echoed, and never interpolated into an
  * error. Legacy hashes are transparently upgraded to bcrypt on first successful
- * login (see `migratePasswordHash`).
+ * login (see `migratePasswordHash` in lib/passwordAuth.ts, which is also where
+ * the lockout counter and the timing equalisation live — shared with the
+ * account-link challenge in routes/oauth.ts so there is only ever one
+ * password-checking path).
  */
 
 import { Router } from "express";
@@ -28,19 +31,15 @@ import {
   passwordResetTokensTable,
 } from "@workspace/db";
 
+import { hashPassword, signToken, hashResetToken } from "../lib/auth.js";
 import {
-  hashPassword,
-  verifyPassword,
-  signToken,
-  dummyHash,
-  needsRehash,
-  generateResetToken,
-  hashResetToken,
-  type PasswordAlgo,
-} from "../lib/auth.js";
+  attemptPasswordAuth,
+  completePasswordAuth,
+  createResetUrl,
+  RESET_TOKEN_TTL_MS,
+} from "../lib/passwordAuth.js";
 import { authenticate, type AuthRequest } from "../middlewares/authenticate.js";
 import { logger } from "../lib/logger.js";
-import { recordAlert } from "../lib/alerting.js";
 import {
   parseOrReject,
   safeBirthDate,
@@ -49,14 +48,8 @@ import {
   safePassword,
   safeText,
 } from "../lib/validate.js";
-import {
-  MAX_FAILED_ATTEMPTS,
-  LOCKOUT_MS,
-  progressiveDelayMs,
-  sleep,
-  clientIp,
-} from "../lib/rateLimit.js";
-import { sendEmail, passwordResetEmail, accountLockedEmail } from "../lib/mailer.js";
+import { clientIp } from "../lib/rateLimit.js";
+import { deferEmail, sendEmail, passwordResetEmail } from "../lib/mailer.js";
 
 const router = Router();
 
@@ -76,8 +69,6 @@ const RESET_REQUESTED =
  */
 const SIGNUP_CONFLICT =
   "We couldn't create an account with those details. If you already have an account, try signing in or resetting your password.";
-
-const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
@@ -198,44 +189,17 @@ router.post("/auth/login", async (req, res) => {
     .where(eq(usersTable.email, email))
     .limit(1);
 
-  const now = new Date();
-  const isLocked = Boolean(user?.lockedUntil && user.lockedUntil > now);
-
-  // Always run a real bcrypt comparison, even when the user does not exist or
-  // is locked, so every failure path costs the same wall-clock time.
-  const hashToCheck = user?.passwordHash ?? (await dummyHash());
-  const algoToCheck = (user?.passwordAlgo ?? "bcrypt") as PasswordAlgo;
-  const passwordValid = await verifyPassword(password, hashToCheck, algoToCheck);
-
-  if (!user || isLocked || !passwordValid) {
-    if (user && !isLocked) {
-      await registerFailure(user.id, user.email, user.failedLoginAttempts, ip);
-    } else if (user && isLocked) {
-      logger.warn(
-        { userId: user.id, ip, event: "login_while_locked" },
-        "Login attempt on a locked account",
-      );
-      // Match the delay a non-locked failure would incur so lockout is not
-      // detectable by response time.
-      await sleep(progressiveDelayMs(MAX_FAILED_ATTEMPTS));
-    } else {
-      logger.warn({ ip, event: "login_unknown_email" }, "Login attempt for unknown email");
-      await sleep(progressiveDelayMs(1));
-    }
-
+  // Every failure branch — unknown address, wrong password, locked account, an
+  // account with no password because it signs in through Apple or Google — is
+  // resolved in here, at equal cost, and reported the same way.
+  const attempt = await attemptPasswordAuth(user, password, ip);
+  if (!attempt.ok) {
     res.status(401).json({ error: INVALID_CREDENTIALS });
     return;
   }
 
   // ── Success ──
-  await migratePasswordHash(user.id, user.passwordHash, user.passwordAlgo, password);
-
-  if (user.failedLoginAttempts > 0 || user.lockedUntil) {
-    await db
-      .update(usersTable)
-      .set({ failedLoginAttempts: 0, lockedUntil: null, updatedAt: new Date() })
-      .where(eq(usersTable.id, user.id));
-  }
+  await completePasswordAuth(attempt.user, password);
 
   const [profile] = await db
     .select({ name: athleteProfilesTable.name })
@@ -251,82 +215,6 @@ router.post("/auth/login", async (req, res) => {
     user: { id: user.id, email: user.email, name: profile?.name ?? "" },
   });
 });
-
-/**
- * Increment the failure counter, apply a progressive delay, and lock the
- * account once the threshold is reached.
- *
- * The delay happens *before* the response is written but after the DB update,
- * so concurrent attempts all see an up-to-date counter.
- */
-async function registerFailure(
-  userId: string,
-  email: string,
-  currentAttempts: number,
-  ip: string,
-): Promise<void> {
-  const attempts = currentAttempts + 1;
-  const shouldLock = attempts >= MAX_FAILED_ATTEMPTS;
-  const lockedUntil = shouldLock ? new Date(Date.now() + LOCKOUT_MS) : null;
-
-  await db
-    .update(usersTable)
-    .set({
-      failedLoginAttempts: attempts,
-      lastFailedLoginAt: new Date(),
-      ...(shouldLock ? { lockedUntil } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(usersTable.id, userId));
-
-  if (shouldLock) {
-    recordAlert("account_locked");
-    logger.warn(
-      { userId, ip, attempts, event: "account_locked" },
-      "Account locked after consecutive failed logins",
-    );
-    // Notify out-of-band. The response to the caller is unchanged — only the
-    // account owner learns that a lockout happened.
-    const resetUrl = await createResetUrl(userId);
-    await sendEmail(
-      accountLockedEmail(email, resetUrl, Math.round(LOCKOUT_MS / 60000)),
-    );
-  } else {
-    logger.warn(
-      { userId, ip, attempts, event: "login_failed" },
-      "Failed login attempt",
-    );
-  }
-
-  await sleep(progressiveDelayMs(attempts));
-}
-
-/**
- * Re-hash a password with current parameters when the stored hash is legacy
- * (md5/sha1/sha256/plaintext) or bcrypt below our current cost.
- *
- * This is the "migrate on next login" half of the password migration; the
- * bulk-invalidation half lives in scripts/migrate-passwords.ts.
- */
-async function migratePasswordHash(
-  userId: string,
-  storedHash: string,
-  storedAlgo: string,
-  plaintextPassword: string,
-): Promise<void> {
-  if (!needsRehash(storedHash, storedAlgo)) return;
-
-  const upgraded = await hashPassword(plaintextPassword);
-  await db
-    .update(usersTable)
-    .set({ passwordHash: upgraded, passwordAlgo: "bcrypt", updatedAt: new Date() })
-    .where(eq(usersTable.id, userId));
-
-  logger.info(
-    { userId, from: storedAlgo, event: "password_rehashed" },
-    "Upgraded stored password hash to bcrypt",
-  );
-}
 
 // ─── POST /api/auth/forgot-password ──────────────────────────────────────────
 
@@ -344,11 +232,26 @@ router.post("/auth/forgot-password", async (req, res) => {
     .limit(1);
 
   if (user) {
-    const resetUrl = await createResetUrl(user.id);
-    await sendEmail(
-      passwordResetEmail(user.email, resetUrl, Math.round(RESET_TOKEN_TTL_MS / 60000)),
-    );
-    logger.info({ userId: user.id, event: "password_reset_requested" }, "Reset link issued");
+    /**
+     * Deliberately not awaited.
+     *
+     * This route answers identically whether or not the address is registered
+     * — that is the entire point of `RESET_REQUESTED`. But it only does work in
+     * *this* branch, so awaiting the token write and the provider round-trip
+     * would make a registered address take a few hundred milliseconds longer
+     * than an unregistered one, every time. That is a reliable oracle for the
+     * exact fact the response refuses to state, and it would have appeared the
+     * day mail was configured rather than the day this code was written.
+     *
+     * Both branches now reach `res.json` having done the same amount of work.
+     */
+    deferEmail("password_reset", async () => {
+      const resetUrl = await createResetUrl(user.id);
+      await sendEmail(
+        passwordResetEmail(user.email, resetUrl, Math.round(RESET_TOKEN_TTL_MS / 60000)),
+      );
+      logger.info({ userId: user.id, event: "password_reset_requested" }, "Reset link issued");
+    });
   } else {
     logger.warn(
       { ip: clientIp(req), event: "password_reset_unknown_email" },
@@ -359,51 +262,6 @@ router.post("/auth/forgot-password", async (req, res) => {
   // Identical response either way.
   res.json({ message: RESET_REQUESTED });
 });
-
-/** Mint a single-use reset token for `userId` and return the full reset URL. */
-async function createResetUrl(userId: string): Promise<string> {
-  const { raw, hash } = generateResetToken();
-
-  await db.insert(passwordResetTokensTable).values({
-    userId,
-    tokenHash: hash,
-    expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
-  });
-
-  return `${resetLinkBase()}/reset-password?token=${raw}`;
-}
-
-/**
- * Base URL that reset links are built from.
- *
- * ── Why this throws instead of defaulting ───────────────────────────────────
- * It used to fall back to `https://athleteai.app`. On 2026-08-12 that domain
- * turned out to belong to someone else. A password-reset link is a single-use
- * credential: sending one to a domain we do not control means mailing working
- * account-recovery tokens to a third party, and the user sees a link that looks
- * official and isn't.
- *
- * There is no safe default here. In production a missing `APP_PUBLIC_URL` is a
- * misconfiguration that must be fixed, not papered over — the request fails,
- * the error is logged, and the caller still gets the same generic "if that email
- * is registered…" response, so nothing about account existence leaks either way.
- *
- * Locally it falls back to the dev server so the flow can be exercised.
- */
-function resetLinkBase(): string {
-  const configured = process.env.APP_PUBLIC_URL?.trim().replace(/\/+$/, "");
-  if (configured) return configured;
-
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "APP_PUBLIC_URL is not set. Refusing to build a password reset link " +
-        "against a default domain; reset tokens must only ever point at a host " +
-        "we control.",
-    );
-  }
-
-  return `http://localhost:${process.env.PORT ?? 3000}`;
-}
 
 // ─── POST /api/auth/reset-password ───────────────────────────────────────────
 

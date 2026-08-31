@@ -57,6 +57,24 @@ export function verifyToken(token: string): VerifiedToken {
   if (typeof decoded.iat !== "number") {
     throw new Error("Token is missing an issued-at claim");
   }
+  /**
+   * Reject anything carrying a `purpose` claim.
+   *
+   * The federated sign-in flows mint short-lived tokens that name a user but
+   * deliberately do *not* authorize as that user — a link challenge says "prove
+   * this account's password", and treating it as a session would grant the very
+   * access the challenge exists to withhold.
+   *
+   * Those tokens are signed with a key derived from `JWT_SECRET` and carry a
+   * different issuer, so both the signature check and the issuer pin above
+   * already refuse them. This is the third guard, and it is here rather than
+   * only there because the first two are easy to loosen by accident — someone
+   * unifying the issuers, or reusing the secret, would silently remove them
+   * both. See lib/oauthFlowTokens.ts.
+   */
+  if ("purpose" in decoded && decoded.purpose !== undefined) {
+    throw new Error("Token carries a purpose claim and is not a session token");
+  }
   return {
     userId: decoded.userId as string,
     email: decoded.email as string,

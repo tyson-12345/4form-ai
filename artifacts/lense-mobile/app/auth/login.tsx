@@ -15,12 +15,15 @@ import {
 import { color, type as T, GUTTER, font } from "@/constants/caliper";
 import { useAuth } from "@/lib/authContext";
 import { ApiError, NetworkError } from "@/lib/api";
+import { SocialSignIn } from "@/components/SocialSignIn";
+import { useSocialSignIn } from "@/lib/useSocialSignIn";
 import * as haptics from "@/lib/haptics";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { login } = useAuth();
+  const handleSocialCredential = useSocialSignIn();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -137,6 +140,16 @@ export default function LoginScreen() {
           >
             <Text style={[T.buttonSmall, { color: color.cobalt }]}>Forgot your password?</Text>
           </Tappable>
+
+          {/* Placed after the password controls, not between them: these are
+              alternatives to the form above, and the form's own sub-action
+              ("Forgot your password?") belongs with the form. */}
+          <SocialSignIn
+            onCredential={handleSocialCredential}
+            busy={busy}
+            onStart={() => setError(null)}
+            onError={setError}
+          />
 
           <Tappable
             onPress={() => router.replace("/auth/signup")}

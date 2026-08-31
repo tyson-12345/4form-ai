@@ -277,13 +277,19 @@ for the four measurable dimensions, adopt Oscar's sport-specific weighting, and
 replace the two nulls with a clearly-labelled qualitative read rather than a
 fabricated number. **This needs Oscar's answer before anyone builds it.**
 
-### 5.1b Firebase
+### 5.1b Firebase — ✅ resolved 2026-08-31
 Assessed 2026-08-12 — **recommendation: don't migrate.** Firestore is the wrong
 shape for these relational queries, and Firebase Auth's defaults are not
 obviously better than the auth already built here. Adopt Sentry for crash
-reporting; revisit Firebase Auth only if you want Google/Apple sign-in. Full
-reasoning, plus what providers are actually still missing:
-`docs/FIREBASE-ASSESSMENT.md`.
+reporting. Full reasoning: `docs/FIREBASE-ASSESSMENT.md`.
+
+The one open condition — "revisit Firebase Auth only if you want Google/Apple
+sign-in" — is now closed. Both are built, directly against the providers'
+published keys, with no new backend and no new dependency: the server still
+issues its own JWT, so the lockout, progressive delay, timing equalisation and
+session revocation all still apply. See `docs/FEDERATED-SIGN-IN.md`, including
+the Apple Developer and Google Cloud credentials still to be created and the
+App Store 4.8 constraint that Apple must ship with or before Google.
 
 ### 5.2 Neon vs Supabase — ✅ resolved 2026-08-12
 Moving to **Supabase, as the Postgres host only.** Auth stays as it is.

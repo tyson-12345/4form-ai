@@ -90,9 +90,13 @@ Being fair to the idea — three real wins:
 1. **Password reset email.** This is your actual blocker (§1.3), and Firebase
    Auth would close it without you configuring a mail provider or publishing
    SPF/DKIM records.
-2. **Social sign-in.** Google and Apple sign-in are a meaningful conversion
-   improvement, and Apple sign-in is *required* by App Store rules if you offer
-   any other third-party sign-in.
+2. ~~**Social sign-in.**~~ **Closed 2026-08-31 without Firebase.** Apple and
+   Google sign-in are built directly against the providers' published keys —
+   see `docs/FEDERATED-SIGN-IN.md`. This assessment assumed the choice was
+   "adopt Firebase Auth or go without", and that framing was wrong: verifying a
+   provider's identity token is a JWKS fetch and a signature check, so it needed
+   no new backend and no new dependency. The server still issues its own JWT and
+   every control below still applies. Firebase Auth would have replaced them.
 3. **Crashlytics.** You have no crash reporting at all. You will not know when
    the app breaks in the field.
 
@@ -115,12 +119,20 @@ thing, Sentry is the better single choice** because it gives you both sides.
 
 Wrong shape, large rewrite, no benefit to the user.
 
-### Defer, and decide deliberately: Firebase Auth
+### Do not adopt: Firebase Auth — resolved 2026-08-31
 
-Only worth it if you want Google/Apple sign-in. If you do, the honest question
-is whether Firebase's protections are equivalent to yours — and you should
-answer it by reading their docs against your `docs/SECURITY.md`, not by
-assuming a managed service is automatically stronger.
+This entry said "only worth it if you want Google/Apple sign-in". Those are now
+built without it (`docs/FEDERATED-SIGN-IN.md`), which removes the only reason
+that was on the table. The remaining pitch would be the password-reset email,
+and that is an hour with Resend against a migration that would replace the
+lockout, progressive delay, timing equalisation, session revocation and hash
+migration described in `docs/SECURITY.md`.
+
+The original caution still stands as a method, and it is the reason this ended
+where it did: the honest question was never "is Firebase good", it was "are
+Firebase's protections equivalent to the ones already here" — answered by
+reading their docs against `docs/SECURITY.md`, not by assuming managed means
+stronger.
 
 If you go this way, it is a **standalone project**, not a side effect of a
 database migration: Firebase Auth issues its own tokens, so `authenticate` and
@@ -164,7 +176,8 @@ Here is the full picture of what a launched AthleteAI needs.
 - **CDN** — the API serves JSON; the app ships through the stores
 - **Payment processor** — Apple and Google handle it; taking cards directly
   means PCI DSS, which you do not want
-- **Auth provider** — see above
+- **Auth provider** — not needed. Apple and Google sign-in are verified in
+  process against the providers' own keys; see `docs/FEDERATED-SIGN-IN.md`
 - **Search** — nothing to search
 
 ---
@@ -172,4 +185,5 @@ Here is the full picture of what a launched AthleteAI needs.
 ## If you want one sentence
 
 Fix email with Resend (an hour), add Sentry (an hour), deploy to Railway — and
-revisit Firebase Auth only if and when you want Google and Apple sign-in.
+do not migrate to Firebase Auth at all. The one thing it was being held in
+reserve for, Google and Apple sign-in, shipped on 2026-08-31 without it.

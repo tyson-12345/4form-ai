@@ -97,6 +97,9 @@ vi.mock("@workspace/db", () => ({
   athleteProfilesTable: { userId: "user_id", name: "name" },
   subscriptionsTable: { userId: "user_id" },
   passwordResetTokensTable: { id: "id", tokenHash: "token_hash", userId: "user_id", expiresAt: "expires_at", usedAt: "used_at" },
+  // Not exercised here, but app.ts mounts the federated sign-in router, so the
+  // export has to exist or importing the app throws before any test runs.
+  identitiesTable: { userId: "user_id", provider: "provider", subject: "subject" },
   analysesTable: {},
   chatMessagesTable: {},
   coachingTipsTable: {},
@@ -108,18 +111,28 @@ vi.mock("@workspace/db", () => ({
 
 // Emails are dispatched in-process; assert on the fake rather than the network.
 const sentEmails: { to: string; subject: string }[] = [];
+/** Simulated provider latency, so response timing can be asserted. */
+let mailDelayMs = 0;
 vi.mock("../src/lib/mailer.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/mailer.js")>();
   return {
     ...actual,
     sendEmail: async (email: { to: string; subject: string }) => {
+      if (mailDelayMs > 0) await new Promise((r) => setTimeout(r, mailDelayMs));
       sentEmails.push(email);
+      return { delivered: true, provider: "resend" as const, attempts: 1 };
     },
   };
 });
 
 const { default: app } = await import("../src/app.js");
 const { __resetRateLimitState } = await import("../src/lib/rateLimit.js");
+// The lockout notice is dispatched *after* the response so that delivery time
+// cannot be measured from outside (see lib/mailer.ts). That makes "the request
+// finished" and "the mail was handed to the provider" two different moments, so
+// these tests wait for the second one explicitly rather than relying on
+// microtask ordering — which would pass locally and flake under load.
+const { drainMail } = await import("../src/lib/mailer.js");
 
 const PASSWORD = "correct-horse-battery-staple";
 const EMAIL = "athlete@example.com";
@@ -244,6 +257,7 @@ describe("account lockout", () => {
 
   it("emails the account owner a reset link when the lockout triggers", { timeout: LOCKOUT_TEST_TIMEOUT }, async () => {
     for (let i = 0; i < 5; i++) await login(EMAIL, "wrong-password-here");
+    await drainMail();
 
     const lockoutEmail = sentEmails.find((e) => /unusual sign-in/i.test(e.subject));
     expect(lockoutEmail).toBeDefined();
@@ -252,6 +266,7 @@ describe("account lockout", () => {
 
   it("does not email before the threshold is reached", { timeout: LOCKOUT_TEST_TIMEOUT }, async () => {
     for (let i = 0; i < 4; i++) await login(EMAIL, "wrong-password-here");
+    await drainMail();
     expect(sentEmails).toHaveLength(0);
   });
 
@@ -333,5 +348,51 @@ describe("POST /api/auth/forgot-password", () => {
 
     expect(unknown.status).toBe(known.status);
     expect(unknown.body).toEqual(known.body);
+  });
+
+  it("answers in the same time whether or not the address is registered", async () => {
+    /**
+     * The body is identical by design. This asserts the *other* half of that
+     * promise, which is easy to lose without noticing: only the registered
+     * branch does any work — mint a token, hand the message to the provider —
+     * so awaiting that work makes a registered address reliably slower than an
+     * unregistered one, and the response time answers the question the response
+     * text refuses to.
+     *
+     * It was not observable while mail was unconfigured, because `sendEmail`
+     * returned immediately. It would have appeared the day an API key was
+     * pasted in, with no code change to attribute it to. The delivery is
+     * dispatched after the response instead; this pins that down.
+     *
+     * The provider is stubbed to take 400ms — far longer than the real gap
+     * would be — so a regression fails loudly rather than marginally.
+     */
+    mailDelayMs = 400;
+    try {
+      currentEmail = EMAIL;
+      const startKnown = Date.now();
+      await request(app).post("/api/auth/forgot-password").send({ email: EMAIL });
+      const knownMs = Date.now() - startKnown;
+
+      __resetRateLimitState();
+      currentEmail = "nobody@example.com";
+      const startUnknown = Date.now();
+      await request(app)
+        .post("/api/auth/forgot-password")
+        .send({ email: "nobody@example.com" });
+      const unknownMs = Date.now() - startUnknown;
+
+      // Generous: the assertion is "the send is not on the response path at
+      // all", not "the two are within a few microseconds".
+      expect(knownMs).toBeLessThan(200);
+      expect(Math.abs(knownMs - unknownMs)).toBeLessThan(150);
+
+      // And the mail really was sent, just afterwards — otherwise this would
+      // also pass if the feature had simply been deleted.
+      await drainMail();
+      expect(sentEmails.some((e) => /reset your/i.test(e.subject))).toBe(true);
+    } finally {
+      mailDelayMs = 0;
+    }
   });
 });
