@@ -25,7 +25,7 @@ Written so a session with no prior context can pick up and be useful in one read
 | GitHub | `tyson-12345/4form-ai` (public) |
 | Live API | `https://fourformai-production-0b7f.up.railway.app` |
 | Database | Supabase, `ca-central-1`, session pooler |
-| Railway | project `athleteai` / `ad6fbf98-1a01-4366-9d04-153fa8705cbb`, service `fourformai` |
+| Railway | project `4form` / `ad6fbf98-1a01-4366-9d04-153fa8705cbb`, service `fourformai` |
 | Simulator | iPhone 17 Pro, UDID `27BBE9C0-B829-491B-B135-01C7FFCD18ED` |
 
 **Verify commands** (all should pass):

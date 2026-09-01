@@ -36,7 +36,7 @@ plus a console login or a lawyer for everything else.
 ### 1.1 Deploy the API — ✅ DONE 2026-08-12
 
 Live at `https://fourformai-production-0b7f.up.railway.app` (Railway project
-`athleteai`, service `fourformai`, in Oscar's workspace). `TRUST_PROXY=1` and
+`4form`, service `fourformai`, in Oscar's workspace). `TRUST_PROXY=1` and
 `NODE_ENV=production` are set, and `eas.json` points the production app build at
 it.
 
@@ -243,8 +243,22 @@ old name — each needs a console login:
 
   The old host 404s the moment the domain is renamed, so anything holding it —
   `APP_PUBLIC_URL` above all, since reset links are built from it — has to move
-  in the same sitting. The Railway **project** is still named `athleteai`; it is
-  cosmetic and appears in no URL.
+  in the same sitting.
+
+  The **project** was renamed `athleteai` → `4form` on 2026-09-01 too. Nothing
+  in the repo depends on the project *name*: every documented command pins the
+  project **id** (`ad6fbf98-…`), which a rename does not change.
+
+  One thing does break, and it is not the rename. `railway link` is keyed by
+  **absolute directory path**, stored in `~/.railway/config.json` — so moving
+  the checkout unlinks it, and `railway status` then reports "No linked
+  project". That is exactly the state in which `railway up --ci` silently
+  creates a stray project, which is why every command here passes `--project`
+  explicitly. Re-link with:
+
+  ```bash
+  railway link --project ad6fbf98-1a01-4366-9d04-153fa8705cbb
+  ```
 - 🟠 **Apple Developer** — register `com.fourformai.app`, enable Sign in with
   Apple on it, and set `APPLE_CLIENT_IDS` to match. Nothing was registered
   under the old id (`eas.json` has an empty `ascAppId`), so nothing is orphaned.
