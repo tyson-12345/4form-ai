@@ -16,7 +16,7 @@
 
 ## 1. Agreement
 
-These Terms are between you and [LEGAL ENTITY NAME] ("4Form AI", "we", "us").
+These Terms are between you and Tyson Youm and Oscar Chuang ("4Form AI", "we", "us").
 By creating an account or using the app, you accept them. If you don't agree,
 don't use the app.
 
@@ -215,4 +215,4 @@ a merger or sale, on notice.
 
 ## 17. Contact
 
-**[support@yourdomain.com]** · [LEGAL ENTITY NAME], [ADDRESS]
+**[support@yourdomain.com]** · Tyson Youm and Oscar Chuang, [ADDRESS]

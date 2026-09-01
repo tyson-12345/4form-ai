@@ -27,10 +27,10 @@
 
 ## 1. Who we are
 
-4Form AI is operated by [LEGAL ENTITY NAME], [ADDRESS].
+4Form AI is operated by Tyson Youm and Oscar Chuang, [ADDRESS].
 Questions: **[privacy@yourdomain.com]**
 
-For UK/EU users, [ENTITY] is the data controller for the information described
+For UK/EU users, Tyson Youm and Oscar Chuang is the data controller for the information described
 here.
 
 ## 2. What we collect
@@ -108,10 +108,10 @@ We use a small number of processors, each doing one job:
 
 | Processor | What they get | Why |
 |---|---|---|
-| [HOSTING PROVIDER — e.g. Railway] | Everything stored, as our infrastructure | Running the API |
+| Railway | Everything stored, as our infrastructure | Running the API |
 | Supabase | The database contents | Storing your account and measurements |
 | Anthropic (Claude) | Your measurements, sport, level, goals, and coach messages | Writing your coaching notes and replying in chat |
-| [EMAIL PROVIDER] | Your email address | Sending password resets and security notices |
+| Resend | Your email address | Sending password resets and security notices |
 | jsDelivr (CDN) | Your device's IP address | Delivering the on-device pose-tracking library |
 
 **On Anthropic:** your measurements and messages are sent to generate coaching
@@ -195,4 +195,4 @@ effect.
 
 ## 12. Contact
 
-**[privacy@yourdomain.com]** · [LEGAL ENTITY NAME], [ADDRESS]
+**[privacy@yourdomain.com]** · Tyson Youm and Oscar Chuang, [ADDRESS]

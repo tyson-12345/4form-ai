@@ -104,6 +104,43 @@ describe("findPlaceholders", () => {
   it("reports each distinct placeholder once", () => {
     expect(findPlaceholders("[ADDRESS] and again [ADDRESS]")).toEqual(["[ADDRESS]"]);
   });
+
+  /**
+   * Regression. The first version required an uppercase first character, so the
+   * contact addresses — the one kind of placeholder that is lowercase — were
+   * invisible to it, and would have been published verbatim on a live privacy
+   * policy. That is precisely the failure this guard exists to prevent.
+   */
+  it("catches the lowercase contact-address placeholders", () => {
+    expect(findPlaceholders("Questions: **[privacy@yourdomain.com]**")).toEqual([
+      "[privacy@yourdomain.com]",
+    ]);
+    expect(findPlaceholders("Report to [security@yourdomain.com]")).toEqual([
+      "[security@yourdomain.com]",
+    ]);
+  });
+
+  /**
+   * Regression, and the more dangerous of the two. The publisher notes say
+   * "Replace every `[BRACKETED]` value" — a placeholder that is an instruction
+   * about placeholders. Scanning the raw source counted it, so once every real
+   * blank was filled the documents would still have been held at 503 for ever,
+   * over a string no reader can see.
+   */
+  it("ignores placeholders inside notes the reader never sees", () => {
+    const md = [
+      "> **Publishing note (delete before publishing).**",
+      "> Replace every `[BRACKETED]` value before you ship.",
+      "",
+      "Operated by Someone Real.",
+    ].join("\n");
+    expect(findPlaceholders(md)).toEqual([]);
+  });
+
+  it("still catches a placeholder in a blockquote meant for the reader", () => {
+    const md = "> We are [LEGAL ENTITY NAME], and this note is for you.";
+    expect(findPlaceholders(md)).toEqual(["[LEGAL ENTITY NAME]"]);
+  });
 });
 
 describe("public pages", () => {

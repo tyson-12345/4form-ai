@@ -206,14 +206,32 @@ to abandon.
   blank or a draft note to a store reviewer. Filling them in and redeploying is
   the entire publishing step; nothing else is wired to a switch.
 
-  | Placeholder | Appears in | What it needs |
+  Filled 2026-09-01: the operators are **Tyson Youm and Oscar Chuang** (named
+  individuals — there is no company, and no separate UK/EU controller), and the
+  processors are Railway and Resend.
+
+  | Still blank | Appears in | What it needs |
   |---|---|---|
-  | `[LEGAL ENTITY NAME]` | both | The entity users contract with — a company if one exists, otherwise a named individual |
-  | `[ADDRESS]` | both | A postal address. GDPR and CCPA both require a real one |
+  | `[ADDRESS]` | both | A postal address. GDPR and CCPA both require a real, reachable one |
   | `[JURISDICTION]` | Terms | Governing law and venue |
-  | `[USD 100]` | Terms | The liability cap — a placeholder value, not a decision |
+  | `[USD 100]` | Terms | The liability cap — a placeholder value, not yet a decision |
   | `[DATE — set when published]` | both | Effective date |
-  | `[HOSTING PROVIDER]`, `[EMAIL PROVIDER]`, `[ENTITY]` | Privacy | Railway, Resend, Supabase — factual, fillable now |
+  | `[privacy@…]`, `[security@…]`, `[support@…]` | both | Working mailboxes. The apex `MX` is Porkbun forwarding, so `…@4formai.com` is a few minutes of setup — but do not publish an address that does not receive mail |
+
+  Two bugs in the guard were found while filling these in, both of which would
+  have defeated it:
+
+  - It required an uppercase first character, so the **lowercase contact
+    addresses were invisible to it** and would have shipped verbatim on a live
+    privacy policy. A third one, `[security@yourdomain.com]`, only surfaced once
+    the pattern was widened.
+  - It scanned the **raw** Markdown, including the publisher notes — which
+    contain the literal string `[BRACKETED]`. Every real blank could have been
+    filled and the documents would still have sat at 503 for ever, held there by
+    a string no reader can see. The scan now runs on the stripped text, so the
+    guard and the reader see the same document.
+
+  Both are pinned by regression tests.
 
   The four "delete before publishing" blocks need no action: the renderer strips
   any blockquote marked that way, so the Markdown stays the single source of

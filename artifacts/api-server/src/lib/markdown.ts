@@ -47,16 +47,60 @@ function inline(s: string): string {
 const PUBLISHING_NOTE = /delete (?:this block )?before publishing/i;
 
 /**
- * Values the author left for a human to fill in — `[LEGAL ENTITY NAME]`,
- * `[JURISDICTION]`, and so on. Matched conservatively: a run of capitals,
- * digits, spaces and light punctuation inside square brackets.
+ * Values the author left for a human to fill in.
+ *
+ * Two shapes, because the documents use two conventions:
+ *
+ *  - Shouted, like `[LEGAL ENTITY NAME]` or `[DATE — set when published]`.
+ *  - Contact addresses, like `[privacy@yourdomain.com]` — lowercase, and
+ *    therefore invisible to a capitals-only rule. Publishing one of those on a
+ *    live privacy policy is exactly the failure this function exists to stop,
+ *    so `yourdomain` is matched explicitly.
+ *
+ * Deliberately does not match ordinary bracketed prose such as
+ * `[see section 4]`, which is content rather than a blank.
  */
-const PLACEHOLDER = /\[[A-Z][A-Z0-9 ,.—/–-]*(?:—[^\]]*)?\]/g;
+const PLACEHOLDER = /\[(?:[A-Z][A-Z0-9 ,.—/–-]*(?:—[^\]]*)?|[^\]]*yourdomain[^\]]*)\]/g;
 
-/** Every unresolved placeholder in the source, in document order. */
+/**
+ * Every unresolved placeholder a reader could actually see, in document order.
+ *
+ * Runs against the document *after* publisher notes are stripped, not the raw
+ * source. Those notes say "Replace every `[BRACKETED]` value" — a placeholder
+ * that is itself an instruction about placeholders. Scanning the raw text would
+ * mean the documents could never publish: every blank could be filled and the
+ * note would still hold them at 503, over a string no reader ever sees.
+ */
 export function findPlaceholders(markdown: string): string[] {
-  const found = markdown.match(PLACEHOLDER) ?? [];
+  const found = stripPublishingNotes(markdown).match(PLACEHOLDER) ?? [];
   return [...new Set(found)];
+}
+
+/**
+ * Remove blockquotes addressed to whoever publishes the document.
+ *
+ * Shared by the renderer and the placeholder scan so the two can never disagree
+ * about what the reader sees — a note stripped from the page but counted by the
+ * guard blocks publication invisibly, which is worse than either alone.
+ */
+export function stripPublishingNotes(markdown: string): string {
+  const out: string[] = [];
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  let i = 0;
+  while (i < lines.length) {
+    if (!(lines[i] ?? "").trim().startsWith(">")) {
+      out.push(lines[i] ?? "");
+      i += 1;
+      continue;
+    }
+    const block: string[] = [];
+    while (i < lines.length && (lines[i] ?? "").trim().startsWith(">")) {
+      block.push(lines[i] ?? "");
+      i += 1;
+    }
+    if (!block.some((l) => PUBLISHING_NOTE.test(l))) out.push(...block);
+  }
+  return out.join("\n");
 }
 
 type Block =
@@ -108,7 +152,8 @@ function parse(markdown: string): Block[] {
         quoted.push((lines[i] ?? "").trim().replace(/^>\s?/, ""));
         i += 1;
       }
-      // Drop the whole block if it is a note to the publisher.
+      // Publisher notes are already gone by the time parse() runs (see
+      // renderMarkdown), but keep the guard: parse() is also reachable directly.
       if (!quoted.some((q) => PUBLISHING_NOTE.test(q))) {
         blocks.push({ kind: "quote", lines: quoted });
       }
@@ -196,7 +241,7 @@ function parse(markdown: string): Block[] {
 export function renderMarkdown(markdown: string): string {
   const out: string[] = [];
 
-  for (const b of parse(markdown)) {
+  for (const b of parse(stripPublishingNotes(markdown))) {
     switch (b.kind) {
       case "rule":
         out.push("<hr>");
