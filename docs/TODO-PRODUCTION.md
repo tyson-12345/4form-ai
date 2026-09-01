@@ -226,19 +226,16 @@ old name — each needs a console login:
   points at it. GitHub 301-redirects the old URL, so any other clone keeps
   working until its remote is updated.
 
-  🟡 The **local checkout directory** is still `~/ACTIVE/ai-exercise-coach/AthleteAI_tyson`
-  — renaming a directory out from under a running shell, Metro watcher or Xcode
-  project is the kind of thing that costs an afternoon, so it was left alone.
-  When nothing is running:
+  The **local checkout** moved to `~/ACTIVE/ai-exercise-coach/4form-ai` the same
+  day. It survived the move intact: pnpm's `node_modules` symlinks are
+  *relative* (`.pnpm/typescript@5.9.3/node_modules/typescript`, not an absolute
+  path), and CocoaPods' generated xcconfigs carry no absolute paths either, so
+  neither needed regenerating. Only three files hardcoded the old location —
+  `docs/HANDOFF.md`, this file, and `.claude/launch.json` in the *parent*
+  directory, which is outside the repo and easy to miss.
 
-  ```bash
-  mv ~/ACTIVE/ai-exercise-coach/AthleteAI_tyson ~/ACTIVE/ai-exercise-coach/4form-ai
-  ```
-
-  Then update the two absolute paths in `docs/HANDOFF.md`, and re-run
-  `pnpm install` — a moved workspace root invalidates pnpm's symlinks. Note
-  `docs/RUNNING-THE-APP.md` warns the path must contain no spaces; `4form-ai`
-  is fine.
+  Do it with nothing running: a Metro watcher or Xcode holding the old path is
+  what actually costs an afternoon, not the `mv` itself.
 - 🟡 **App icon** — `assets/images/*.png` still render the old "A, measured
   across" mark, and `scripts/generate-icons.py` still draws it. Replacing the
   four PNGs (`icon.png`, `adaptive-icon.png`, `icon-store.png`, `icon-tinted.png`,

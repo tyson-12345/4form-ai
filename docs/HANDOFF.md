@@ -20,7 +20,7 @@ Written so a session with no prior context can pick up and be useful in one read
 
 | Thing | Value |
 |---|---|
-| Repo | `/Users/tysonyoum/ACTIVE/ai-exercise-coach/AthleteAI_tyson` — local dir still carries the old name |
+| Repo | `/Users/tysonyoum/ACTIVE/ai-exercise-coach/4form-ai` |
 | Branch | `main` — single branch, keep it that way |
 | GitHub | `tyson-12345/4form-ai` (public) |
 | Live API | `https://fourformai-production-0b7f.up.railway.app` |
@@ -70,7 +70,7 @@ gitignored (~1.8GB) so it exists only on this machine.
 xcrun simctl boot 27BBE9C0-B829-491B-B135-01C7FFCD18ED
 
 # 2. Start Metro (leave running)
-cd /Users/tysonyoum/ACTIVE/ai-exercise-coach/AthleteAI_tyson/artifacts/fourform-mobile
+cd /Users/tysonyoum/ACTIVE/ai-exercise-coach/4form-ai/artifacts/fourform-mobile
 pnpm exec expo start --port 8081
 
 # 3. Install + launch the already-built app
