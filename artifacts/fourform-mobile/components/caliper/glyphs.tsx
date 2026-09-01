@@ -14,43 +14,57 @@ import Svg, { Line, Path, Circle, Polyline, Rect, Polygon } from "react-native-s
 import { color } from "@/constants/caliper";
 
 /**
- * The Caliper mark — an "A" whose crossbar is the live measurement.
+ * The 4Form mark — the numeral 4 drawn as a measured angle.
  *
- * Same geometry as the app icon (`scripts/generate-icons.py`, which is the
- * source of truth for the rasters). Kept here as well so the mark can appear
- * *inside* the app without shipping a bitmap: at these sizes a PNG would either
- * be soft or oversized, and the whole mark is two strokes.
+ * A vertical stem and a horizontal crossbar form the neutral frame; the
+ * diagonal is the limb under measurement and is the only cobalt in the mark.
+ * That is the same rule the rest of the system runs on — cobalt means "the
+ * measurement", never decoration.
  *
- * The crossbar is the only cobalt in the mark, which is the same rule the rest
- * of the system runs on — cobalt means "the measurement", never decoration.
+ * Same geometry as the app icon (`scripts/generate-icons.py`, which rasterises
+ * the same table for the PNGs). Kept here as SVG so the mark can appear
+ * *inside* the app without shipping a bitmap: at these sizes a PNG would be
+ * either soft or oversized, and the whole mark is three strokes.
  *
- * Optical compensation matches the design: below ~40px the strokes thicken and
- * the apex drops, so the crossbar keeps its own row of pixels rather than
- * merging into the legs.
+ * ── Optical size ladder ────────────────────────────────────────────────────
+ * Coordinates are transcribed verbatim from the design handoff, which is
+ * emphatic that the mark must not be scaled from one master: as it shrinks the
+ * crossbar drops, the diagonal reaches further left and the stroke thickens,
+ * so the counter — the triangular void between diagonal, stem and crossbar —
+ * stays open. Interpolating between rungs would smooth away a deliberate step,
+ * which is why this is a lookup and not a formula.
  */
+
+/** Rungs of the ladder, keyed by the display size each was drawn for. */
+const MARK_LADDER = [
+  { upTo: 16, stem: [108, 30, 108, 136], bar: [20, 117, 142, 117], diag: [108, 30, 21, 117], w: 18 },
+  { upTo: 29, stem: [107, 32, 107, 136], bar: [22, 118, 140, 118], diag: [107, 32, 23, 118], w: 20 },
+  { upTo: 40, stem: [106, 34, 106, 136], bar: [28, 114, 136, 114], diag: [106, 34, 28, 114], w: 19 },
+  { upTo: 60, stem: [105, 36, 105, 136], bar: [31, 110, 137, 110], diag: [105, 36, 32, 110], w: 17 },
+  { upTo: 120, stem: [104, 38, 104, 135], bar: [34, 107, 134, 107], diag: [104, 38, 37, 107], w: 15 },
+  { upTo: Infinity, stem: [104, 36, 104, 136], bar: [34, 106, 134, 106], diag: [104, 36, 38, 106], w: 14 },
+] as const;
+
 export function AppMark({
   size = 44,
   field = color.ink,
-  letter = color.paper,
-  bar = color.cobalt,
+  frame = color.paper,
+  limb = color.cobalt,
   rounded = true,
 }: {
   size?: number;
   /** `null` renders the mark alone, with no field behind it. */
   field?: string | null;
-  letter?: string;
-  bar?: string;
+  /** Stem and crossbar — the neutral frame. */
+  frame?: string;
+  /** The diagonal — the limb being measured. */
+  limb?: string;
   rounded?: boolean;
 }) {
-  // Two optical sizes, matching the design's ladder. Interpolating between them
-  // would smooth away a deliberate step.
-  const small = size < 40;
-  const apexY = small ? 50 : 44;
-  const legBottom = small ? 126 : 128;
-  const letterW = small ? 22 : 14;
-  const barX1 = small ? 66 : 64;
-  const barX2 = small ? 102 : 104;
-  const barW = small ? 18 : 12;
+  // Take the smallest rung that still covers this size, so a mark between two
+  // rungs is over-compensated rather than under — a counter that is slightly
+  // too open reads correctly; one that has closed does not.
+  const rung = MARK_LADDER.find((r) => size <= r.upTo) ?? MARK_LADDER[MARK_LADDER.length - 1];
 
   return (
     <View
@@ -63,21 +77,31 @@ export function AppMark({
       ]}
     >
       <Svg width={size} height={size} viewBox="0 0 168 168">
-        <Path
-          d={`M 50 ${legBottom} L 84 ${apexY} L 118 ${legBottom}`}
-          stroke={letter}
-          strokeWidth={letterW}
-          fill="none"
+        <Line
+          x1={rung.stem[0]}
+          y1={rung.stem[1]}
+          x2={rung.stem[2]}
+          y2={rung.stem[3]}
+          stroke={frame}
+          strokeWidth={rung.w}
           strokeLinecap="round"
-          strokeLinejoin="round"
         />
         <Line
-          x1={barX1}
-          y1={100}
-          x2={barX2}
-          y2={100}
-          stroke={bar}
-          strokeWidth={barW}
+          x1={rung.bar[0]}
+          y1={rung.bar[1]}
+          x2={rung.bar[2]}
+          y2={rung.bar[3]}
+          stroke={frame}
+          strokeWidth={rung.w}
+          strokeLinecap="round"
+        />
+        <Line
+          x1={rung.diag[0]}
+          y1={rung.diag[1]}
+          x2={rung.diag[2]}
+          y2={rung.diag[3]}
+          stroke={limb}
+          strokeWidth={rung.w}
           strokeLinecap="round"
         />
       </Svg>
