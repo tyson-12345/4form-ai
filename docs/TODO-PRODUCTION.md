@@ -14,7 +14,7 @@ Status key: 🔴 blocks launch · 🟠 blocks charging money · 🟡 quality/sca
 The app **measures and scores correctly today**, and as of 2026-08-12 it is
 **deployed and reachable**. Pose tracking, the scoring engine, auth, the paywall
 logic, account deletion, and password reset all work and are tested
-(653 tests green — 483 API, 170 mobile).
+(673 tests green — 483 API, 170 mobile, 20 scripts).
 
 Live at `https://athleteai-production-0b7f.up.railway.app`, on Supabase, with
 coaching write-ups and chat enabled and password reset delivering real mail.

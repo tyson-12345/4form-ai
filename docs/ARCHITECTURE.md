@@ -257,7 +257,7 @@ Migration: `lib/db/migrations/0001_security_and_measured_analysis.sql`
 
 ## Testing
 
-653 tests: 483 in `artifacts/api-server`, 170 in `artifacts/fourform-mobile`.
+673 tests: 483 in `artifacts/api-server`, 170 in `artifacts/fourform-mobile`, 20 in `scripts`.
 
 ```bash
 pnpm --filter @workspace/api-server test

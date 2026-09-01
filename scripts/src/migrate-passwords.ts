@@ -16,29 +16,16 @@
  *   pnpm --filter @workspace/scripts run migrate-passwords          # report only
  *   pnpm --filter @workspace/scripts run migrate-passwords -- --apply
  *
+ * Federated-only accounts (Apple/Google) have a NULL `password_hash` and are
+ * reported under `none`. They are never listed as weak and never tagged — see
+ * `auditUsers` in ./password-audit.ts for why tagging one would be harmful.
+ *
  * Passwords and hashes are never printed. Output is counts and user ids only.
  */
 
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-
-type PasswordAlgo = "bcrypt" | "md5" | "sha1" | "sha256" | "plaintext";
-
-const BCRYPT_ROUNDS = 12;
-
-/** Identify the storage format of a hash by shape. */
-function detectAlgo(hash: string): PasswordAlgo {
-  if (/^\$2[aby]\$\d{2}\$/.test(hash)) return "bcrypt";
-  if (/^[a-f0-9]{32}$/i.test(hash)) return "md5";
-  if (/^[a-f0-9]{40}$/i.test(hash)) return "sha1";
-  if (/^[a-f0-9]{64}$/i.test(hash)) return "sha256";
-  return "plaintext";
-}
-
-function bcryptCost(hash: string): number | null {
-  const m = /^\$2[aby]\$(\d{2})\$/.exec(hash);
-  return m ? Number(m[1]) : null;
-}
+import { auditUsers } from "./password-audit.js";
 
 async function main(): Promise<void> {
   const apply = process.argv.includes("--apply");
@@ -51,38 +38,15 @@ async function main(): Promise<void> {
     })
     .from(usersTable);
 
-  const counts: Record<string, number> = {};
-  const needsAttention: { id: string; detected: PasswordAlgo; reason: string }[] = [];
-
-  for (const user of users) {
-    const detected = detectAlgo(user.passwordHash);
-    counts[detected] = (counts[detected] ?? 0) + 1;
-
-    if (detected !== "bcrypt") {
-      needsAttention.push({
-        id: user.id,
-        detected,
-        reason: `stored as ${detected} — will be re-hashed on next successful login`,
-      });
-      continue;
-    }
-
-    const cost = bcryptCost(user.passwordHash);
-    if (cost !== null && cost < BCRYPT_ROUNDS) {
-      needsAttention.push({
-        id: user.id,
-        detected,
-        reason: `bcrypt cost ${cost} is below the current ${BCRYPT_ROUNDS} — will be re-hashed on next successful login`,
-      });
-    }
-  }
+  const { counts, needsAttention } = auditUsers(users);
 
   console.log("Password storage audit");
   console.log("──────────────────────");
   console.log(`Total users: ${users.length}`);
   for (const [algo, n] of Object.entries(counts).sort()) {
-    const marker = algo === "bcrypt" ? "ok  " : "WEAK";
-    console.log(`  [${marker}] ${algo.padEnd(10)} ${n}`);
+    const marker = algo === "bcrypt" || algo === "none" ? "ok  " : "WEAK";
+    const note = algo === "none" ? "  federated-only (Apple/Google), no password stored" : "";
+    console.log(`  [${marker}] ${algo.padEnd(10)} ${n}${note}`);
   }
   console.log("");
 
