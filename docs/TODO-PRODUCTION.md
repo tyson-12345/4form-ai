@@ -62,7 +62,7 @@ empty in the local `artifacts/api-server/.env`, so coaching write-ups and chat
 are disabled when running the server locally — that is a local dev gap, not a
 production one.
 
-### 1.3 Configure a mail provider — 🔴 BROKEN 2026-09-01, pending domain verification
+### 1.3 Configure a mail provider — ✅ WORKING 2026-09-01, own domain
 
 Resend is wired and live. A real password reset was completed end to end:
 request → token → email → inbox → link → landing page → password changed → old
@@ -74,35 +74,31 @@ reset, so any token issued beforehand died with it.
 > else. It currently points at the Railway host, which serves the reset page;
 > move it to `https://4formai.com` once that host serves the page instead.
 
-> 🔴 **Mail is failing on every send as of 2026-09-01.** `MAIL_FROM` was moved to
-> `4Form AI <no-reply@mail.4formai.com>` ahead of the DNS work, deliberately, so
-> it starts working the moment the domain verifies. Until then Resend answers:
+> ✅ **Sending from `no-reply@mail.4formai.com` since 2026-09-01.** The domain
+> was registered in Resend and its DKIM/SPF published at Porkbun the same day;
+> a real send was accepted through `pnpm mail:verify`. Mail now reaches any
+> address, not just the Resend account owner — the long-standing test-sender
+> limitation is gone.
 >
-> ```
-> 403: The mail.4formai.com domain is not verified.
-> ```
+> Two traps worth recording, both of which produced confidently wrong readings
+> during setup:
 >
-> This is a **regression from the previous state**, where the test sender at
-> least delivered to the Resend account owner. Do not read §1.3's history below
-> as "mail works" — it does not, right now.
+> - **`GET /domains` returns `[]` even when the domain exists and is verified.**
+>   The production key is send-only, so a listing is empty for permissions
+>   reasons, not because nothing is registered. Do not use it to check state.
+> - **The DKIM record is at `resend._domainkey.mail.4formai.com`,** not
+>   `resend._domainkey.4formai.com`. Query the wrong name and Porkbun's wildcard
+>   answers with `uixie.porkbun.com`, which looks like a misconfigured record
+>   rather than a missing one.
 >
-> To finish, in order:
-> 1. Resend dashboard → **Domains → Add Domain** → `mail.4formai.com`. It is not
->    registered at all yet — `GET /domains` returns an empty list, so this is not
->    a pending-DNS situation. The production `RESEND_API_KEY` is **send-only**, so
->    this cannot be scripted; it has to be the dashboard.
-> 2. Publish the DKIM/SPF records it generates in **Porkbun**. Note Porkbun's
->    wildcard currently answers *every* subdomain lookup with `uixie.porkbun.com`,
->    including `resend._domainkey.4formai.com` — so a naive `dig` looks like a
->    record exists when none does. Check the value, not just for an answer.
-> 3. Re-run the verifier below. No code or config change is needed afterwards.
+> The only trustworthy check is an actual send:
 >
 > ```bash
 > cd artifacts/api-server && pnpm mail:verify you@example.com
 > ```
 >
-> It sends through the real `sendEmail` and names the specific misconfiguration —
-> it is what produced the 403 above.
+> Accepted is not delivered — open the inbox and confirm `spf=pass dkim=pass
+> dmarc=pass` in the raw headers.
 
 Resend is wired and the plumbing is proven: a real password reset completed end
 to end on 2026-08-12 — request → token → email → inbox → link → landing page →
@@ -224,9 +220,9 @@ appears.
 Everything inside the repo is done. These live outside it and still carry the
 old name — each needs a console login:
 
-- 🔴 **DNS + Resend** — `MAIL_FROM` is already set on the service; what remains
-  is registering `mail.4formai.com` in the Resend dashboard and publishing its
-  DKIM/SPF records at Porkbun. Mail is failing until then — see §1.3.
+- ✅ **DNS + Resend** — done 2026-09-01. `mail.4formai.com` is verified in
+  Resend, DKIM/SPF are live at Porkbun, `MAIL_FROM` is set on the service, and a
+  real send was accepted. See §1.3 for the two checks that lie.
 - 🔴 **Point `4formai.com` at something** — it still 302s to `4formai-com.l.ink`,
   a Porkbun parking page. Needed before `APP_PUBLIC_URL` can move off the Railway
   host, and before the store-required privacy/terms URLs can resolve.

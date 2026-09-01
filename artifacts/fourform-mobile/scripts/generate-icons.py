@@ -1,277 +1,296 @@
 #!/usr/bin/env python3
 """
-Generate every app-icon asset from the Caliper "A, measured across" mark.
+Generate every app-icon asset from the 4Form "4, measured" mark.
 
-⚠️  SUPERSEDED BY THE 2026-09-01 RENAME. This script still draws the "A" of
-    AthleteAI. The app is now **4Form AI**, and the mark is being redrawn
-    separately. Until the new PNGs land in `assets/images/`, running this
-    script will overwrite them with the old letterform — so do not run it.
-    Nothing reads it at build time; Expo consumes the committed PNGs directly.
+── The mark ─────────────────────────────────────────────────────────────────
+The numeral 4 drawn as a measured angle. A vertical stem and a horizontal
+crossbar form the neutral frame; the diagonal is the limb under measurement and
+is the only coloured element. Concept 1a "Angle" from the icon exploration.
 
-── Why this is a script and not a folder of exported PNGs ───────────────────
-The icon is pure geometry: two round-capped strokes on a field. Committing only
-the rasters would mean the source of truth lives in a design tool nobody can
-run from the repo. This script *is* the source — the PNGs are build output that
-happen to be committed because Expo needs them on disk.
+Cobalt appears nowhere in the icon except the diagonal. That is the system's one
+rule, and it is the same rule the app's design system runs on.
+
+── Provenance ───────────────────────────────────────────────────────────────
+Geometry is transcribed verbatim from the design handoff's production SVGs
+(`design_handoff_4form_app_icon/assets/` in the Claude Design project
+"Athlete AI Redesign"). Every coordinate, stroke weight and hex value below is
+final — the handoff is explicit that the mark must not be redrawn by eye.
+
+This script exists because the SVGs cannot be rasterised on this machine: there
+is no rsvg-convert, Inkscape, ImageMagick, cairosvg or Pillow available. The
+mark needs none of them. Every stroke is round-capped, and a round-capped stroke
+is exactly the set of points within half the stroke width of a line segment — a
+capsule. Signed distance to a segment renders that precisely, with analytic
+anti-aliasing, in the standard library alone.
 
 Re-run after any change to the mark:
 
     python3 scripts/generate-icons.py
 
-── The mark ─────────────────────────────────────────────────────────────────
-Design: claude.ai/design "Athlete-AI-App-Icon-A1", variant 01 · PRIMARY.
-(The original AthleteAI mark. Kept as the record of what shipped; see the
-warning above.)
+── Optical size ladder ──────────────────────────────────────────────────────
+The handoff's central requirement: do NOT scale one master down to every size.
+As the icon shrinks the crossbar drops, the diagonal reaches further left, and
+the stroke thickens slightly — otherwise the counter (the triangular void
+between diagonal, stem and crossbar) closes and the mark reads as a blue slash
+over a bone "T". Each size below carries its own hand-corrected geometry.
 
-An "A" whose crossbar is the live measurement. One rule holds every variant:
-the letter is the neutral, the crossbar is the measurement, and cobalt appears
-nowhere else. This is the same rule the app's design system runs on — cobalt is
-reserved, never decorative.
-
-── Optical compensation ─────────────────────────────────────────────────────
-The design specifies different geometry per size: as the icon shrinks the
-strokes thicken and the apex drops, so the crossbar keeps its own row of pixels
-instead of merging into the legs. Those measurements are transcribed exactly in
-SPECS below rather than interpolated — they are design decisions, not a curve.
-
-Rendering is done by hand at 8x and downsampled, because a round-capped stroke
-is just a capsule (a rectangle plus a disc at each end) and Pillow draws those
-exactly. No SVG rasterizer is available on this machine, and adding one as a
-dependency for four PNGs would be a poor trade.
+Acceptance check, from the handoff: at every rasterised size the counter must
+show at least 3 clear device pixels of span. `verify_counter()` asserts this and
+the script fails rather than emit a mark whose counter has closed.
 """
 
 from __future__ import annotations
 
-import math
 import pathlib
+import struct
+import zlib
 from dataclasses import dataclass
 
-from PIL import Image, ImageDraw
+# ── Palette ──────────────────────────────────────────────────────────────────
 
-# ── Palette (Caliper) ────────────────────────────────────────────────────────
+INK = (0x10, 0x13, 0x12)
+BONE = (0xED, 0xEC, 0xE7)
+COBALT = (0x24, 0x36, 0xE8)
+INK_SOFT = (0x1C, 0x1F, 0x1E)
+GREY_LIMB = (0x83, 0x86, 0x7F)
 
-INK = "#101312"
-BONE = "#EDECE7"
-COBALT = "#2436E8"
-WHITE = "#FFFFFF"
-TINT_FIELD = "#1C1F1E"
-TINT_BAR = "#83867F"
-
-# The artwork's own coordinate space, matching the design's SVG viewBox.
+# All geometry is authored on a 168 x 168 viewBox.
 VIEWBOX = 168.0
-
-# Supersampling factor. 8x is well past the point of visible improvement at
-# 1024px and still renders in under a second.
-SS = 8
 
 
 @dataclass(frozen=True)
-class Spec:
-    """Geometry for one optical size, transcribed from the design."""
+class Geometry:
+    """One rung of the optical size ladder, in viewBox units."""
 
-    apex_y: float
-    """Y of the A's apex. Drops as the icon shrinks."""
-    leg_bottom: float
-    """Y where the legs end."""
-    letter_w: float
-    """Letter stroke width."""
-    bar_x1: float
-    bar_x2: float
-    bar_w: float
-    """Crossbar stroke width."""
+    stem: tuple[float, float, float, float]
+    crossbar: tuple[float, float, float, float]
+    diagonal: tuple[float, float, float, float]
+    stroke: float
+    radius: float = 0.0  # corner radius; web favicons only
 
 
-# Keyed by the design's own size labels. Values are exact, not interpolated.
-SPECS: dict[str, Spec] = {
-    "180pt": Spec(apex_y=44, leg_bottom=128, letter_w=14, bar_x1=64, bar_x2=104, bar_w=12),
-    "120pt": Spec(apex_y=44, leg_bottom=128, letter_w=15, bar_x1=64, bar_x2=104, bar_w=13),
-    "60pt": Spec(apex_y=46, leg_bottom=128, letter_w=17, bar_x1=64, bar_x2=104, bar_w=14),
-    "40pt": Spec(apex_y=48, leg_bottom=128, letter_w=19, bar_x1=65, bar_x2=103, bar_w=16),
-    "29pt": Spec(apex_y=50, leg_bottom=126, letter_w=22, bar_x1=66, bar_x2=102, bar_w=18),
-    "32px": Spec(apex_y=50, leg_bottom=126, letter_w=22, bar_x1=66, bar_x2=102, bar_w=18),
-    "16px": Spec(apex_y=52, leg_bottom=126, letter_w=24, bar_x1=66, bar_x2=102, bar_w=20),
+# Transcribed from the handoff SVGs. Do not adjust by eye.
+LADDER: dict[str, Geometry] = {
+    # 4form-icon-bone-1024.svg — also 180pt
+    "1024": Geometry((104, 36, 104, 136), (34, 106, 134, 106), (104, 36, 38, 106), 14),
+    # 4form-icon-bone-120.svg
+    "120": Geometry((105, 35, 105, 136), (31, 107, 136, 107), (105, 35, 34, 107), 15),
+    # 4form-icon-bone-60.svg
+    "60": Geometry((106, 34, 106, 136), (28, 110, 138, 110), (106, 34, 30, 110), 17),
+    # 4form-icon-bone-40.svg
+    "40": Geometry((106, 33, 106, 136), (25, 114, 139, 114), (106, 33, 26, 114), 19),
+    # 4form-icon-bone-29.svg / 4form-favicon-32.svg
+    "29": Geometry((107, 32, 107, 136), (22, 118, 140, 118), (107, 32, 23, 118), 20),
+    # 4form-favicon-16.svg
+    "16": Geometry((107, 33, 107, 136), (23, 117, 139, 117), (107, 33, 24, 117), 18),
 }
 
-# The A's legs. X positions are constant across every size.
-LEG_LEFT_X = 50.0
-LEG_RIGHT_X = 118.0
-APEX_X = 84.0
+# Colour roles. Field of None means transparent — used for the Android
+# adaptive-icon foreground, which is composited over its own background layer.
+ROLES = {
+    "bone": (BONE, INK, COBALT),
+    "ink": (INK, BONE, COBALT),
+    "tinted": (INK_SOFT, BONE, GREY_LIMB),
+    "glyph": (None, INK, COBALT),
+}
 
 
-def capsule(draw: ImageDraw.ImageDraw, p0, p1, width: float, fill) -> None:
+# ── Rendering ────────────────────────────────────────────────────────────────
+
+
+def _segment_distance(px: float, py: float, seg: tuple[float, float, float, float]) -> float:
+    """Shortest distance from a point to a line segment."""
+    x1, y1, x2, y2 = seg
+    dx, dy = x2 - x1, y2 - y1
+    span = dx * dx + dy * dy
+    if span == 0.0:
+        t = 0.0
+    else:
+        t = ((px - x1) * dx + (py - y1) * dy) / span
+        t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+    ex, ey = x1 + t * dx - px, y1 + t * dy - py
+    return (ex * ex + ey * ey) ** 0.5
+
+
+def _coverage(distance: float, radius: float) -> float:
     """
-    Draw a round-capped line segment.
+    Analytic anti-aliasing: convert a signed distance to pixel coverage.
 
-    A stroke with `stroke-linecap="round"` is geometrically a rectangle between
-    the two endpoints plus a disc centred on each. Drawing it that way is exact
-    — no approximation of the cap, and joins between segments come out round for
-    free because the discs overlap.
+    One sample per pixel with a one-pixel linear ramp across the edge. This is
+    what supersampling approximates, without 16x the work — and for a capsule
+    the distance field is exact, so the edge is exact too.
     """
-    x0, y0 = p0
-    x1, y1 = p1
-    r = width / 2.0
+    sd = distance - radius
+    if sd <= -0.5:
+        return 1.0
+    if sd >= 0.5:
+        return 0.0
+    return 0.5 - sd
 
-    dx, dy = x1 - x0, y1 - y0
-    length = math.hypot(dx, dy)
-    if length > 0:
-        # Unit normal, scaled to the stroke's half-width.
-        nx, ny = -dy / length * r, dx / length * r
-        draw.polygon(
-            [
-                (x0 + nx, y0 + ny),
-                (x1 + nx, y1 + ny),
-                (x1 - nx, y1 - ny),
-                (x0 - nx, y0 - ny),
-            ],
-            fill=fill,
+
+def render(size: int, geom: Geometry, role: str) -> bytearray:
+    """Render the mark at `size` px square. Returns RGBA rows, top to bottom."""
+    field, frame, limb = ROLES[role]
+    scale = size / VIEWBOX
+    r = (geom.stroke / 2.0) * scale
+
+    def to_px(seg: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        return (seg[0] * scale, seg[1] * scale, seg[2] * scale, seg[3] * scale)
+
+    # Painted in SVG document order; the diagonal is last, so it wins overlaps.
+    strokes = [
+        (to_px(geom.stem), frame),
+        (to_px(geom.crossbar), frame),
+        (to_px(geom.diagonal), limb),
+    ]
+    corner = geom.radius * scale
+
+    buf = bytearray(size * size * 4)
+    for y in range(size):
+        py = y + 0.5
+        row = y * size * 4
+        for x in range(size):
+            px = x + 0.5
+
+            if field is None:
+                cr, cg, cb, ca = 0, 0, 0, 0.0
+            else:
+                cr, cg, cb = field
+                ca = _field_alpha(px, py, size, corner)
+
+            for seg, colour in strokes:
+                cov = _coverage(_segment_distance(px, py, seg), r)
+                if cov <= 0.0:
+                    continue
+                out_a = cov + ca * (1.0 - cov)
+                if out_a <= 0.0:
+                    continue
+                cr = int(round((colour[0] * cov + cr * ca * (1.0 - cov)) / out_a))
+                cg = int(round((colour[1] * cov + cg * ca * (1.0 - cov)) / out_a))
+                cb = int(round((colour[2] * cov + cb * ca * (1.0 - cov)) / out_a))
+                ca = out_a
+
+            i = row + x * 4
+            buf[i] = cr
+            buf[i + 1] = cg
+            buf[i + 2] = cb
+            buf[i + 3] = int(round(ca * 255))
+    return buf
+
+
+def _field_alpha(px: float, py: float, size: int, corner: float) -> float:
+    """Coverage of the background square, with an optional rounded corner."""
+    if corner <= 0.0:
+        return 1.0
+    # Distance outside a rounded rect spanning the full canvas.
+    qx = abs(px - size / 2.0) - (size / 2.0 - corner)
+    qy = abs(py - size / 2.0) - (size / 2.0 - corner)
+    if qx <= 0.0 and qy <= 0.0:
+        return 1.0
+    ax, ay = max(qx, 0.0), max(qy, 0.0)
+    return _coverage((ax * ax + ay * ay) ** 0.5, corner)
+
+
+# ── Acceptance check ─────────────────────────────────────────────────────────
+
+
+def verify_counter(buf: bytearray, size: int, geom: Geometry) -> int:
+    """
+    Measure the counter — the triangular void between diagonal, stem and
+    crossbar — in device pixels, and return its widest horizontal span.
+
+    The handoff requires at least 3 clear pixels. Below that the mark stops
+    reading as a 4, which is precisely the failure the size ladder prevents, so
+    this is checked rather than trusted.
+    """
+    scale = size / VIEWBOX
+    # Scan the band between the apex and the crossbar, left of the stem.
+    y_top = int(geom.stem[1] * scale)
+    y_bot = int(geom.crossbar[1] * scale)
+    x_right = int(geom.stem[0] * scale)
+    field = ROLES["bone"][0]
+
+    widest = 0
+    for y in range(y_top, y_bot):
+        run = 0
+        best = 0
+        for x in range(0, x_right):
+            i = (y * size + x) * 4
+            # A "clear" pixel is the untouched field colour.
+            if (buf[i], buf[i + 1], buf[i + 2]) == field and buf[i + 3] == 255:
+                run += 1
+                best = max(best, run)
+            else:
+                run = 0
+        widest = max(widest, best)
+    return widest
+
+
+# ── PNG output ───────────────────────────────────────────────────────────────
+
+
+def write_png(path: pathlib.Path, buf: bytearray, size: int) -> None:
+    """Write RGBA pixels as a PNG. No dependencies; zlib and struct suffice."""
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
         )
 
-    for cx, cy in ((x0, y0), (x1, y1)):
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=fill)
+    raw = bytearray()
+    stride = size * 4
+    for y in range(size):
+        raw.append(0)  # filter type 0 (None)
+        raw += buf[y * stride : (y + 1) * stride]
+
+    png = b"\x89PNG\r\n\x1a\n"
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+    png += chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+    png += chunk(b"IEND", b"")
+    path.write_bytes(png)
 
 
-def rounded_rect_mask(size: int, radius: float) -> Image.Image:
-    """An 8-bit mask for a rounded square, supersampled then reduced."""
-    big = Image.new("L", (size * SS, size * SS), 0)
-    ImageDraw.Draw(big).rounded_rectangle(
-        [0, 0, size * SS - 1, size * SS - 1], radius=radius * SS, fill=255
-    )
-    return big.resize((size, size), Image.LANCZOS)
+# ── Outputs ──────────────────────────────────────────────────────────────────
 
-
-def draw_mark(
-    size: int,
-    spec: Spec,
-    letter: str,
-    bar: str,
-    *,
-    field: str | None,
-    corner_radius: float | None = None,
-    mark_scale: float = 1.0,
-) -> Image.Image:
-    """
-    Render the mark at `size` px.
-
-    `field=None` leaves the background transparent (Android's adaptive
-    foreground, which is composited over its own background layer).
-    `mark_scale` shrinks the artwork within the canvas without moving it off
-    centre — used to fit Android's safe zone.
-    """
-    canvas = size * SS
-    img = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    if field is not None:
-        if corner_radius is None:
-            draw.rectangle([0, 0, canvas - 1, canvas - 1], fill=field)
-        else:
-            draw.rounded_rectangle(
-                [0, 0, canvas - 1, canvas - 1], radius=corner_radius * SS, fill=field
-            )
-
-    # Map viewBox units to pixels, scaled about the canvas centre.
-    unit = (canvas / VIEWBOX) * mark_scale
-    offset = canvas / 2.0 - (VIEWBOX / 2.0) * unit
-
-    def pt(x: float, y: float) -> tuple[float, float]:
-        return (offset + x * unit, offset + y * unit)
-
-    # The A: two legs meeting at the apex. Drawn as separate capsules — the
-    # overlapping end discs produce the round join the design specifies.
-    lw = spec.letter_w * unit
-    capsule(draw, pt(LEG_LEFT_X, spec.leg_bottom), pt(APEX_X, spec.apex_y), lw, letter)
-    capsule(draw, pt(LEG_RIGHT_X, spec.leg_bottom), pt(APEX_X, spec.apex_y), lw, letter)
-
-    # The crossbar — the measurement, and the only cobalt in the system.
-    capsule(draw, pt(spec.bar_x1, 100), pt(spec.bar_x2, 100), spec.bar_w * unit, bar)
-
-    return img.resize((size, size), Image.LANCZOS)
+# Each output names the ladder rung whose geometry it must use. Picking the rung
+# by output size is the whole point — see the module docstring.
+OUTPUTS = [
+    # file,                size, rung,  role,     what it is
+    ("icon.png", 1024, "1024", "bone", "iOS/Expo master, App Store"),
+    ("icon-store.png", 1024, "1024", "bone", "store listing"),
+    ("icon-tinted.png", 1024, "1024", "tinted", "iOS tinted mode"),
+    ("adaptive-icon.png", 1024, "1024", "glyph", "Android foreground layer"),
+    ("favicon.png", 32, "29", "bone", "web favicon"),
+]
 
 
 def main() -> None:
-    root = pathlib.Path(__file__).resolve().parent.parent
-    out = root / "assets" / "images"
+    here = pathlib.Path(__file__).resolve().parent
+    out = here.parent / "assets" / "images"
     out.mkdir(parents=True, exist_ok=True)
 
-    written: list[tuple[str, str]] = []
+    for name, size, rung, role in ((o[0], o[1], o[2], o[3]) for o in OUTPUTS):
+        geom = LADDER[rung]
+        buf = render(size, geom, role)
 
-    def save(img: Image.Image, name: str, note: str, *, flatten: str | None = None) -> None:
-        path = out / name
-        if flatten is not None:
-            # iOS rejects an icon with an alpha channel outright.
-            bg = Image.new("RGB", img.size, flatten)
-            bg.paste(img, mask=img.split()[3])
-            bg.save(path, "PNG")
+        if role in ("bone", "ink"):
+            span = verify_counter(buf, size, geom)
+            if span < 3:
+                raise SystemExit(
+                    f"{name}: counter is {span}px wide, below the 3px minimum. "
+                    f"The wrong ladder rung was used for this size."
+                )
+            note = f"counter {span}px"
         else:
-            img.save(path, "PNG")
-        written.append((name, note))
+            note = "no field to measure"
 
-    # ── iOS / primary app icon ──
-    # 1024x1024, square, no alpha, no rounded corners: iOS applies its own mask,
-    # and a pre-rounded icon shows dark corners inside it.
-    save(
-        draw_mark(1024, SPECS["180pt"], BONE, COBALT, field=INK),
-        "icon.png",
-        "1024 · iOS + primary · square, opaque",
-        flatten=INK,
-    )
+        write_png(out / name, buf, size)
+        print(f"  {name:<20} {size:>5}px  rung {rung:<5} {role:<7} {note}")
 
-    # ── Android adaptive foreground ──
-    # Transparent, and the artwork must survive an aggressive circular mask.
-    # Android guarantees only the centre 66/108 of the canvas; the mark's
-    # bounding box diagonal is scaled to fit inside that circle.
-    bbox_w = (LEG_RIGHT_X - LEG_LEFT_X) + SPECS["180pt"].letter_w
-    bbox_h = (SPECS["180pt"].leg_bottom - SPECS["180pt"].apex_y) + SPECS["180pt"].letter_w
-    diagonal = math.hypot(bbox_w, bbox_h)
-    safe_fraction = 66.0 / 108.0
-    adaptive_scale = (VIEWBOX * safe_fraction) / diagonal
-
-    save(
-        draw_mark(
-            1024, SPECS["180pt"], BONE, COBALT, field=None, mark_scale=adaptive_scale
-        ),
-        "adaptive-icon.png",
-        f"1024 · Android foreground · transparent, {adaptive_scale:.3f}x for safe zone",
-    )
-
-    # ── Splash ──
-    # Same field as the icon so launch reads as one continuous surface. The mark
-    # is small: a splash is a held breath, not a billboard.
-    save(
-        draw_mark(1284, SPECS["180pt"], BONE, COBALT, field=INK, mark_scale=0.34),
-        "splash.png",
-        "1284 · splash · mark on ink",
-        flatten=INK,
-    )
-
-    # ── Web favicon ──
-    # Uses the 32px optical spec: thicker strokes, dropped apex, so the crossbar
-    # still reads at tab size.
-    save(
-        draw_mark(48, SPECS["32px"], BONE, COBALT, field=INK, corner_radius=10),
-        "favicon.png",
-        "48 · web favicon · 32px optical spec",
-    )
-
-    # ── Store / marketing (cobalt field, roles inverted) ──
-    save(
-        draw_mark(1024, SPECS["180pt"], WHITE, INK, field=COBALT),
-        "icon-store.png",
-        "1024 · store listing · cobalt field",
-        flatten=COBALT,
-    )
-
-    # ── iOS tinted / monochrome ──
-    save(
-        draw_mark(1024, SPECS["180pt"], BONE, TINT_BAR, field=TINT_FIELD),
-        "icon-tinted.png",
-        "1024 · iOS tinted · no hue, bar reads by value",
-        flatten=TINT_FIELD,
-    )
-
-    width = max(len(n) for n, _ in written)
-    for name, note in written:
-        print(f"  {name:<{width}}  {note}")
+    print(f"\nWrote {len(OUTPUTS)} files to {out}")
 
 
 if __name__ == "__main__":
