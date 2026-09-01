@@ -1,4 +1,4 @@
-# AthleteAI — Runbook
+# 4Form AI — Runbook
 
 Getting it running, and what has to be true before it ships.
 
@@ -42,7 +42,7 @@ ALLOW_DEV_TIER_OVERRIDE=true
 
 # Email (unset = links are generated but never delivered)
 # RESEND_API_KEY=re_...
-# MAIL_FROM=AthleteAI <noreply@yourdomain.com>
+# MAIL_FROM=4Form AI <no-reply@mail.4formai.com>
 # APP_PUBLIC_URL=https://athleteai-production-0b7f.up.railway.app
 
 # Billing (unset = purchases are disabled and the app says so)
@@ -50,14 +50,14 @@ ALLOW_DEV_TIER_OVERRIDE=true
 # REVENUECAT_WEBHOOK_SECRET=...
 ```
 
-Create `artifacts/lense-mobile/.env`:
+Create `artifacts/fourform-mobile/.env`:
 
 ```bash
 EXPO_PUBLIC_API_URL=http://localhost:3001
 ```
 
 > On a physical device, `localhost` is the phone. Use your machine's LAN IP
-> (`http://192.168.x.x:3001`) or run `pnpm --filter @workspace/lense-mobile dev:tunnel`.
+> (`http://192.168.x.x:3001`) or run `pnpm --filter @workspace/fourform-mobile dev:tunnel`.
 
 Apply the schema:
 
@@ -74,7 +74,7 @@ pnpm --filter @workspace/db run push
 pnpm --filter @workspace/api-server dev
 
 # Mobile
-pnpm --filter @workspace/lense-mobile dev
+pnpm --filter @workspace/fourform-mobile dev
 ```
 
 Health check: `curl http://localhost:3001/api/healthz`
@@ -195,7 +195,7 @@ on a successful sign-in.
 ### Product
 
 - [ ] Have a coach or physio review the risk thresholds in
-      `lense-mobile/lib/poseTracker.ts`. They are reasonable general ranges, not
+      `fourform-mobile/lib/poseTracker.ts`. They are reasonable general ranges, not
       sport-specific or clinically validated norms, and the app makes claims about
       injury risk on the strength of them.
 - [ ] Confirm the medical disclaimer wording with someone qualified

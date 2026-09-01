@@ -54,11 +54,11 @@ if (!JWT_SECRET) throw new Error("JWT_SECRET environment variable is required");
  */
 const FLOW_SECRET: Buffer = crypto
   .createHmac("sha256", JWT_SECRET)
-  .update("athleteai-oauth-flow-v1")
+  .update("fourformai-oauth-flow-v1")
   .digest();
 
-/** Deliberately different from the session issuer, which is `athleteai-api`. */
-export const FLOW_ISSUER = "athleteai-api/oauth-flow";
+/** Deliberately different from the session issuer, which is `fourformai-api`. */
+export const FLOW_ISSUER = "fourformai-api/oauth-flow";
 
 /**
  * Long enough to type a birth date without rushing, short enough that a token

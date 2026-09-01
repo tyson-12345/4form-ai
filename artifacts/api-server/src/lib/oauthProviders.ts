@@ -16,7 +16,7 @@
  *     Google will happily issue a valid, correctly-signed ID token to *any*
  *     app for the same user. Without an `aud` check, the operator of any other
  *     Google-integrated app could take the token their own users hand them and
- *     replay it here to become those users on AthleteAI.
+ *     replay it here to become those users on 4Form AI.
  *  4. **Expiry**, with a small clock tolerance — these tokens live ~10 minutes.
  *  5. **Nonce**, when the caller supplied one. See `expectedNonce` below for
  *     exactly what this does and does not buy.

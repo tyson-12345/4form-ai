@@ -1,4 +1,4 @@
-# AthleteAI — Security
+# 4Form AI — Security
 
 What's protected, how, and what still isn't. Written to be read before launch.
 
@@ -26,7 +26,7 @@ guessing impractical at any length. The residual risk is a breach plus an
 offline crack, which is what the cost factor is for.
 
 The value lives in `lib/validate.ts` and is imported by the reset page and
-mirrored in `lense-mobile/constants/auth.ts`, so a form cannot state a rule the
+mirrored in `fourform-mobile/constants/auth.ts`, so a form cannot state a rule the
 server disagrees with.
 
 ### Legacy hash migration
@@ -459,7 +459,7 @@ index or creates an account under someone else's address.
 
 **The link challenge cannot authenticate.** It names a user and is handed to an
 unauthenticated caller, so it is signed with a key *derived* from `JWT_SECRET`
-(`HMAC(JWT_SECRET, "athleteai-oauth-flow-v1")`) rather than with it — cross-use
+(`HMAC(JWT_SECRET, "fourformai-oauth-flow-v1")`) rather than with it — cross-use
 is arithmetically impossible, not merely checked. Three further guards sit on
 top: a distinct issuer, a `purpose` claim `verifyToken` rejects, and the user id
 carried as `uid` rather than `userId`. All four are asserted separately in

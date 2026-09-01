@@ -47,7 +47,7 @@ catalog:
   '@tailwindcss/vite': ^4.1.14
   '@tanstack/react-query': ^5.90.21
   '@types/node': ^25.3.3
-  # Must match lense-mobile's pin (~19.1.10 / ~19.1.7, required by expo).
+  # Must match fourform-mobile's pin (~19.1.10 / ~19.1.7, required by expo).
   # Shared @radix-ui peers resolve against that version, so a newer catalog
   # entry gives mockup-sandbox a second, structurally-identical-but-unrelated
   # React type identity and breaks `tsc` with TS2322 on every `ref`.

@@ -3,6 +3,6 @@ outputs = []
 
 [[generated]]
 id = "f_vwJYVBGU7iOwO1LsIDr"
-uri = "file://artifacts/lense-mobile/assets/images/icon.png"
+uri = "file://artifacts/fourform-mobile/assets/images/icon.png"
 type = "image"
-title = "athleteai mobile icon"
+title = "4form-ai mobile icon"

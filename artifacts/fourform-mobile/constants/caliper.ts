@@ -1,5 +1,5 @@
 /**
- * Caliper — the AthleteAI design system.
+ * Caliper — the 4Form AI design system.
  *
  * "A measuring instrument, not a scoreboard."
  *

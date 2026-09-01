@@ -127,7 +127,7 @@ These are not bugs, and the harness knows it:
 
 Install once — it survives navigation via `addInitScript`:
 
-    browser_run_code_unsafe --filename artifacts/lense-mobile/e2e/install-audit.mjs
+    browser_run_code_unsafe --filename artifacts/fourform-mobile/e2e/install-audit.mjs
 
 Then on every route:
 
@@ -147,7 +147,7 @@ Then `await window.__uiReady` before each call.
 
 Regenerate `install-audit.mjs` after editing `audit.js`:
 
-    node artifacts/lense-mobile/e2e/build-runner.mjs
+    node artifacts/fourform-mobile/e2e/build-runner.mjs
 
 ## What it cannot see
 

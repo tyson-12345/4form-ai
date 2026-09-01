@@ -59,7 +59,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
       <View style={[s.wrap, { paddingTop: insets.top + 80, paddingBottom: insets.bottom + 32 }]}>
         <View style={s.mark}>
           <AppMark size={34} />
-          <Label>ATHLETE AI</Label>
+          <Label>4FORM AI</Label>
         </View>
 
         <Text scale="display" style={[T.headline, { marginTop: 28 }]}>Something went{"\n"}wrong.</Text>

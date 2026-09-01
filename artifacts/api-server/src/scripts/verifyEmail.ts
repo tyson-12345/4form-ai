@@ -69,7 +69,7 @@ function preflight(recipient: string): boolean {
   const from = fromAddress();
   if (!from || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(from)) {
     bad(`MAIL_FROM does not contain a valid address: ${JSON.stringify(process.env.MAIL_FROM)}`);
-    hint('Use either "no-reply@mail.example.com" or "AthleteAI <no-reply@mail.example.com>".');
+    hint('Use either "no-reply@mail.example.com" or "4Form AI <no-reply@mail.example.com>".');
     fatal = true;
   } else {
     ok(`Sending as ${BOLD}${from}${RESET}`);
@@ -188,7 +188,7 @@ async function main(): Promise<void> {
 
   const message: Email = {
     to: recipient,
-    subject: "AthleteAI email delivery test",
+    subject: "4Form AI email delivery test",
     text: [
       "This is a test from `pnpm mail:verify`.",
       "",

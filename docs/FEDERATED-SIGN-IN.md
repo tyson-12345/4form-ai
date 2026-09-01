@@ -14,9 +14,9 @@ method; these are additional ways into the *same* account.
 | The three endpoints | `api-server/src/routes/oauth.ts` |
 | Shared password path (login + link challenge) | `api-server/src/lib/passwordAuth.ts` |
 | `identities` table, nullable `users.password_hash` | migration `0008_social_identities.sql` |
-| Provider flows on device | `lense-mobile/lib/socialAuth.ts` |
-| Buttons | `lense-mobile/components/SocialSignIn.tsx` |
-| The two continuation screens | `lense-mobile/app/auth/{complete-signup,link-account}.tsx` |
+| Provider flows on device | `fourform-mobile/lib/socialAuth.ts` |
+| Buttons | `fourform-mobile/components/SocialSignIn.tsx` |
+| The two continuation screens | `fourform-mobile/app/auth/{complete-signup,link-account}.tsx` |
 
 **No new backend dependency, and no Firebase.** `docs/FIREBASE-ASSESSMENT.md`
 deferred this decision on the grounds that adopting Firebase Auth would replace
@@ -75,7 +75,7 @@ valid bearer token, triggering a collision would hand out a session for the
 victim's account without the password the challenge exists to demand. Four
 guards, asserted individually in `test/oauth-flow-token-isolation.test.ts`:
 
-1. Signed with `HMAC(JWT_SECRET, "athleteai-oauth-flow-v1")`, so it does not
+1. Signed with `HMAC(JWT_SECRET, "fourformai-oauth-flow-v1")`, so it does not
    verify under the session secret at all.
 2. A different `issuer`, which `verifyToken` pins against.
 3. A `purpose` claim, which `verifyToken` rejects outright.
@@ -98,8 +98,8 @@ only you can create, and both need a native build (Expo Go cannot do either).
 ### Apple
 
 1. Apple Developer → Certificates, Identifiers & Profiles → Identifiers → the
-   `com.athleteai.app` App ID → enable **Sign in with Apple**.
-2. Set `APPLE_CLIENT_IDS=com.athleteai.app` on the API server.
+   `com.fourformai.app` App ID → enable **Sign in with Apple**.
+2. Set `APPLE_CLIENT_IDS=com.fourformai.app` on the API server.
 3. `npx expo prebuild` then `npx expo run:ios` — `app.json` already sets
    `ios.usesAppleSignIn` and the `expo-apple-authentication` plugin.
 

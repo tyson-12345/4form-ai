@@ -1,4 +1,4 @@
-# AthleteAI Privacy Policy
+# 4Form AI Privacy Policy
 
 **Effective:** [DATE — set when published]
 **Last updated:** 12 August 2026
@@ -27,7 +27,7 @@
 
 ## 1. Who we are
 
-AthleteAI is operated by [LEGAL ENTITY NAME], [ADDRESS].
+4Form AI is operated by [LEGAL ENTITY NAME], [ADDRESS].
 Questions: **[privacy@yourdomain.com]**
 
 For UK/EU users, [ENTITY] is the data controller for the information described
@@ -168,7 +168,7 @@ terms are defined by the CPRA.
 
 ## 9. Children
 
-AthleteAI is not directed at children under 13, and we do not knowingly collect
+4Form AI is not directed at children under 13, and we do not knowingly collect
 their information. If you believe a child under 13 has given us data, write to
 [privacy@yourdomain.com] and we will delete it.
 

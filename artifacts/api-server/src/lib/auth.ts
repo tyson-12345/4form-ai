@@ -17,7 +17,7 @@ if (JWT_SECRET.length < 32) {
 }
 
 const JWT_EXPIRES_IN = "7d";
-const JWT_ISSUER = "athleteai-api";
+const JWT_ISSUER = "fourformai-api";
 
 /**
  * bcrypt cost factor. 12 is the floor for new hashes; raising this later is

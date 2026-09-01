@@ -615,7 +615,7 @@ function htmlShell(heading: string, bodyHtml: string, footer: string): string {
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:12px;padding:32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
 <tr><td>
-<p style="margin:0 0 24px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#78716c;">AthleteAI</p>
+<p style="margin:0 0 24px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#78716c;">4Form AI</p>
 <h1 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:#1c1917;font-weight:600;">${escapeHtml(heading)}</h1>
 ${bodyHtml}
 <p style="margin:32px 0 0;padding-top:16px;border-top:1px solid #e7e5e4;font-size:12px;line-height:1.5;color:#78716c;">${escapeHtml(footer)}</p>
@@ -632,7 +632,7 @@ function button(url: string, label: string): string {
 
 export function passwordResetEmail(to: string, resetUrl: string, expiresMinutes: number): Email {
   const text = [
-    "We received a request to reset your AthleteAI password.",
+    "We received a request to reset your 4Form AI password.",
     "",
     `Reset it here: ${resetUrl}`,
     "",
@@ -642,18 +642,18 @@ export function passwordResetEmail(to: string, resetUrl: string, expiresMinutes:
 
   const html = htmlShell(
     "Reset your password",
-    `<p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#44403c;">We received a request to reset your AthleteAI password. Tap below to choose a new one.</p>
+    `<p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#44403c;">We received a request to reset your 4Form AI password. Tap below to choose a new one.</p>
 ${button(resetUrl, "Reset password")}
 <p style="margin:0;font-size:14px;line-height:1.6;color:#44403c;">This link expires in ${expiresMinutes} minutes and can only be used once.</p>`,
     "If you didn't request this, you can safely ignore this email. Your password will not change.",
   );
 
-  return { to, subject: "Reset your AthleteAI password", text, html };
+  return { to, subject: "Reset your 4Form AI password", text, html };
 }
 
 export function accountLockedEmail(to: string, resetUrl: string, lockMinutes: number): Email {
   const text = [
-    "We detected several failed sign-in attempts on your AthleteAI account.",
+    "We detected several failed sign-in attempts on your 4Form AI account.",
     `As a precaution, sign-in is paused for ${lockMinutes} minutes.`,
     "",
     "If this was you and you've forgotten your password, reset it here:",
@@ -671,5 +671,5 @@ ${button(resetUrl, "Reset password")}`,
     "If this wasn't you, someone may be trying to access your account. We recommend resetting your password using the link above.",
   );
 
-  return { to, subject: "Unusual sign-in activity on your AthleteAI account", text, html };
+  return { to, subject: "Unusual sign-in activity on your 4Form AI account", text, html };
 }

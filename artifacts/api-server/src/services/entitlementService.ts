@@ -115,7 +115,7 @@ export const PLANS = [
     description: "For serious athletes",
     popular: true,
     available: true,
-    revenueCatProductId: "com.athleteai.pro.monthly",
+    revenueCatProductId: "com.fourformai.pro.monthly",
     features: [
       "Unlimited video analyses",
       "AI coach chat",
@@ -140,7 +140,7 @@ export const PLANS = [
     available: false,
     unavailableReason:
       "Elite is still in development. We're not selling it until the features behind it are real.",
-    revenueCatProductId: "com.athleteai.elite.monthly",
+    revenueCatProductId: "com.fourformai.elite.monthly",
     features: ["Everything in Pro", "Pro athlete comparisons (in development)"],
     limits: TIER_LIMITS.elite,
   },
@@ -153,7 +153,7 @@ export const PURCHASABLE_PLANS = PLANS.filter((p) => p.available);
  * Whether a verified purchase may be honoured for `tier`.
  *
  * Checked server-side on the receipt path as well as being reflected in the UI.
- * A store product can outlive the decision to sell it — if `com.athleteai.elite.monthly`
+ * A store product can outlive the decision to sell it — if `com.fourformai.elite.monthly`
  * is still live in App Store Connect, someone can buy it (a stale client, a
  * restore of an old purchase) and arrive here with a genuinely valid receipt.
  * Taking that money for an unbuilt feature is the thing we are trying not to do,

@@ -46,7 +46,7 @@ afterEach(() => {
 });
 
 function configureResend(): void {
-  process.env.MAIL_FROM = "AthleteAI <no-reply@mail.example.com>";
+  process.env.MAIL_FROM = "4Form AI <no-reply@mail.example.com>";
   process.env.RESEND_API_KEY = "re_test_key";
 }
 
@@ -132,7 +132,7 @@ describe("sendEmail via Resend", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://api.resend.com/emails");
     expect(calls[0].body).toMatchObject({
-      from: "AthleteAI <no-reply@mail.example.com>",
+      from: "4Form AI <no-reply@mail.example.com>",
       to: "athlete@example.com",
       subject: "Test",
       text: "Body",
@@ -330,7 +330,7 @@ describe("deferEmail", () => {
 // ─── Templates ───────────────────────────────────────────────────────────────
 
 describe("templates", () => {
-  const URL_ = "https://athleteai.app/reset-password?token=abc123";
+  const URL_ = "https://4formai.com/reset-password?token=abc123";
 
   it("puts the link in both the text and html parts", () => {
     const email = passwordResetEmail("a@b.com", URL_, 30);

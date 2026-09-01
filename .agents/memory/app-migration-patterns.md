@@ -1,6 +1,6 @@
 ---
-name: AthleteAI migration patterns
-description: Lessons from porting the AthleteAI (lense) Next.js app to Vite + React in the pnpm workspace
+name: 4Form AI migration patterns
+description: Lessons from porting the app (then AthleteAI, package "lense") from Next.js to Vite + React in the pnpm workspace
 ---
 
 ## Key patterns

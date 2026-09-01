@@ -322,7 +322,7 @@ export default function SignupScreen() {
           </Text>
 
           <Text style={s.legal}>
-            AthleteAI measures how you move. It is not medical advice and does not diagnose
+            4Form AI measures how you move. It is not medical advice and does not diagnose
             injuries. See a professional about pain or injury.
           </Text>
 

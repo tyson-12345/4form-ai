@@ -1,4 +1,4 @@
-# AthleteAI Terms of Service
+# 4Form AI Terms of Service
 
 **Effective:** [DATE — set when published]
 **Last updated:** 12 August 2026
@@ -16,33 +16,33 @@
 
 ## 1. Agreement
 
-These Terms are between you and [LEGAL ENTITY NAME] ("AthleteAI", "we", "us").
+These Terms are between you and [LEGAL ENTITY NAME] ("4Form AI", "we", "us").
 By creating an account or using the app, you accept them. If you don't agree,
 don't use the app.
 
-## 2. Who may use AthleteAI
+## 2. Who may use 4Form AI
 
 You must be **at least 13 years old**. If you are between 13 and the age of
 majority where you live, a parent or guardian must read and agree to these
 Terms with you, and by using the app you confirm they have.
 
-If you are under 13, you may not use AthleteAI.
+If you are under 13, you may not use 4Form AI.
 
 One account per person. Keep your password to yourself; you're responsible for
 what happens under your account until you tell us it's compromised.
 
-## 3. What AthleteAI is
+## 3. What 4Form AI is
 
-AthleteAI measures how your body moves in a training video and gives you
+4Form AI measures how your body moves in a training video and gives you
 technique feedback and drill suggestions based on those measurements.
 
 **It is a training aid. It is not a coach, a physiotherapist, or a doctor.**
 
-## 4. What AthleteAI is not — please read this one
+## 4. What 4Form AI is not — please read this one
 
 > ### Not medical advice
 >
-> **AthleteAI does not provide medical advice, diagnosis, or treatment.**
+> **4Form AI does not provide medical advice, diagnosis, or treatment.**
 >
 > The app reports joint positions measured from your video, including readings
 > it labels as injury-risk indicators. Those are **descriptions of how you
@@ -102,7 +102,7 @@ whether or not you use this app.
 
 You accept that you train at your own risk, that you are responsible for
 deciding whether any drill is appropriate for you, and that you will stop if
-something hurts. To the fullest extent the law allows, you release AthleteAI
+something hurts. To the fullest extent the law allows, you release 4Form AI
 from claims arising out of physical injury sustained while training, including
 while following a suggestion the app made.
 
@@ -136,7 +136,7 @@ us. We never see or store your card details.
 - Prices are shown in the app before you buy.
 - Subscriptions **renew automatically** until you cancel.
 - **Cancel through your App Store or Google Play account settings** — cancelling
-  inside AthleteAI changes our record but does not stop store billing.
+  inside 4Form AI changes our record but does not stop store billing.
 - Cancelling takes effect at the end of the current period; you keep access
   until then.
 - **Refunds are handled by Apple and Google under their policies**, not by us,
@@ -160,7 +160,7 @@ that billed you.
 
 ## 12. Termination
 
-You may stop using AthleteAI and delete your account at any time, from inside
+You may stop using 4Form AI and delete your account at any time, from inside
 the app.
 
 We may suspend or terminate your account for a breach of these Terms, or if
@@ -203,7 +203,7 @@ bring proceedings in the courts of the country where you live.
 ## 15. Changes
 
 We may update these Terms. For material changes we'll give notice in the app
-before they take effect. Continuing to use AthleteAI afterwards means you accept
+before they take effect. Continuing to use 4Form AI afterwards means you accept
 the new version.
 
 ## 16. General

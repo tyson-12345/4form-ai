@@ -26,7 +26,7 @@ handed to a second shell as a single string — which re-splits it on whitespace
 A path containing spaces is torn apart at the space. The quoting is wrong in the
 upstream script, so there is nothing to fix on our side.
 
-The directory is now `~/ai-exercise-coach/`. **If you clone this fresh, put it
+The directory is now `~/ACTIVE/ai-exercise-coach/`. **If you clone this fresh, put it
 somewhere without spaces**, or you will lose an hour to a failure that looks
 like a missing file.
 
@@ -34,7 +34,7 @@ After moving an existing checkout, the old absolute paths are baked into the
 build output — clear them:
 
 ```bash
-cd artifacts/lense-mobile
+cd artifacts/fourform-mobile
 rm -rf ios/build ios/Pods ios/Podfile.lock
 cd ios && pod install
 ```
@@ -44,7 +44,7 @@ cd ios && pod install
 ## Option 1 — Expo Go (fast, limited)
 
 ```bash
-pnpm --filter @workspace/lense-mobile run dev
+pnpm --filter @workspace/fourform-mobile run dev
 ```
 
 Scan the QR code with Expo Go. Starts in seconds, reloads on save.
@@ -64,10 +64,10 @@ Needed for native modules, and for anything you want to behave like a real
 build.
 
 ```bash
-cd artifacts/lense-mobile
+cd artifacts/fourform-mobile
 pnpm exec expo prebuild --platform ios --no-install   # generates ios/
 cd ios && pod install
-xcodebuild -workspace AthleteAI.xcworkspace -scheme AthleteAI \
+xcodebuild -workspace 4FormAI.xcworkspace -scheme 4FormAI \
   -configuration Debug -sdk iphonesimulator \
   -destination 'platform=iOS Simulator,id=<UDID>' \
   -derivedDataPath ./build build
@@ -79,8 +79,8 @@ Get a UDID with `xcrun simctl list devices available`. Boot it with
 Then install and launch:
 
 ```bash
-xcrun simctl install <UDID> ios/build/Build/Products/Debug-iphonesimulator/AthleteAI.app
-xcrun simctl launch <UDID> com.athleteai.app
+xcrun simctl install <UDID> ios/build/Build/Products/Debug-iphonesimulator/4FormAI.app
+xcrun simctl launch <UDID> com.fourformai.app
 ```
 
 **Budget 30–45 minutes for the first build.** It compiles Hermes and ~105 pods
@@ -114,8 +114,10 @@ most likely to be broken:
 1. **Sign up** — the date-of-birth field is the age gate. A date under 13 is
    refused by the server, not just the form.
 2. **Terms and Privacy links** at signup — these currently say "isn't published
-   yet" rather than opening anything. That is correct until a domain exists;
-   they used to point at a domain someone else owns.
+   yet" rather than opening anything. They stay inert until
+   `EXPO_PUBLIC_LEGAL_BASE_URL` is set — now that `4formai.com` exists, publish
+   the documents and set it. They used to point at `athleteai.app`, a domain
+   someone else owns.
 3. **Profile → Support** — same, deliberately inert until configured.
 4. **Analyze tab** — picking a clip needs photo-library permission. The
    simulator has no photos by default; drag an image or video onto the simulator

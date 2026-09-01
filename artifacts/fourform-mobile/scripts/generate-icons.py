@@ -2,6 +2,12 @@
 """
 Generate every app-icon asset from the Caliper "A, measured across" mark.
 
+⚠️  SUPERSEDED BY THE 2026-09-01 RENAME. This script still draws the "A" of
+    AthleteAI. The app is now **4Form AI**, and the mark is being redrawn
+    separately. Until the new PNGs land in `assets/images/`, running this
+    script will overwrite them with the old letterform — so do not run it.
+    Nothing reads it at build time; Expo consumes the committed PNGs directly.
+
 ── Why this is a script and not a folder of exported PNGs ───────────────────
 The icon is pure geometry: two round-capped strokes on a field. Committing only
 the rasters would mean the source of truth lives in a design tool nobody can
@@ -14,6 +20,8 @@ Re-run after any change to the mark:
 
 ── The mark ─────────────────────────────────────────────────────────────────
 Design: claude.ai/design "Athlete-AI-App-Icon-A1", variant 01 · PRIMARY.
+(The original AthleteAI mark. Kept as the record of what shipped; see the
+warning above.)
 
 An "A" whose crossbar is the live measurement. One rule holds every variant:
 the letter is the neutral, the crossbar is the measurement, and cobalt appears

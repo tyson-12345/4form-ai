@@ -336,7 +336,7 @@ export default function PricingScreen() {
         <Text style={s.footnote}>
           {billingEnabled
             ? "Cancel any time in Settings. Your measured sessions stay readable on the free plan."
-            : "When plans go on sale, purchases will be handled entirely by the App Store or Google Play. AthleteAI will never see or store your card details."}
+            : "When plans go on sale, purchases will be handled entirely by the App Store or Google Play. 4Form AI will never see or store your card details."}
         </Text>
       </ScrollView>
     </Screen>

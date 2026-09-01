@@ -11,7 +11,7 @@
  *  - **Universal / App Links** (`https://…` opening the installed app) need a
  *    domain we control plus an `apple-app-site-association` file and an Android
  *    assetlinks file. We have no domain yet.
- *  - **A custom scheme** (`athleteai://…`) needs no domain, but mail clients
+ *  - **A custom scheme** (`fourformai://…`) needs no domain, but mail clients
  *    routinely strip or refuse non-http links, and it fails completely for
  *    someone reading mail on a laptop — which is the common case.
  *  - **A web page**, this. Works in every mail client, on every device, whether
@@ -92,7 +92,7 @@ function page(token: string, nonce: string): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>Reset your AthleteAI password</title>
+<title>Reset your 4Form AI password</title>
 <style nonce="${nonce}">
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
@@ -134,7 +134,7 @@ function page(token: string, nonce: string): string {
 </head>
 <body>
 <main class="card">
-  <p class="brand">AthleteAI</p>
+  <p class="brand">4Form AI</p>
 ${
   missing
     ? `  <h1>This link isn't valid</h1>
@@ -187,7 +187,7 @@ ${
       .then(function (res) {
         if (res.ok) {
           f.style.display = 'none';
-          say('Your password has been reset. Open AthleteAI and sign in with your new password.', 'ok');
+          say('Your password has been reset. Open 4Form AI and sign in with your new password.', 'ok');
         } else {
           say((res.b && res.b.error) || 'That did not work. Request a new reset link.', 'err');
           go.disabled = false;

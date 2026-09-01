@@ -24,7 +24,7 @@ const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLen
 const KID = "test-key-1";
 const JWKS = { keys: [{ ...publicKey.export({ format: "jwk" }), kid: KID, use: "sig", alg: "RS256" }] };
 
-const APPLE_AUD = "com.athleteai.app";
+const APPLE_AUD = "com.fourformai.app";
 const GOOGLE_AUD = "1234.apps.googleusercontent.com";
 
 interface TokenOverrides {

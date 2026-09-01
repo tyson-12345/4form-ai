@@ -48,7 +48,7 @@ describe("a link challenge cannot authenticate", () => {
     const flow = jwt.decode(linkToken()) as { iss?: string };
     const session = jwt.decode(signToken({ userId: UID, email: "a@b.com" })) as { iss?: string };
     expect(flow.iss).toBe(FLOW_ISSUER);
-    expect(session.iss).toBe("athleteai-api");
+    expect(session.iss).toBe("fourformai-api");
     expect(flow.iss).not.toBe(session.iss);
   });
 
@@ -59,7 +59,7 @@ describe("a link challenge cannot authenticate", () => {
     const forged = jwt.sign(
       { userId: UID, email: "athlete@example.com", purpose: "oauth_link" },
       process.env.JWT_SECRET!,
-      { issuer: "athleteai-api", expiresIn: 600 },
+      { issuer: "fourformai-api", expiresIn: 600 },
     );
     expect(() => verifyToken(forged)).toThrow(/purpose/i);
   });
@@ -74,7 +74,7 @@ describe("a link challenge cannot authenticate", () => {
     const stripped = jwt.sign(
       { ...claims, iss: undefined, purpose: undefined },
       process.env.JWT_SECRET!,
-      { issuer: "athleteai-api" },
+      { issuer: "fourformai-api" },
     );
     expect(() => verifyToken(stripped)).toThrow(/malformed/i);
   });
@@ -125,7 +125,7 @@ describe("flow tokens expire", () => {
       // Same derivation as lib/oauthFlowTokens.ts.
       crypto
         .createHmac("sha256", process.env.JWT_SECRET!)
-        .update("athleteai-oauth-flow-v1")
+        .update("fourformai-oauth-flow-v1")
         .digest(),
       { issuer: FLOW_ISSUER, expiresIn: -10 },
     );

@@ -20,7 +20,7 @@ Written so a session with no prior context can pick up and be useful in one read
 
 | Thing | Value |
 |---|---|
-| Repo | `/Users/tysonyoum/ai-exercise-coach/AthleteAI_tyson` |
+| Repo | `/Users/tysonyoum/ACTIVE/ai-exercise-coach/AthleteAI_tyson` |
 | Branch | `main` — single branch, keep it that way |
 | GitHub | `tyson-12345/AthleteAI_tyson` (public) |
 | Live API | `https://athleteai-production-0b7f.up.railway.app` |
@@ -32,21 +32,31 @@ Written so a session with no prior context can pick up and be useful in one read
 
 ```bash
 pnpm --filter @workspace/api-server test        # 367
-pnpm --filter @workspace/lense-mobile test      # 76
+pnpm --filter @workspace/fourform-mobile test      # 76
 pnpm --filter @workspace/api-server typecheck
-pnpm --filter @workspace/lense-mobile typecheck
+pnpm --filter @workspace/fourform-mobile typecheck
 pnpm --filter @workspace/api-server lint        # 0 errors, 11 known warnings
 pnpm --filter @workspace/scripts run verify-database
 curl -s https://athleteai-production-0b7f.up.railway.app/api/health/metrics | jq .features
 ```
 
 **Local full stack (2026-08-15):** Homebrew Postgres 17 with database
-`athleteai_dev`; `artifacts/api-server/.env.local` points at it (port 3001,
+`athleteai_dev` — **still the old name**; the 2026-09-01 rename did not touch
+local databases. `artifacts/api-server/.env.local` points at it (port 3001,
 throwaway JWT secret, `ALLOW_DEV_TIER_OVERRIDE=true` so
 `POST /api/subscriptions/dev-set-tier` works). Run with
 `node --env-file=.env.local ./dist/index.mjs` after `pnpm run build`. The
 mobile `.env` keeps the localhost alternative as a comment. Local test data
 (walkthrough-1@example.com) lives only in that local database.
+
+To bring the local name in line with the rename (optional — nothing depends on
+it), stop the API server, then:
+
+```bash
+psql -d postgres -c 'ALTER DATABASE athleteai_dev RENAME TO fourformai_dev'
+```
+
+and update `DATABASE_URL` in `artifacts/api-server/.env.local` to match.
 
 ---
 
@@ -60,21 +70,21 @@ gitignored (~1.8GB) so it exists only on this machine.
 xcrun simctl boot 27BBE9C0-B829-491B-B135-01C7FFCD18ED
 
 # 2. Start Metro (leave running)
-cd /Users/tysonyoum/ai-exercise-coach/AthleteAI_tyson/artifacts/lense-mobile
+cd /Users/tysonyoum/ACTIVE/ai-exercise-coach/AthleteAI_tyson/artifacts/fourform-mobile
 pnpm exec expo start --port 8081
 
 # 3. Install + launch the already-built app
 xcrun simctl install 27BBE9C0-B829-491B-B135-01C7FFCD18ED \
-  ios/build/Build/Products/Debug-iphonesimulator/AthleteAI.app
-xcrun simctl launch 27BBE9C0-B829-491B-B135-01C7FFCD18ED com.athleteai.app
+  ios/build/Build/Products/Debug-iphonesimulator/4FormAI.app
+xcrun simctl launch 27BBE9C0-B829-491B-B135-01C7FFCD18ED com.fourformai.app
 ```
 
 If the app was changed natively (a new native module, an `app.json` change),
 rebuild — **30–45 min cold, faster incremental**:
 
 ```bash
-cd artifacts/lense-mobile/ios
-xcodebuild -workspace AthleteAI.xcworkspace -scheme AthleteAI \
+cd artifacts/fourform-mobile/ios
+xcodebuild -workspace 4FormAI.xcworkspace -scheme 4FormAI \
   -configuration Debug -sdk iphonesimulator \
   -destination 'platform=iOS Simulator,id=27BBE9C0-B829-491B-B135-01C7FFCD18ED' \
   -derivedDataPath ./build build
@@ -113,12 +123,12 @@ work; the previous local value is kept as a comment in that file.
    Watch the **log file's growth and its result line** instead.
 
 5. **"Can't reach the server" on login is almost always `.env`, not the app.**
-   `artifacts/lense-mobile/.env` sets `EXPO_PUBLIC_API_URL`. It was left pointing
+   `artifacts/fourform-mobile/.env` sets `EXPO_PUBLIC_API_URL`. It was left pointing
    at a local dev server (`http://192.168.1.157:3001`) with nothing listening, so
    every auth call died with `ECONNREFUSED (61)` → `NSURLErrorDomain -1004`. The
    app was fine; it was aimed at a backend that did not exist.
    - Confirm from the simulator, not from the code:
-     `xcrun simctl spawn <UDID> log show --last 3m --predicate 'processImagePath CONTAINS "AthleteAI"' --style compact | grep -i "error\|3001"`
+     `xcrun simctl spawn <UDID> log show --last 3m --predicate 'processImagePath CONTAINS "4FormAI"' --style compact | grep -i "error\|3001"`
      — it prints the exact failing URL.
    - **`EXPO_PUBLIC_*` vars are inlined into the bundle at build time, not read
      at runtime.** Editing `.env` does nothing until Metro restarts. Restart with
@@ -189,7 +199,7 @@ Read `docs/TODO-PRODUCTION.md` for the full history and reasoning.
 
 | # | Item | Notes |
 |---|---|---|
-| 1 | **Buy a domain** | Blocks 2–4. `athleteai.app` belongs to someone else |
+| 1 | ~~**Buy a domain**~~ | ✅ `4formai.com` bought 2026-09-01. (The old `athleteai.app` was never ours.) |
 | 2 | Verify domain in Resend, swap `MAIL_FROM` | Mail currently only reaches the Resend account owner |
 | 3 | Host privacy policy + terms; set `EXPO_PUBLIC_LEGAL_BASE_URL` and `EXPO_PUBLIC_SUPPORT_EMAIL` | Both stores check these during review |
 | 4 | Fill App Privacy + Data Safety forms | Answers written in `docs/STORE-COMPLIANCE.md` |

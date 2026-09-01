@@ -17,7 +17,7 @@ simulator log before reading code:
 
 ```bash
 xcrun simctl spawn 27BBE9C0-B829-491B-B135-01C7FFCD18ED log show --last 3m \
-  --predicate 'processImagePath CONTAINS "AthleteAI"' --style compact | tail -50
+  --predicate 'processImagePath CONTAINS "4FormAI"' --style compact | tail -50
 ```
 
 Startup commands and the five known traps are in `HANDOFF.md`. Trap 5 is the one

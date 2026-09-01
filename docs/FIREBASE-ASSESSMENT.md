@@ -1,4 +1,4 @@
-# Should AthleteAI move to Firebase?
+# Should 4Form AI move to Firebase?
 
 **Asked:** 12 August 2026 · **Short answer: no — not wholesale.**
 
@@ -144,7 +144,7 @@ possible — but it is still a careful, one-shot operation).
 
 ## Do you need any other providers?
 
-Here is the full picture of what a launched AthleteAI needs.
+Here is the full picture of what a launched 4Form AI needs.
 
 ### Already chosen and wired
 

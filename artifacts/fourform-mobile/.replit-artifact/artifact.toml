@@ -1,8 +1,8 @@
 kind = "mobile"
 previewPath = "/"
-title = "AthleteAI Mobile"
+title = "4Form AI Mobile"
 version = "1.0.0"
-id = "artifacts/lense-mobile"
+id = "artifacts/fourform-mobile"
 router = "expo-domain"
 
 [[integratedSkills]]
@@ -16,11 +16,11 @@ paths = [ "/" ]
 localPort = 24284
 
 [services.development]
-run = "pnpm --filter @workspace/lense-mobile run dev"
+run = "pnpm --filter @workspace/fourform-mobile run dev"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/lense-mobile", "run", "build" ]
-run = [ "pnpm", "--filter", "@workspace/lense-mobile", "run", "serve" ]
+build = [ "pnpm", "--filter", "@workspace/fourform-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/fourform-mobile", "run", "serve" ]
 
 [services.env]
 PORT = "24284"

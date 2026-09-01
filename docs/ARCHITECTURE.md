@@ -1,4 +1,4 @@
-# AthleteAI — Architecture
+# 4Form AI — Architecture
 
 How the system fits together, and why the important parts are built the way they are.
 
@@ -14,7 +14,7 @@ artifacts/
                        rate limiting, prompt safety, alerting
     src/middlewares/   authenticate
     test/              Integration tests + static source audits
-  lense-mobile/        Expo / React Native app (expo-router)
+  fourform-mobile/        Expo / React Native app (expo-router)
     app/               Screens, file-based routing
     lib/               API client, pose tracker, video storage, contexts
     utils/             Pure helpers (unit-tested)
@@ -148,7 +148,7 @@ scores, plus advice on how to film a usable clip.
 
 ## Pose tracking
 
-`lense-mobile/lib/poseTracker.ts` builds a self-contained HTML document that
+`fourform-mobile/lib/poseTracker.ts` builds a self-contained HTML document that
 runs MediaPipe Pose inside a `WebView`. One builder serves two modes so the
 angle maths and risk thresholds exist in exactly one place:
 
@@ -181,7 +181,7 @@ probability of injury. UI copy must not present it as the latter.
 
 Clips live **on the device only**. They are never uploaded to our servers.
 
-`lense-mobile/lib/videoStore.ts` copies each picked clip into
+`fourform-mobile/lib/videoStore.ts` copies each picked clip into
 `documentDirectory/athlete-videos/<analysisId>.<ext>`.
 
 The previous implementation referenced the URI returned by `expo-image-picker`,
@@ -257,12 +257,12 @@ Migration: `lib/db/migrations/0001_security_and_measured_analysis.sql`
 
 ## Testing
 
-291 tests: 271 in `artifacts/api-server`, 20 in `artifacts/lense-mobile`.
+653 tests: 483 in `artifacts/api-server`, 170 in `artifacts/fourform-mobile`.
 
 ```bash
 pnpm --filter @workspace/api-server test
 pnpm --filter @workspace/api-server lint
-pnpm --filter @workspace/lense-mobile test
+pnpm --filter @workspace/fourform-mobile test
 ```
 
 | Suite | Covers |
@@ -277,7 +277,7 @@ pnpm --filter @workspace/lense-mobile test
 | `test/auth-messages.test.ts` | **static source audit** — scans every file for leaky auth strings and logged passwords |
 | `test/login-lockout.test.ts` | end-to-end login, lockout, delay, rate limit, reset (in-memory DB fake) |
 
-| `lense-mobile/utils/formatBiomechanics.test.ts` | jargon translation, no re-translation, markdown/code/URL protection |
+| `fourform-mobile/utils/formatBiomechanics.test.ts` | jargon translation, no re-translation, markdown/code/URL protection |
 
 The lockout tests take ~90 s because the progressive delay is real and is not
 mocked away — that cost is the security control working.

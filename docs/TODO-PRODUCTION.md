@@ -1,4 +1,4 @@
-# AthleteAI — Path to a Functional, Shippable App
+# 4Form AI — Path to a Functional, Shippable App
 
 **Owner:** Tyson · **Last updated:** 2026-08-12
 
@@ -14,19 +14,20 @@ Status key: 🔴 blocks launch · 🟠 blocks charging money · 🟡 quality/sca
 The app **measures and scores correctly today**, and as of 2026-08-12 it is
 **deployed and reachable**. Pose tracking, the scoring engine, auth, the paywall
 logic, account deletion, and password reset all work and are tested
-(376 tests green — 326 API, 50 mobile).
+(653 tests green — 483 API, 170 mobile).
 
 Live at `https://athleteai-production-0b7f.up.railway.app`, on Supabase, with
 coaching write-ups and chat enabled and password reset delivering real mail.
 
 What it still cannot do: **take money** (billing unconfigured), **send mail to
-anyone but the Resend account owner** (still on the test sender, needs a
-domain), and **point users at legal documents** (no domain, so nothing is
-hosted).
+anyone but the Resend account owner** (still on the test sender), and **point
+users at legal documents** (nothing hosted yet).
 
-**The single blocker behind most of what remains is a domain.** Mail from a real
-sender, the privacy policy and terms URLs both stores check, and a support
-address all wait on it. Everything else needs a console login or a lawyer.
+**The domain blocker is cleared.** `4formai.com` was bought on 2026-09-01 and
+the app renamed to **4Form AI** the same day. Mail from a real sender, the
+privacy-policy and terms URLs both stores check, and a support address were all
+waiting on exactly that. What remains is DNS records and hosting — see §1.8 —
+plus a console login or a lawyer for everything else.
 
 ---
 
@@ -68,10 +69,17 @@ request → token → email → inbox → link → landing page → password cha
 password rejected → token refused on replay. Session revocation fired on the
 reset, so any token issued beforehand died with it.
 
+> Note: `APP_PUBLIC_URL` must be set on the server or `createResetUrl` throws by
+> design. It previously defaulted to `athleteai.app`, a domain owned by someone
+> else. Point it at `https://4formai.com` once that host serves the reset page.
+
 **Still on Resend's test sender** (`onboarding@resend.dev`), which only delivers
-to the Resend account owner. Swapping to a domain you control is the only step
-left — see `docs/EMAIL-SETUP.md`, which also records the two failures this
-turned up and why neither was catchable by the test suite.
+to the Resend account owner. The domain that was blocking this now exists:
+verify `mail.4formai.com` in Resend, publish its SPF/DKIM/DMARC records, then set
+`MAIL_FROM="4Form AI <no-reply@mail.4formai.com>"` on the server. No code change
+— `.env.example` already carries the new value. See `docs/EMAIL-SETUP.md`, which
+also records the two failures this turned up and why neither was catchable by
+the test suite.
 
 Built along the way: **the reset link needed somewhere to land.** It previously
 resolved to a JSON 404 — mail sent, token valid, user stuck. Universal Links
@@ -171,6 +179,50 @@ angles; it reasons from the measurements and writes plain instructions, with the
 highest-priority fix first. Flag stamps read `OFTEN` / `SOMETIMES` / `BRIEFLY`
 rather than `62–104°`. The skeleton overlay keeps the exact figures.
 
+### 1.8 Finish the 4Form AI rename outside the repo
+
+The codebase was renamed on 2026-09-01: display brand **4Form AI**, domain
+**4formai.com**, bundle id / Android package **`com.fourformai.app`**, URL scheme
+**`fourformai://`**, Expo slug **`4form-ai`**, workspace package
+**`@workspace/fourform-mobile`** (directory `artifacts/fourform-mobile`).
+
+`com.4formai.app` and `4formai://` are **not** valid — an Android
+`applicationId` segment and an RFC 3986 URL scheme must both begin with a
+letter. Hence `fourformai`. The display name is the only place the digit form
+appears.
+
+Everything inside the repo is done. These live outside it and still carry the
+old name — each needs a console login:
+
+- 🔴 **DNS + Resend** — verify `mail.4formai.com`, publish SPF/DKIM/DMARC, set
+  `MAIL_FROM` and `APP_PUBLIC_URL` on the Railway service. Unblocks §1.3.
+- 🟠 **Railway** — project and service are both still literally named
+  `athleteai`, and the public host is still
+  `athleteai-production-0b7f.up.railway.app`. **Left alone deliberately:** these
+  strings are how the running deployment is addressed, and `eas.json` points
+  production builds at that host. Renaming the service changes the hostname, so
+  do it as one deliberate step and update `eas.json` in the same commit.
+- 🟠 **Apple Developer** — register `com.fourformai.app`, enable Sign in with
+  Apple on it, and set `APPLE_CLIENT_IDS` to match. Nothing was registered
+  under the old id (`eas.json` has an empty `ascAppId`), so nothing is orphaned.
+- 🟠 **Google OAuth** — the client ids in `app.json` `extra.google` are still
+  empty; create them against the new bundle id / package.
+- 🟠 **App Store Connect / RevenueCat** — create products
+  `com.fourformai.pro.monthly` and `com.fourformai.elite.monthly` (§2.2).
+- 🟡 **GitHub** — repo is still `tyson-12345/AthleteAI_tyson`, and the local
+  checkout is still `~/ACTIVE/ai-exercise-coach/AthleteAI_tyson`. Cosmetic;
+  renaming the repo redirects the old URL, but update the remote afterwards.
+- 🟡 **App icon** — `assets/images/*.png` still render the old "A, measured
+  across" mark, and `scripts/generate-icons.py` still draws it. Replacing the
+  four PNGs (`icon.png`, `adaptive-icon.png`, `icon-store.png`, `icon-tinted.png`,
+  plus `splash.png` and `favicon.png`) is all that is needed; nothing reads the
+  script at build time.
+
+**On deploy, every existing session is signed out.** `JWT_ISSUER` moved from
+`athleteai-api` to `fourformai-api` and is checked on verify, so tokens minted
+before the deploy no longer validate. Pre-launch this costs nothing; it is
+listed here so it is not a surprise.
+
 ---
 
 ## 2. 🟠 Blocks charging money
@@ -188,7 +240,7 @@ backend consolidation. Do not "temporarily" re-open it.
 - Add the webhook endpoint for renewals, cancellations, refunds, and expiry.
 
 ### 2.2 Create the store products
-`com.athleteai.pro.monthly` ($9.99) and `com.athleteai.elite.monthly` ($24.99)
+`com.fourformai.pro.monthly` ($9.99) and `com.fourformai.elite.monthly` ($24.99)
 in App Store Connect and Play Console, matching `PLANS` in
 `services/entitlementService.ts`.
 
@@ -333,8 +385,8 @@ See **`docs/RUNNING-THE-APP.md`**.
 pnpm --filter @workspace/api-server typecheck
 pnpm --filter @workspace/api-server lint
 pnpm --filter @workspace/api-server test        # 326
-pnpm --filter @workspace/lense-mobile typecheck
-pnpm --filter @workspace/lense-mobile test      # 50
+pnpm --filter @workspace/fourform-mobile typecheck
+pnpm --filter @workspace/fourform-mobile test      # 50
 
 # Is the deployment healthy and fully featured?
 curl https://athleteai-production-0b7f.up.railway.app/api/health/metrics

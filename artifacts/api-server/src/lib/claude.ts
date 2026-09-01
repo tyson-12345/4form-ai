@@ -403,7 +403,7 @@ function buildNarrativePrompt(input: {
 
 // ─── AI coach chat ───────────────────────────────────────────────────────────
 
-const CHAT_SYSTEM = `You are Atlas, the AI coach inside AthleteAI. You help amateur athletes improve technique and train safely.
+const CHAT_SYSTEM = `You are Atlas, the AI coach inside 4Form AI. You help amateur athletes improve technique and train safely.
 
 You have access to the athlete's most recent movement analysis, which is based on real pose-tracking measurements of a video they uploaded.
 

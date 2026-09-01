@@ -1,4 +1,4 @@
-# AthleteAI — Backend Comparison and Consolidation Decision
+# 4Form AI — Backend Comparison and Consolidation Decision
 
 **Status:** decision made and executed — see [Outcome](#outcome) at the end.
 **Date:** 2026-08-10 · **Updated:** 2026-08-12
@@ -130,7 +130,7 @@ start from.
 
 | Feature | Where | Notes |
 |---|---|---|
-| `resolveApiUrl()` | `lense-mobile/lib/api.ts:3` | **Genuinely better than mine.** See below. |
+| `resolveApiUrl()` | `fourform-mobile/lib/api.ts:3` | **Genuinely better than mine.** See below. |
 | Repository + service layers | `repositories/`, `services/` | §1. |
 | Prompt-injection defence | `ai/initialAnalysis.ts:174`, `chatService.ts:116` | **Better than mine.** See §3. |
 | Redis caching | `lib/redis.ts` → profile/progress/chat services | Soft-`require`, degrades to no-op without `REDIS_URL`. |
@@ -148,7 +148,7 @@ start from.
 ### `resolveApiUrl()` — the clearest single win on his side
 
 ```ts
-// lense-mobile/lib/api.ts:3
+// fourform-mobile/lib/api.ts:3
 if (process.env.EXPO_PUBLIC_API_URL) return `${process.env.EXPO_PUBLIC_API_URL}/api`;
 if (typeof window !== "undefined") { … return `${protocol}//${hostname}/api`; }
 return "http://localhost:8080/api";
@@ -415,7 +415,7 @@ about the cost of not having it.
 
 | # | Item | Source | Effort | Why |
 |---|---|---|---|---|
-| 1 | `resolveApiUrl()` | `lense-mobile/lib/api.ts` | **1–2 h** | Fixes a real connectivity failure. Nearly free. |
+| 1 | `resolveApiUrl()` | `fourform-mobile/lib/api.ts` | **1–2 h** | Fixes a real connectivity failure. Nearly free. |
 | 2 | Prompt-injection delimiters + stripping | `ai/initialAnalysis.ts:174–184`, `chatService.ts:116` | **3–4 h** | Closes my worst security gap. Port into `lib/claude.ts` + `sanitize.ts`. |
 | 3 | Broader DB indexes | `schema/analyses.ts`, `drizzle/0007` | **2–3 h** | Adapt to `uuid` columns. Pure win. |
 | 4 | `repositories/` layer | `repositories/*` | **2–3 days** | The architecture decision from §1. Rewrite queries against my schema — the *pattern* ports, the code does not. |
@@ -429,7 +429,7 @@ about the cost of not having it.
 | 12 | Thumbnail resize | `lib/resize-thumbnail.ts` | **1 day** | Needs object storage (#13) to be useful. |
 | 13 | Object storage + ACL | `lib/objectStorage.ts`, `objectAcl.ts`, `routes/storage.ts` | **2–3 days** | Note his router is unmounted — this is untested in production on either side. |
 | 14 | Sport-specific score weighting | `ai/initialAnalysis.ts` weights | **1–2 days** | Per §4: his weights, my measured inputs. |
-| 15 | Mobile product surface (coaching moments, movement summary, drills, streaks, share cards, notifications) | `lense-mobile/*` | **3–6 weeks** | The large one. Scope and sequence separately — this is a roadmap, not a port. |
+| 15 | Mobile product surface (coaching moments, movement summary, drills, streaks, share cards, notifications) | `fourform-mobile/*` | **3–6 weeks** | The large one. Scope and sequence separately — this is a roadmap, not a port. |
 | — | BullMQ queue | `lib/queue.ts` | **skip for now** | Unwired on his side; no current need. Revisit when analysis latency demands it. |
 
 Items 1–3 are roughly a day together and I would do them this week regardless
@@ -571,13 +571,13 @@ fit into a single pass.
 
 | # | Item | Status |
 |---|---|---|
-| 1 | `resolveApiUrl()` | Done — `lense-mobile/lib/api.ts`, with an added port-preserving branch for web dev servers |
+| 1 | `resolveApiUrl()` | Done — `fourform-mobile/lib/api.ts`, with an added port-preserving branch for web dev servers |
 | 2 | Prompt-injection delimiters + stripping | Done — new `lib/promptSafety.ts`, wired into the narrative *and* chat prompts, 18 tests |
 | 3 | Broader DB indexes | Done — schema + `migrations/0002_read_path_indexes.sql`, composite and uuid-adapted |
 | 4 | `repositories/` layer | Done — analysis, user, chat, achievement |
 | 5 | `services/` layer | Done — analysis, chat, achievement, entitlement |
 | 6 | `SPORT_RESEARCH` citations | Done — new `lib/sportResearch.ts`, 8 sports + honest generic fallback |
-| 7 | Biomechanics term translation | Done — `lense-mobile/utils/formatBiomechanics.ts`, wired into chat rendering, 20 tests |
+| 7 | Biomechanics term translation | Done — `fourform-mobile/utils/formatBiomechanics.ts`, wired into chat rendering, 20 tests |
 | 8 | ESLint config | Done — installed and passing, 0 errors |
 | 9 | `Dockerfile` + `railway.json` | Done — multi-stage, non-root |
 | 10 | `/health/metrics` + alerting | Done — new `lib/alerting.ts`, counters wired into six real failure paths |
@@ -617,10 +617,10 @@ fit into a single pass.
 
 ### Verification
 
-- `tsc --noEmit` clean in both `api-server` and `lense-mobile`.
+- `tsc --noEmit` clean in both `api-server` and `fourform-mobile`.
 - `eslint .` — 0 errors, 11 warnings (all `no-unsafe-*` at SDK boundaries).
 - `vitest run` — **271 passing** in api-server (was 229), **20 passing** in
-  lense-mobile (new).
+  fourform-mobile (new).
 - `pnpm run build` succeeds.
 - Oscar's suite still not executed — nothing above depends on it.
 

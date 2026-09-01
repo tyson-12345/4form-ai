@@ -33,7 +33,7 @@
   "notAudited": {
     "$comment": "Stated so a green sweep is not mistaken for full coverage.",
     "voiceOverSpeech": "The iOS Simulator ships no VoiceOver engine. Names, roles, grouping and traversal order are checked; what it says is not.",
-    "android": "Never swept. app.json declares com.athleteai.app for Android.",
+    "android": "Never swept. app.json declares com.fourformai.app for Android.",
     "dynamicType": "Simulator only, via `xcrun simctl ui <udid> content_size`, and the app must be relaunched to pick it up."
   }
 }

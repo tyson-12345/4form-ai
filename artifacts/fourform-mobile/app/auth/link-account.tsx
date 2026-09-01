@@ -95,7 +95,7 @@ export default function LinkAccountScreen() {
           </Text>
 
           <Text style={[T.body, { marginTop: 16, color: color.textBody }]}>
-            {pending.email} already has an AthleteAI account. Enter its password once and
+            {pending.email} already has a 4Form AI account. Enter its password once and
             we&apos;ll connect the two — after this you can sign in either way.
           </Text>
 

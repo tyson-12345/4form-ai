@@ -18,7 +18,7 @@ without breaking Expo Go. Verify with `curl https://$REPLIT_EXPO_DEV_DOMAIN/stat
 
 **Expo dev web emits root-absolute asset paths, so it only renders at `/`.**
 The dev web HTML references `/node_modules/...` and `/_expo/...` (absolute). Behind a sub-path
-prefix like `/lense-mobile/`, those asset requests 404 and the page renders BLANK (white).
+prefix like `/fourform-mobile/`, those asset requests 404 and the page renders BLANK (white).
 **Why:** this is the #1 cause of "Expo web preview is blank" — it's a path-prefix mismatch, not a
 broken RN-web render. **How to apply:** to show the Expo app in the Replit web preview, set the
 Expo artifact `previewPath = "/"` (and `BASE_PATH = "/"`). Then the root domain renders the same

@@ -61,7 +61,7 @@ export default function WelcomeScreen() {
       >
         <View style={s.brand}>
           <AppMark size={40} />
-          <Label>ATHLETE AI</Label>
+          <Label>4FORM AI</Label>
         </View>
 
         <Text scale="display" style={[T.headline, s.headline]}>

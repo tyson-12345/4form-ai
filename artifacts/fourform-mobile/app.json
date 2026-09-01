@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "AthleteAI",
-    "slug": "athleteai",
+    "name": "4Form AI",
+    "slug": "4form-ai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "athleteai",
+    "scheme": "fourformai",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -15,14 +15,14 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.athleteai.app",
+      "bundleIdentifier": "com.fourformai.app",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "AthleteAI reads the training video you pick so it can measure your joint angles frame by frame on this device, and the photo you pick if you set a profile picture. Neither ever leaves your phone — only the resulting angle measurements are sent, never the footage or the photo."
+        "NSPhotoLibraryUsageDescription": "4Form AI reads the training video you pick so it can measure your joint angles frame by frame on this device, and the photo you pick if you set a profile picture. Neither ever leaves your phone — only the resulting angle measurements are sent, never the footage or the photo."
       },
       "usesAppleSignIn": true
     },
     "android": {
-      "package": "com.athleteai.app",
+      "package": "com.fourformai.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#101312"
@@ -49,7 +49,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "AthleteAI reads the training video you pick so it can measure your joint angles frame by frame on this device, and the photo you pick if you set a profile picture. Neither ever leaves your phone — only the resulting angle measurements are sent, never the footage or the photo.",
+          "photosPermission": "4Form AI reads the training video you pick so it can measure your joint angles frame by frame on this device, and the photo you pick if you set a profile picture. Neither ever leaves your phone — only the resulting angle measurements are sent, never the footage or the photo.",
           "cameraPermission": false,
           "microphonePermission": false
         }

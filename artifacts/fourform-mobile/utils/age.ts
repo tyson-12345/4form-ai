@@ -94,7 +94,7 @@ export function isOldEnough(birth: Date | null, now = new Date()): boolean {
  * impossible (31 February), and in the future. The signup screen collapsed all
  * of them into `!isOldEnough(...)` and printed one message:
  *
- *     "You need to be at least 13 to use AthleteAI."
+ *     "You need to be at least 13 to use 4Form AI."
  *
  * So a typo of 31/02/2000 told a 26-year-old they were too young, and left them
  * with no idea which of the three fields was wrong. A wrong reason is worse
@@ -134,7 +134,7 @@ export function birthDateMessage(problem: BirthDateProblem | null): string {
     case "future":
       return "That date is in the future.";
     case "too-young":
-      return `You need to be at least ${MINIMUM_AGE_YEARS} to use AthleteAI.`;
+      return `You need to be at least ${MINIMUM_AGE_YEARS} to use 4Form AI.`;
     default:
       return `You need to be at least ${MINIMUM_AGE_YEARS}. We use this to check your age, nothing else.`;
   }

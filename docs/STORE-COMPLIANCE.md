@@ -36,7 +36,7 @@ they cannot creep back in through a library's manifest merge.
 Apple rejects generic purpose strings. The current one says what is read, why,
 and — the part that matters here — what does *not* happen to it:
 
-> AthleteAI reads the training video you pick so it can measure your joint
+> 4Form AI reads the training video you pick so it can measure your joint
 > angles frame by frame on this device. Your video is analysed on your phone and
 > is never uploaded to our servers — only the resulting angle measurements are
 > sent, never the footage.

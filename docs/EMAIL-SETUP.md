@@ -73,14 +73,17 @@ Both stores also expect a working account-recovery path.
 
 ---
 
-> ⚠️ **`athleteai.app` is not yours.** It is registered at Porkbun with Google
-> Workspace mail already on it, and it belonged to someone else as of
-> 2026-08-12. Every example below uses `yourdomain.com` as a placeholder —
-> substitute a domain you actually control.
+> ✅ **The domain now exists: `4formai.com`,** bought 2026-09-01. Use
+> `mail.4formai.com` as the sending subdomain. Examples below say
+> `yourdomain.com`; substitute `4formai.com`.
 >
-> The app no longer defaults to it either: `constants/legal.ts` and the reset
-> link builder now refuse to guess a domain rather than pointing users at a
-> stranger's site. See the note in each file.
+> ⚠️ **Historical note — `athleteai.app` was never ours.** Before the rename the
+> app guessed that domain, and on 2026-08-12 it turned out to be registered at
+> Porkbun to someone else, with Google Workspace mail already on it. That is why
+> `constants/legal.ts` and the reset-link builder still refuse to guess a domain
+> rather than default to one: a default that is silently wrong looks configured
+> and mails working recovery tokens to a stranger. Keep that behaviour — set the
+> value explicitly. See the note in each file.
 
 ## Choosing a provider
 
@@ -180,21 +183,21 @@ your domain, which is what makes SPF pass under DMARC's alignment rule.
 Local `.env` and the deployed host both need these.
 
 ```bash
-MAIL_FROM="AthleteAI <no-reply@mail.yourdomain.com>"
+MAIL_FROM="4Form AI <no-reply@mail.yourdomain.com>"
 RESEND_API_KEY=re_xxxxxxxxxxxx
 ```
 
 Postmark instead:
 
 ```bash
-MAIL_FROM="AthleteAI <no-reply@mail.yourdomain.com>"
+MAIL_FROM="4Form AI <no-reply@mail.yourdomain.com>"
 POSTMARK_SERVER_TOKEN=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 
 SES instead:
 
 ```bash
-MAIL_FROM="AthleteAI <no-reply@mail.yourdomain.com>"
+MAIL_FROM="4Form AI <no-reply@mail.yourdomain.com>"
 AWS_SES_REGION=us-east-1
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...

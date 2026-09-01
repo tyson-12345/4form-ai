@@ -18,7 +18,7 @@ Instead, write the HTML string to `FileSystem.cacheDirectory` with expo-file-sys
 - Load with `source={{ uri: localHtmlPath }}`
 - Keep WebView props: `allowFileAccess`, `allowFileAccessFromFileURLs`, `allowUniversalAccessFromFileURLs`, `originWhitelist={["*", "file://*"]}`
 
-This pattern is used in `artifacts/lense-mobile/app/analysis/skeleton/[id].tsx` for the MediaPipe pose-tracking WebView.
+This pattern is used in `artifacts/fourform-mobile/app/analysis/skeleton/[id].tsx` for the MediaPipe pose-tracking WebView.
 
 ## SDK 54 expo-file-system breaking change
 In SDK 54, `expo-file-system` removed `writeAsStringAsync` and `EncodingType` from its main entrypoint. They throw at runtime (not just warn). Always import from `"expo-file-system/legacy"` when using the classic API (writeAsStringAsync, readAsStringAsync, EncodingType, cacheDirectory, etc.).

@@ -1,4 +1,4 @@
-# Production image for the AthleteAI API server.
+# Production image for the 4Form AI API server.
 #
 # Adopted from Oscar's fork, which was deployable where this tree was not.
 # Multi-stage so the runtime image carries no pnpm store, no source, and no
