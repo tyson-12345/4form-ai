@@ -20,9 +20,9 @@ Written so a session with no prior context can pick up and be useful in one read
 
 | Thing | Value |
 |---|---|
-| Repo | `/Users/tysonyoum/ACTIVE/ai-exercise-coach/AthleteAI_tyson` |
+| Repo | `/Users/tysonyoum/ACTIVE/ai-exercise-coach/AthleteAI_tyson` — local dir still carries the old name |
 | Branch | `main` — single branch, keep it that way |
-| GitHub | `tyson-12345/AthleteAI_tyson` (public) |
+| GitHub | `tyson-12345/4form-ai` (public) |
 | Live API | `https://fourformai-production-0b7f.up.railway.app` |
 | Database | Supabase, `ca-central-1`, session pooler |
 | Railway | project `athleteai` / `ad6fbf98-1a01-4366-9d04-153fa8705cbb`, service `fourformai` |
