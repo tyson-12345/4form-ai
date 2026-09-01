@@ -23,7 +23,9 @@ COPY artifacts/api-server/package.json artifacts/api-server/
 RUN pnpm install --frozen-lockfile
 
 COPY lib/ lib/
-COPY docs/ docs/
+# Only the two documents the bundle inlines; named explicitly so a missing one
+# fails the build here rather than producing a server with an empty policy.
+COPY docs/PRIVACY-POLICY.md docs/TERMS-OF-SERVICE.md docs/
 COPY artifacts/api-server/ artifacts/api-server/
 
 RUN pnpm --filter @workspace/api-server run build

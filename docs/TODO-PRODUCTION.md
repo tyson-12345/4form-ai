@@ -71,8 +71,9 @@ reset, so any token issued beforehand died with it.
 
 > Note: `APP_PUBLIC_URL` must be set on the server or `createResetUrl` throws by
 > design. It previously defaulted to `athleteai.app`, a domain owned by someone
-> else. It currently points at the Railway host, which serves the reset page;
-> move it to `https://4formai.com` once that host serves the page instead.
+> else. Since 2026-09-01 it is `https://4formai.com`, so reset links land on the
+> app's own domain. The Railway hostname still serves everything as well —
+> nothing was orphaned by the move.
 
 > ✅ **Sending from `no-reply@mail.4formai.com` since 2026-09-01.** The domain
 > was registered in Resend and its DKIM/SPF published at Porkbun the same day;
@@ -217,6 +218,12 @@ to abandon.
   The four "delete before publishing" blocks need no action: the renderer strips
   any blockquote marked that way, so the Markdown stays the single source of
   truth rather than being hand-edited into a second copy.
+
+  **`EXPO_PUBLIC_LEGAL_BASE_URL` is deliberately still unset.** Setting it would
+  turn the in-app Terms and Privacy links live, and today they would open the
+  503 page. The app currently tells the user plainly that the documents are not
+  published, which is more honest than a link that leads to a notice saying the
+  same thing. Set it in the same change that fills the placeholders.
 
 ### 1.7 Analysis readability
 ✅ Done 2026-08-12. The coaching prompt no longer asks the model to cite joint

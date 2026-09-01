@@ -50,10 +50,19 @@ attached_assets
 **/.expo
 
 # ── Docs and scripts the runtime does not need ───────────────────────────────
-docs
+# `docs/*` rather than `docs`, so the two exceptions below are unambiguous: a
+# negation can only re-include a path an earlier rule excluded, and excluding
+# the directory itself invites the builder to skip descending into it.
+docs/*
 scripts
 *.md
 !README.md
+
+# ...except the two legal documents. `routes/legalPages.ts` imports them and
+# esbuild inlines them into the bundle at build time, so they must be present in
+# the build context even though nothing reads them at runtime.
+!docs/PRIVACY-POLICY.md
+!docs/TERMS-OF-SERVICE.md
 
 # ── Local noise ──────────────────────────────────────────────────────────────
 .DS_Store

@@ -43,7 +43,7 @@ ALLOW_DEV_TIER_OVERRIDE=true
 # Email (unset = links are generated but never delivered)
 # RESEND_API_KEY=re_...
 # MAIL_FROM=4Form AI <no-reply@mail.4formai.com>
-# APP_PUBLIC_URL=https://fourformai-production-0b7f.up.railway.app
+# APP_PUBLIC_URL=https://4formai.com
 
 # Billing (unset = purchases are disabled and the app says so)
 # REVENUECAT_API_KEY=...
