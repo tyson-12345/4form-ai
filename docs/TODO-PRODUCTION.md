@@ -62,7 +62,7 @@ empty in the local `artifacts/api-server/.env`, so coaching write-ups and chat
 are disabled when running the server locally — that is a local dev gap, not a
 production one.
 
-### 1.3 Configure a mail provider — ✅ WORKING 2026-08-12
+### 1.3 Configure a mail provider — 🔴 BROKEN 2026-09-01, pending domain verification
 
 Resend is wired and live. A real password reset was completed end to end:
 request → token → email → inbox → link → landing page → password changed → old
@@ -71,15 +71,45 @@ reset, so any token issued beforehand died with it.
 
 > Note: `APP_PUBLIC_URL` must be set on the server or `createResetUrl` throws by
 > design. It previously defaulted to `athleteai.app`, a domain owned by someone
-> else. Point it at `https://4formai.com` once that host serves the reset page.
+> else. It currently points at the Railway host, which serves the reset page;
+> move it to `https://4formai.com` once that host serves the page instead.
 
-**Still on Resend's test sender** (`onboarding@resend.dev`), which only delivers
-to the Resend account owner. The domain that was blocking this now exists:
-verify `mail.4formai.com` in Resend, publish its SPF/DKIM/DMARC records, then set
-`MAIL_FROM="4Form AI <no-reply@mail.4formai.com>"` on the server. No code change
-— `.env.example` already carries the new value. See `docs/EMAIL-SETUP.md`, which
-also records the two failures this turned up and why neither was catchable by
-the test suite.
+> 🔴 **Mail is failing on every send as of 2026-09-01.** `MAIL_FROM` was moved to
+> `4Form AI <no-reply@mail.4formai.com>` ahead of the DNS work, deliberately, so
+> it starts working the moment the domain verifies. Until then Resend answers:
+>
+> ```
+> 403: The mail.4formai.com domain is not verified.
+> ```
+>
+> This is a **regression from the previous state**, where the test sender at
+> least delivered to the Resend account owner. Do not read §1.3's history below
+> as "mail works" — it does not, right now.
+>
+> To finish, in order:
+> 1. Resend dashboard → **Domains → Add Domain** → `mail.4formai.com`. It is not
+>    registered at all yet — `GET /domains` returns an empty list, so this is not
+>    a pending-DNS situation. The production `RESEND_API_KEY` is **send-only**, so
+>    this cannot be scripted; it has to be the dashboard.
+> 2. Publish the DKIM/SPF records it generates in **Porkbun**. Note Porkbun's
+>    wildcard currently answers *every* subdomain lookup with `uixie.porkbun.com`,
+>    including `resend._domainkey.4formai.com` — so a naive `dig` looks like a
+>    record exists when none does. Check the value, not just for an answer.
+> 3. Re-run the verifier below. No code or config change is needed afterwards.
+>
+> ```bash
+> cd artifacts/api-server && pnpm mail:verify you@example.com
+> ```
+>
+> It sends through the real `sendEmail` and names the specific misconfiguration —
+> it is what produced the 403 above.
+
+Resend is wired and the plumbing is proven: a real password reset completed end
+to end on 2026-08-12 — request → token → email → inbox → link → landing page →
+password changed → old password rejected → token refused on replay. Session
+revocation fired on the reset, so any token issued beforehand died with it. See
+`docs/EMAIL-SETUP.md`, which also records the two failures that turned up and why
+neither was catchable by the test suite.
 
 Built along the way: **the reset link needed somewhere to land.** It previously
 resolved to a JSON 404 — mail sent, token valid, user stuck. Universal Links
@@ -194,8 +224,12 @@ appears.
 Everything inside the repo is done. These live outside it and still carry the
 old name — each needs a console login:
 
-- 🔴 **DNS + Resend** — verify `mail.4formai.com`, publish SPF/DKIM/DMARC, set
-  `MAIL_FROM` and `APP_PUBLIC_URL` on the Railway service. Unblocks §1.3.
+- 🔴 **DNS + Resend** — `MAIL_FROM` is already set on the service; what remains
+  is registering `mail.4formai.com` in the Resend dashboard and publishing its
+  DKIM/SPF records at Porkbun. Mail is failing until then — see §1.3.
+- 🔴 **Point `4formai.com` at something** — it still 302s to `4formai-com.l.ink`,
+  a Porkbun parking page. Needed before `APP_PUBLIC_URL` can move off the Railway
+  host, and before the store-required privacy/terms URLs can resolve.
 - ✅ **Railway** — done 2026-09-01. Service renamed `athleteai` → `fourformai`,
   and the service domain renamed to `fourformai-production-0b7f.up.railway.app`.
   `eas.json`, the mobile `.env` and these docs were repointed in the same
