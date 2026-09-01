@@ -16,7 +16,7 @@ The app **measures and scores correctly today**, and as of 2026-08-12 it is
 logic, account deletion, and password reset all work and are tested
 (673 tests green — 483 API, 170 mobile, 20 scripts).
 
-Live at `https://athleteai-production-0b7f.up.railway.app`, on Supabase, with
+Live at `https://fourformai-production-0b7f.up.railway.app`, on Supabase, with
 coaching write-ups and chat enabled and password reset delivering real mail.
 
 What it still cannot do: **take money** (billing unconfigured), **send mail to
@@ -35,8 +35,8 @@ plus a console login or a lawyer for everything else.
 
 ### 1.1 Deploy the API — ✅ DONE 2026-08-12
 
-Live at `https://athleteai-production-0b7f.up.railway.app` (Railway project
-`athleteai`, service `athleteai`, in Oscar's workspace). `TRUST_PROXY=1` and
+Live at `https://fourformai-production-0b7f.up.railway.app` (Railway project
+`athleteai`, service `fourformai`, in Oscar's workspace). `TRUST_PROXY=1` and
 `NODE_ENV=production` are set, and `eas.json` points the production app build at
 it.
 
@@ -196,12 +196,25 @@ old name — each needs a console login:
 
 - 🔴 **DNS + Resend** — verify `mail.4formai.com`, publish SPF/DKIM/DMARC, set
   `MAIL_FROM` and `APP_PUBLIC_URL` on the Railway service. Unblocks §1.3.
-- 🟠 **Railway** — project and service are both still literally named
-  `athleteai`, and the public host is still
-  `athleteai-production-0b7f.up.railway.app`. **Left alone deliberately:** these
-  strings are how the running deployment is addressed, and `eas.json` points
-  production builds at that host. Renaming the service changes the hostname, so
-  do it as one deliberate step and update `eas.json` in the same commit.
+- ✅ **Railway** — done 2026-09-01. Service renamed `athleteai` → `fourformai`,
+  and the service domain renamed to `fourformai-production-0b7f.up.railway.app`.
+  `eas.json`, the mobile `.env` and these docs were repointed in the same
+  commit, and `APP_PUBLIC_URL` was updated on the service.
+
+  Two things worth knowing for next time. **The service name and the domain are
+  separate records** — renaming the service alone leaves the hostname untouched;
+  the domain has its own id and its own `railway domain update --domain <label>`.
+  And **the CLI cannot rename a service** (`railway service` has no `rename`);
+  it takes the dashboard or the GraphQL mutation:
+
+  ```bash
+  railway api 'mutation { serviceUpdate(id: "<service-id>", input: { name: "fourformai" }) { id name } }'
+  ```
+
+  The old host 404s the moment the domain is renamed, so anything holding it —
+  `APP_PUBLIC_URL` above all, since reset links are built from it — has to move
+  in the same sitting. The Railway **project** is still named `athleteai`; it is
+  cosmetic and appears in no URL.
 - 🟠 **Apple Developer** — register `com.fourformai.app`, enable Sign in with
   Apple on it, and set `APPLE_CLIENT_IDS` to match. Nothing was registered
   under the old id (`eas.json` has an empty `ascAppId`), so nothing is orphaned.
@@ -389,5 +402,5 @@ pnpm --filter @workspace/fourform-mobile typecheck
 pnpm --filter @workspace/fourform-mobile test      # 50
 
 # Is the deployment healthy and fully featured?
-curl https://athleteai-production-0b7f.up.railway.app/api/health/metrics
+curl https://fourformai-production-0b7f.up.railway.app/api/health/metrics
 ```

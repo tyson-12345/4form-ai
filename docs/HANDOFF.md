@@ -23,9 +23,9 @@ Written so a session with no prior context can pick up and be useful in one read
 | Repo | `/Users/tysonyoum/ACTIVE/ai-exercise-coach/AthleteAI_tyson` |
 | Branch | `main` — single branch, keep it that way |
 | GitHub | `tyson-12345/AthleteAI_tyson` (public) |
-| Live API | `https://athleteai-production-0b7f.up.railway.app` |
+| Live API | `https://fourformai-production-0b7f.up.railway.app` |
 | Database | Supabase, `ca-central-1`, session pooler |
-| Railway | project `athleteai` / `ad6fbf98-1a01-4366-9d04-153fa8705cbb`, service `athleteai` |
+| Railway | project `athleteai` / `ad6fbf98-1a01-4366-9d04-153fa8705cbb`, service `fourformai` |
 | Simulator | iPhone 17 Pro, UDID `27BBE9C0-B829-491B-B135-01C7FFCD18ED` |
 
 **Verify commands** (all should pass):
@@ -37,7 +37,7 @@ pnpm --filter @workspace/api-server typecheck
 pnpm --filter @workspace/fourform-mobile typecheck
 pnpm --filter @workspace/api-server lint        # 0 errors, 11 known warnings
 pnpm --filter @workspace/scripts run verify-database
-curl -s https://athleteai-production-0b7f.up.railway.app/api/health/metrics | jq .features
+curl -s https://fourformai-production-0b7f.up.railway.app/api/health/metrics | jq .features
 ```
 
 **Local full stack (2026-08-15):** Homebrew Postgres 17 with database
@@ -147,7 +147,7 @@ work; the previous local value is kept as a comment in that file.
 **Always pass `--project` explicitly:**
 
 ```bash
-railway up --service athleteai --environment production \
+railway up --service fourformai --environment production \
   --project ad6fbf98-1a01-4366-9d04-153fa8705cbb --ci
 ```
 
@@ -165,7 +165,7 @@ the link) and created a stray project in Oscar's workspace.
 
 The CLI is authenticated as **`oac60647@gmail.com` — Oscar's account.** It is a
 shared paid account. Anything done there is attributed to him and shows on his
-billing. **Never modify or redeploy a service that is not `athleteai`.**
+billing. **Never modify or redeploy a service that is not `fourformai`.**
 
 ---
 

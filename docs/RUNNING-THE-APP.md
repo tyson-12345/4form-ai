@@ -97,7 +97,7 @@ single command.
 
 | Target | Value |
 |---|---|
-| Production (default in `eas.json`) | `https://athleteai-production-0b7f.up.railway.app` |
+| Production (default in `eas.json`) | `https://fourformai-production-0b7f.up.railway.app` |
 | Local API | your machine's LAN IP, **not** `localhost` — a simulator resolves that to itself |
 
 Release builds refuse a plain-`http://` origin (`lib/api.ts`). Every request
