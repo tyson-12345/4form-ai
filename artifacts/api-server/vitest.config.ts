@@ -1,6 +1,24 @@
 import { defineConfig } from "vitest/config";
 
+/**
+ * Load `.md` as a string, mirroring esbuild's `loader: { ".md": "text" }` in
+ * build.mjs. The legal pages import the documents directly, so without this the
+ * suite cannot even parse them — Vite tries to read the Markdown as JavaScript.
+ *
+ * `enforce: "pre"` matters: it has to run before vite:import-analysis, which is
+ * what reports the syntax error.
+ */
+const markdownAsText = {
+  name: "markdown-as-text",
+  enforce: "pre" as const,
+  transform(code: string, id: string) {
+    if (!id.endsWith(".md")) return null;
+    return { code: `export default ${JSON.stringify(code)};`, map: null };
+  },
+};
+
 export default defineConfig({
+  plugins: [markdownAsText],
   test: {
     environment: "node",
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],

@@ -198,6 +198,25 @@ to abandon.
 - ✅ **Terms + Privacy now linked at signup** and in Profile, so the agreement is
   presented at account creation rather than buried.
 - 🔴 **Sign DPAs** with hosting, database, Anthropic, and the mail provider.
+- 🔴 **Fill in the bracketed values, then the documents publish themselves.**
+  Both files still carry values only a person can supply, and the server
+  **refuses to serve either document while any remain** — `/privacy` and
+  `/terms` return 503 and a short "not published yet" page rather than leak a
+  blank or a draft note to a store reviewer. Filling them in and redeploying is
+  the entire publishing step; nothing else is wired to a switch.
+
+  | Placeholder | Appears in | What it needs |
+  |---|---|---|
+  | `[LEGAL ENTITY NAME]` | both | The entity users contract with — a company if one exists, otherwise a named individual |
+  | `[ADDRESS]` | both | A postal address. GDPR and CCPA both require a real one |
+  | `[JURISDICTION]` | Terms | Governing law and venue |
+  | `[USD 100]` | Terms | The liability cap — a placeholder value, not a decision |
+  | `[DATE — set when published]` | both | Effective date |
+  | `[HOSTING PROVIDER]`, `[EMAIL PROVIDER]`, `[ENTITY]` | Privacy | Railway, Resend, Supabase — factual, fillable now |
+
+  The four "delete before publishing" blocks need no action: the renderer strips
+  any blockquote marked that way, so the Markdown stays the single source of
+  truth rather than being hand-edited into a second copy.
 
 ### 1.7 Analysis readability
 ✅ Done 2026-08-12. The coaching prompt no longer asks the model to cite joint
@@ -223,9 +242,20 @@ old name — each needs a console login:
 - ✅ **DNS + Resend** — done 2026-09-01. `mail.4formai.com` is verified in
   Resend, DKIM/SPF are live at Porkbun, `MAIL_FROM` is set on the service, and a
   real send was accepted. See §1.3 for the two checks that lie.
-- 🔴 **Point `4formai.com` at something** — it still 302s to `4formai-com.l.ink`,
-  a Porkbun parking page. Needed before `APP_PUBLIC_URL` can move off the Railway
-  host, and before the store-required privacy/terms URLs can resolve.
+- ✅ **`4formai.com` is live** — done 2026-09-01, pointing at the API service.
+  The apex is an **ALIAS**, not a CNAME: Porkbun refuses a CNAME at the root and
+  is right to, because a CNAME there is only legal if the name has no other
+  records, and the apex carries the `MX` for Porkbun's mail forwarding. A
+  registrar that allowed it would have silently taken that mail down. Railway's
+  setup instructions say "CNAME @" because most registrars offer nothing better.
+
+  The API now serves `/`, `/privacy` and `/terms` (`routes/legalPages.ts`).
+
+- 🔴 **Design the landing page** — the page at `/` is deliberately plain: a
+  headline, one paragraph, and links to the documents, enough to stop the domain
+  404ing for a store reviewer. It is not a marketing page and does not pretend to
+  be. Tyson is designing the real one; building it is a small job once there is a
+  design, since the serving, the CSP and the styling are already in place.
 - ✅ **Railway** — done 2026-09-01. Service renamed `athleteai` → `fourformai`,
   and the service domain renamed to `fourformai-production-0b7f.up.railway.app`.
   `eas.json`, the mobile `.env` and these docs were repointed in the same

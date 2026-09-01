@@ -23,6 +23,7 @@ COPY artifacts/api-server/package.json artifacts/api-server/
 RUN pnpm install --frozen-lockfile
 
 COPY lib/ lib/
+COPY docs/ docs/
 COPY artifacts/api-server/ artifacts/api-server/
 
 RUN pnpm --filter @workspace/api-server run build

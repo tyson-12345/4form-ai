@@ -2,6 +2,7 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import legalPagesRouter from "./routes/legalPages.js";
 import resetPageRouter from "./routes/resetPage";
 import { logger } from "./lib/logger";
 import { rateLimit } from "./lib/rateLimit";
@@ -175,6 +176,13 @@ app.use("/api", router);
 // and this route is reachable without authentication.
 app.use("/reset-password", rateLimit({ name: "reset-page", max: 20 }));
 app.use(resetPageRouter);
+
+// ── Public pages ──────────────────────────────────────────────────────────────
+// The landing page and the two legal documents, mounted at the root for the same
+// reason as the reset page: they are opened by people, not by the app. Both
+// stores fetch the privacy URL during review, so a 404 here is a rejection.
+app.use("/", rateLimit({ name: "public-pages", max: 60 }));
+app.use(legalPagesRouter);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((req: Request, res: Response) => {

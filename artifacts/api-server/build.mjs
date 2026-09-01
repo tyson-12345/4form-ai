@@ -21,6 +21,10 @@ async function buildAll() {
     format: "esm",
     outdir: distDir,
     outExtension: { ".js": ".mjs" },
+    // The legal documents are inlined as strings rather than read from disk at
+    // runtime: the runtime image contains only dist/ and lib/, so a file read
+    // would work locally and 404 in production.
+    loader: { ".md": "text" },
     logLevel: "info",
     // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
     // Some of the packages below may not be imported or installed, but we're adding them in case they are in the future.
