@@ -106,12 +106,26 @@ const ASSETS_BY_URL = new Map(Object.values(ASSETS).map((a) => [a.url, a]));
 
 // ─── The page ────────────────────────────────────────────────────────────────
 
+/**
+ * The canonical origin, in the one place that has to agree with `<link rel=canonical>`.
+ *
+ * Only the absolute URLs need it: schema.org's `logo` and the sitemap's `<loc>`
+ * are both specified as absolute, and a relative one is silently dropped.
+ * Everything the browser fetches stays origin-relative, so the page still works
+ * unchanged on a preview deploy or on localhost.
+ */
+const SITE_ORIGIN = "https://4formai.com";
+
 const withAssets = landingHtml
   .replace(/__ASSET_FONT_DISPLAY__/g, ASSETS.fontDisplay.url)
   .replace(/__ASSET_FONT_SANS__/g, ASSETS.fontSans.url)
   .replace(/__ASSET_FONT_MONO__/g, ASSETS.fontMono.url)
   .replace(/__ASSET_FAVICON__/g, ASSETS.favicon.url)
-  .replace(/__ASSET_TOUCH_ICON__/g, ASSETS.touchIcon.url);
+  .replace(/__ASSET_TOUCH_ICON__/g, ASSETS.touchIcon.url)
+  // The structured data's `logo`, absolute and content-hashed. The raster, not
+  // the SVG mark: Google's Organization logo guidance wants something it can
+  // rasterise for a knowledge panel, and this is the same artwork at 180px.
+  .replace(/__ASSET_LOGO_ABS__/g, `${SITE_ORIGIN}${ASSETS.touchIcon.url}`);
 
 /**
  * The CSP source expression for one inline block, hashed after substitution.
@@ -141,7 +155,11 @@ function inlineBlocks(html: string, tag: "style" | "script", expected: number): 
 }
 
 const STYLE_HASHES = inlineBlocks(withAssets, "style", 1).map(hashOf);
-const SCRIPT_HASHES = inlineBlocks(withAssets, "script", 2).map(hashOf);
+// Three, not two: the head script, the page's script, and the JSON-LD data
+// block. The last is never executed, so `script-src` does not gate it -- but the
+// policy is derived from every <script> the file contains, and an unhashed one
+// would trip the guard below rather than being quietly ignored.
+const SCRIPT_HASHES = inlineBlocks(withAssets, "script", 3).map(hashOf);
 
 const CSP = [
   "default-src 'none'",
@@ -315,6 +333,54 @@ router.get("/favicon.ico", (_req, res) => {
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
   res.status(200).send(ASSETS.touchIcon.body);
+});
+
+/**
+ * `robots.txt` and `sitemap.xml` -- the two files a crawler looks for by name.
+ *
+ * Until these existed both paths returned the API's JSON 404, which is not a
+ * crawl error but is a missed one: `robots.txt` is where a sitemap is announced
+ * to every engine at once, and the sitemap is the only URL Search Console will
+ * accept for submission. With no inbound links anywhere, this file is how the
+ * three pages get discovered at all.
+ *
+ * Nothing is disallowed. The fonts and the mark have to be fetchable or the page
+ * renders wrong to a crawler that measures layout, and the only other paths are
+ * the API's, which are already unlinked, `no-store`, and behind auth. The
+ * query-string variants of `/` (`?joined=1`, `?email=invalid`, `?busy=1`) are
+ * left crawlable on purpose: the page carries `<link rel="canonical">` pointing
+ * at the bare URL, and a canonical on a reachable page consolidates them, while
+ * a `Disallow` would make them uncrawlable and therefore unable to say so.
+ *
+ * There is no `<lastmod>`. It is optional, Google discards values it does not
+ * trust, and the only date available here is process start -- which changes on
+ * every restart and would claim an edit that never happened. No date beats a
+ * date that lies.
+ */
+const PAGES_IN_SITEMAP = ["/", "/privacy", "/terms"] as const;
+
+const ROBOTS_TXT = `User-agent: *
+Allow: /
+
+Sitemap: ${SITE_ORIGIN}/sitemap.xml
+`;
+
+const SITEMAP_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${PAGES_IN_SITEMAP.map((path) => `  <url><loc>${SITE_ORIGIN}${path}</loc></url>`).join("\n")}
+</urlset>
+`;
+
+router.get("/robots.txt", (_req, res) => {
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.status(200).send(ROBOTS_TXT);
+});
+
+router.get("/sitemap.xml", (_req, res) => {
+  res.setHeader("Content-Type", "application/xml; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.status(200).send(SITEMAP_XML);
 });
 
 export default router;

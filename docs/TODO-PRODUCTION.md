@@ -325,11 +325,25 @@ to abandon.
   low-risk processing, and joint angles with injury-risk flags sit close enough to
   health data not to assume it.
 
-  One thing to check while in there: §6 rests the UK/EU transfer on the **adequacy
-  decision for Canada**, which covers organisations subject to PIPEDA. That is an
-  assumption about where the operators are established, not just about where
-  Supabase runs. If it is wrong, §6 is wrong — and it was wrong before this
-  change, not because of it.
+  **§6's adequacy claim was removed, 2026-09-02.** It said the UK/EU transfer
+  relied on the European Commission's adequacy decision for Canada and that no
+  Standard Contractual Clauses were needed. The adequacy decision covers
+  organisations *subject to PIPEDA* — operating commercially in Canada — and
+  4Form AI is operated from the United States on rented Montreal capacity. Renting
+  capacity in a country does not put you under its privacy law. The storage
+  location was right; the conclusion was not.
+
+  It was not replaced with a different mechanism, because there was no honest one
+  to name: the DPAs that would carry Standard Contractual Clauses are still
+  unsigned (below). §6 now states where the data is, who holds it, and that our
+  agreements with those companies carry data-protection terms — all checkable —
+  and asserts nothing about which legal instrument applies.
+
+  **Accepting the four DPAs is what turns that from modest into solid**, and it is
+  free: `supabase.com/legal/dpa`, `railway.com/legal/dpa`, Anthropic's commercial
+  terms, `resend.com/legal/dpa` — all four published and reachable as of
+  2026-09-02. Each incorporates SCCs. Once accepted, §6 can name them, and the
+  🔴 DPA item below is closed by the same action.
 
   Optional while in there: `_dmarc.4formai.com` has no record — the lookup
   returns Porkbun's wildcard, not a policy. `TXT` at host `_dmarc` with

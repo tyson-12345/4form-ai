@@ -12,9 +12,57 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="4Form AI">
 <meta property="og:title" content="4Form AI — Your technique, measured.">
-<meta property="og:description" content="Film a set. We track your joints frame by frame and show you the angles, with the range each one should sit in. Same clip, same numbers, every time.">
+<meta property="og:description" content="Film a set. 4Form AI tracks your joints frame by frame and shows you the angles, with the range each one should sit in. Same clip, same numbers, every time.">
 <meta property="og:url" content="https://4formai.com/">
 <meta name="twitter:card" content="summary">
+
+<!--
+  The entity, stated once, in the one form a search engine reads without guessing.
+
+  This exists for a single query: someone typing the product's name. "4Form AI"
+  tokenizes into "form ai", a crowded commercial term owned by form builders, so
+  the name alone is ambiguous to a crawler that has never seen it before.
+  `alternateName` is the claim that every spelling is one entity, and the
+  `WebSite` node is what makes a result say "4Form AI" rather than "4formai.com".
+
+  `sameAs` is deliberately absent rather than empty: it is a list of independent
+  profiles that corroborate the entity, and it says nothing until those exist.
+  Add LinkedIn, Crunchbase, Instagram, X and the App Store listing as they land.
+
+  This is a data block, not code -- browsers do not execute it. Its hash goes in
+  `script-src` regardless, because landingPage.ts derives the policy from every
+  <script> element it finds, and covering it costs nothing.
+-->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://4formai.com/#organization",
+      "name": "4Form AI",
+      "alternateName": ["4FormAI", "4 Form AI", "FourForm AI", "4formai"],
+      "url": "https://4formai.com/",
+      "logo": "__ASSET_LOGO_ABS__",
+      "email": "support@4formai.com",
+      "description": "4Form AI measures lifting technique from a single phone video. It tracks your joints frame by frame and reports each angle against the range it should sit in.",
+      "founder": [
+        { "@type": "Person", "name": "Tyson Youm" },
+        { "@type": "Person", "name": "Oscar Chuang" }
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://4formai.com/#website",
+      "name": "4Form AI",
+      "alternateName": ["4FormAI", "4 Form AI", "4formai"],
+      "url": "https://4formai.com/",
+      "publisher": { "@id": "https://4formai.com/#organization" },
+      "inLanguage": "en"
+    }
+  ]
+}
+</script>
 <style>
 /* ── Faces ────────────────────────────────────────────────────────────────────
    Self-hosted, latin subset, served from this origin with an immutable
@@ -1320,7 +1368,7 @@ section[id] { scroll-margin-top: var(--nav-h); }
       </h1>
 
       <p class="lede" data-hero-fade="1">
-        Film a set. We track your joints frame by frame and show you the angles, with the range each one should sit in. Same clip, same numbers, every time.
+        Film a set. 4Form AI tracks your joints frame by frame and shows you the angles, with the range each one should sit in. Same clip, same numbers, every time.
       </p>
 
       <form class="form" method="post" action="/waitlist" data-waitlist data-hero-fade="2">

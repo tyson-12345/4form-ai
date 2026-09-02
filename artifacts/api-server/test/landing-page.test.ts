@@ -160,13 +160,84 @@ describe("the landing page", () => {
     const styles = inlineBlocks(res.text, "style");
     const scripts = inlineBlocks(res.text, "script");
     expect(styles).toHaveLength(1);
-    expect(scripts).toHaveLength(2);
+    // The head script, the page's script, and the JSON-LD data block.
+    expect(scripts).toHaveLength(3);
 
     // The assertion that matters: hash what was served, and require the policy
     // to name it. A drift between the file and the policy renders the page
     // unstyled and inert, and nothing on the server side would notice.
     for (const block of [...styles, ...scripts]) {
       expect(csp).toContain(sha256(block));
+    }
+  });
+
+  it("names itself as an entity, under every spelling of the name", async () => {
+    const html = (await request(app).get("/")).text;
+
+    const block = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)?.[1];
+    expect(block, "the page carries no structured data").toBeDefined();
+
+    // Parsed, not substring-matched: a trailing comma or a stray quote makes the
+    // block invalid JSON, which every consumer discards in silence. A page that
+    // looks right in the markup and is ignored by Google is the failure this
+    // catches, and it is invisible everywhere else.
+    const graph = JSON.parse(block ?? "")["@graph"] as Array<Record<string, unknown>>;
+    const org = graph.find((node) => node["@type"] === "Organization");
+    const site = graph.find((node) => node["@type"] === "WebSite");
+
+    expect(org?.["name"]).toBe("4Form AI");
+    expect(site?.["name"]).toBe("4Form AI");
+
+    // The reason the block exists. "4Form AI" tokenizes into a crowded generic
+    // term, so every spelling has to be claimed explicitly as the same entity.
+    expect(org?.["alternateName"]).toContain("4 Form AI");
+    expect(org?.["alternateName"]).toContain("4formai");
+
+    // Absolute, and pointing at an asset this server actually serves -- a
+    // relative or stale logo URL is dropped without a word.
+    const logo = String(org?.["logo"]);
+    expect(logo).toMatch(/^https:\/\/4formai\.com\/assets\//);
+    expect((await request(app).get(new URL(logo).pathname)).status).toBe(200);
+  });
+
+  it("puts the product name in text, not only in the wordmark", async () => {
+    // Every other mention is a wordmark, an sr-only span, or the footer. A
+    // branded query needs the name in prose the crawler indexes as content.
+    expect((await request(app).get("/")).text).toContain(
+      "4Form AI tracks your joints frame by frame",
+    );
+  });
+
+  it("serves robots.txt announcing the sitemap", async () => {
+    const res = await request(app).get("/robots.txt");
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/plain");
+    expect(res.text).toContain("Sitemap: https://4formai.com/sitemap.xml");
+    // Nothing is off limits. A stray Disallow here would be invisible until a
+    // page quietly stopped ranking.
+    expect(res.text).not.toContain("Disallow");
+  });
+
+  it("lists every public page in the sitemap, and every listed page answers", async () => {
+    const res = await request(app).get("/sitemap.xml");
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/xml");
+
+    const locs = [...res.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1] ?? "");
+    expect(locs).toEqual([
+      "https://4formai.com/",
+      "https://4formai.com/privacy",
+      "https://4formai.com/terms",
+    ]);
+
+    // A sitemap is a set of promises. Submitting one that lists a URL returning
+    // 404 or 503 is worse than submitting nothing -- it is the exact state this
+    // site was in, and it is not detectable by reading the sitemap alone.
+    for (const loc of locs) {
+      const page = await request(app).get(new URL(loc).pathname);
+      expect(page.status, `${loc} is in the sitemap`).toBe(200);
     }
   });
 

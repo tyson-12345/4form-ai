@@ -127,20 +127,38 @@ rights and safety of our users.
 
 ## 6. Where it lives
 
-Data is stored in **Canada** (Supabase, `ca-central-1`).
+4Form AI is operated from the **United States**. Your data is stored in
+**Canada** (Supabase, `ca-central-1`). The other companies that handle it for us
+are listed in §5, and some of them are in the United States.
 
-If you are in the UK or EU, this transfer relies on the European Commission's
-**adequacy decision for Canada**, which recognises Canadian commercial privacy
-law as providing equivalent protection. No Standard Contractual Clauses are
-required for it.
+If you are in the UK or EU, your data therefore moves between countries. We rely
+on the data-protection terms in our agreements with each of the companies in §5
+to protect it when it does. If you want to know more about those arrangements,
+write to privacy@4formai.com and we will tell you.
 
-> **Note (delete before publishing).** The adequacy decision covers organisations
-> subject to Canada's PIPEDA. It is the reason this transfer is straightforward
-> — a US region would have meant relying on the Data Privacy Framework or SCCs
-> instead. Worth keeping in mind before moving regions.
+> **Note (delete before publishing).** This section used to say the transfer
+> relied on the European Commission's **adequacy decision for Canada**, and that
+> no Standard Contractual Clauses were needed. That was removed on 2026-09-02,
+> and it should not come back without advice.
 >
-> Your other processors are separate transfers with their own bases, and are
-> listed in §5.
+> The reasoning was wrong in one specific way. The adequacy decision covers
+> organisations **subject to PIPEDA** — that is, organisations operating
+> commercially in Canada. 4Form AI is operated by two individuals in the United
+> States who rent server capacity in Montreal, and renting capacity in a country
+> does not make you subject to its privacy law. The storage location was never in
+> doubt; the conclusion drawn from it was.
+>
+> What replaced it claims nothing about which legal mechanism applies. That is
+> deliberate. The honest position is that the data moves, that named companies
+> hold it, and that our agreements with them carry data-protection terms — all of
+> which is true and checkable. A privacy policy does not have to adjudicate its
+> own transfer basis, and one that asserts the wrong one is worse than one that
+> does not assert.
+>
+> **What would make this solid is accepting the four DPAs**, which is free and
+> takes minutes: supabase.com/legal/dpa, railway.com/legal/dpa, Anthropic's
+> commercial terms, resend.com/legal/dpa. Each incorporates Standard Contractual
+> Clauses. Once they are accepted, this section can say so by name.
 
 ## 7. How long we keep it
 
