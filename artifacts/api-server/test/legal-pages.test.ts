@@ -158,17 +158,40 @@ describe("the legal documents", () => {
   it.each([
     ["/privacy", "Privacy Policy"],
     ["/terms", "Terms of Service"],
-  ])("refuses to publish %s while it still has blanks", async (path, title) => {
+  ])("publishes %s", async (path, title) => {
+    // Both documents were finished on 2026-09-02. Until then these two cases
+    // asserted the opposite — a 503 — which made the suite depend on the
+    // documents staying unfinished, and would have started failing the moment
+    // they were completed. The guard is now tested against a fixture instead,
+    // just below, so it is exercised whatever state the real text is in.
     const res = await request(app).get(path);
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
     expect(res.text).toContain(title);
-    expect(res.text).toContain("not published yet");
+    expect(res.text).not.toContain("not published yet");
   });
 
   it.each(["/privacy", "/terms"])("never leaks a placeholder or a draft note via %s", async (path) => {
     const res = await request(app).get(path);
     expect(res.text).not.toMatch(/\[[A-Z][A-Z ]+\]/);
+    expect(res.text).not.toContain("yourdomain.com");
     expect(res.text.toLowerCase()).not.toContain("before publishing");
+  });
+
+  it("still refuses a document that has a blank left in it", async () => {
+    // The guard is the point of this router, and it now has to be tested on
+    // something other than the real documents. A document that is complete today
+    // can gain a blank tomorrow — a new clause, a new contact — and the refusal
+    // has to be waiting for it.
+    expect(findPlaceholders("Operated by us, at [ADDRESS].")).toEqual(["[ADDRESS]"]);
+    expect(findPlaceholders("Write to [privacy@yourdomain.com].")).toEqual([
+      "[privacy@yourdomain.com]",
+    ]);
+    // And a finished one is not held back by a note only the maintainers see.
+    expect(
+      findPlaceholders(
+        ["> **Publishing note (delete before publishing).**", "> Replace every `[BRACKETED]` value.", "", "Operated by us."].join("\n"),
+      ),
+    ).toEqual([]);
   });
 
   it("leaves the reset page and the API untouched", async () => {

@@ -213,10 +213,9 @@ to abandon.
   Two more were filled 2026-09-02, leaving four values and one of them is really
   a single action.
 
-  | Still blank | Appears in | What it needs |
-  |---|---|---|
-  | `[privacy@…]`, `[security@…]` | Privacy | Working mailboxes |
-  | `[support@…]` | Terms | Working mailbox — **and already live in the landing page footer** |
+  **Nothing is blank. Both documents publish.** Completed 2026-09-02: the three
+  Porkbun forwarding aliases were added and confirmed, and `privacy@4formai.com`,
+  `security@4formai.com` and `support@4formai.com` went into the text.
 
   **`[JURISDICTION]` → the State of New York, 2026-09-02.** Briefly set to "the
   United States of America" the same day and then changed. Worth recording why the
@@ -266,11 +265,10 @@ to abandon.
 
   Both are pinned by regression tests.
 
-  **Porkbun email forwarding — deferred 2026-09-01, do this first.** It unblocks
-  three of the five remaining blanks and takes minutes. Forwarding is already the
-  mail handler for the apex (`MX 10 fwd1.porkbun.com`, `20 fwd2.porkbun.com`), so
-  nothing needs enabling — only aliases adding, under **Domain Management →
-  4formai.com → Email Forwarding**, which is its own section and not DNS Records:
+  **Porkbun email forwarding — done 2026-09-02.** Forwarding was already the mail
+  handler for the apex (`MX 10 fwd1.porkbun.com`, `20 fwd2.porkbun.com`), so
+  nothing needed enabling — only aliases, under **Domain Management → 4formai.com
+  → Email Forwarding**, which is its own section and not DNS Records:
 
   | Forward from | Forward to |
   |---|---|
@@ -287,14 +285,14 @@ to abandon.
   make forwarding work at all.
 
   Send a test to each address before saying it is done. A contact address on a
-  privacy policy has to actually receive mail; one that bounces is worse than the
-  503 the documents currently return.
+  privacy policy has to actually receive mail; one that bounces is worse than a
+  503. Done, and confirmed by Tyson, before the addresses went into the text.
 
-  **`support@4formai.com` is already published**, in the landing page footer that
-  went live 2026-09-02 — so unlike the other two, that alias is not waiting on the
-  legal documents. Until it forwards, the only contact route on a live page that
-  asks for an email address is an address that may not receive one. It is the
-  first of the three to add.
+  `support@4formai.com` was the urgent one of the three: it shipped in the landing
+  page footer before it forwarded, so for a few hours the only contact route on a
+  live page that asks for an email address was an address that did not receive
+  one. Worth remembering the ordering next time — a published address is a promise
+  from the moment it is published, not from the moment the document citing it is.
 
   **`[ADDRESS]` was removed, 2026-09-02 — decided, not deferred.** Both documents
   now identify the operators by name and give an email; §1 says plainly that there

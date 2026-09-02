@@ -30,7 +30,7 @@
 4Form AI is operated by Tyson Youm and Oscar Chuang.
 There is no office and no postal correspondence — every route to us is by
 email, and each address below reaches a person.
-Questions: **[privacy@yourdomain.com]**
+Questions: **privacy@4formai.com**
 
 For UK/EU users, Tyson Youm and Oscar Chuang is the data controller for the information described
 here.
@@ -159,7 +159,7 @@ that cannot identify you may be retained.
 - **Delete a clip** — it is a file on your device; deleting the session removes
   it.
 
-**On request, at [privacy@yourdomain.com]:** access a copy of your data,
+**On request, at privacy@4formai.com:** access a copy of your data,
 correct it, restrict or object to processing, or receive it in portable form.
 We respond within 30 days.
 
@@ -173,7 +173,7 @@ terms are defined by the CPRA.
 
 4Form AI is not directed at children under 13, and we do not knowingly collect
 their information. If you believe a child under 13 has given us data, write to
-[privacy@yourdomain.com] and we will delete it.
+privacy@4formai.com and we will delete it.
 
 Users aged 13–17 should have a parent or guardian read this policy and the
 Terms with them. See the Terms of Service for the age requirements that apply
@@ -188,7 +188,7 @@ device's secure keychain. All traffic uses HTTPS. Resetting your password signs
 out every existing session.
 
 No system is perfectly secure, and we don't claim otherwise. If you find a
-vulnerability, please write to [security@yourdomain.com].
+vulnerability, please write to security@4formai.com.
 
 ## 11. Changes
 
@@ -198,4 +198,4 @@ effect.
 
 ## 12. Contact
 
-**[privacy@yourdomain.com]** · Tyson Youm and Oscar Chuang
+**privacy@4formai.com** · Tyson Youm and Oscar Chuang

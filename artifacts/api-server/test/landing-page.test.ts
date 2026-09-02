@@ -616,11 +616,15 @@ describe("POST /waitlist", () => {
 
 describe("mounting the page at the root", () => {
   it("leaves the documents, the reset page and the API untouched", async () => {
-    // Still refusing to publish an unfinished document, not serving the landing
-    // page for it.
+    // What this is really asserting is mount order: `/privacy` reaches the legal
+    // router rather than the landing page mounted at `/`. It used to prove that
+    // with a 503, which stopped being true the day the documents were finished —
+    // so it now checks for the document itself. Either way the landing page must
+    // not answer here.
     const privacy = await request(app).get("/privacy");
-    expect(privacy.status).toBe(503);
-    expect(privacy.text).toContain("not published yet");
+    expect(privacy.status).toBe(200);
+    expect(privacy.text).toContain("Privacy Policy");
+    expect(privacy.text).not.toContain("Your technique,");
 
     expect((await request(app).get("/reset-password?token=x")).status).toBe(200);
     expect((await request(app).get("/api/healthz")).status).toBe(200);

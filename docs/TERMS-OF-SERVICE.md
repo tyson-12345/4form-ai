@@ -178,7 +178,7 @@ mandatory laws of the country you live in.
 ## 14. Disputes
 
 **Talk to us first.** Most problems are solved by writing to
-[support@yourdomain.com]. Please give us 30 days — we'd rather fix it than
+support@4formai.com. Please give us 30 days — we'd rather fix it than
 argue about it.
 
 If we can't resolve it that way, either of us may bring the dispute before any
@@ -215,4 +215,4 @@ a merger or sale, on notice.
 
 ## 17. Contact
 
-**[support@yourdomain.com]** · Tyson Youm and Oscar Chuang
+**support@4formai.com** · Tyson Youm and Oscar Chuang
