@@ -1,7 +1,7 @@
 # 4Form AI Privacy Policy
 
-**Effective:** [DATE — set when published]
-**Last updated:** 12 August 2026
+**Effective:** 2 September 2026
+**Last updated:** 2 September 2026
 
 > **Publishing note (delete this block before publishing).**
 > Both app stores require this to be reachable at a **public HTTPS URL** before

@@ -1,6 +1,6 @@
 # 4Form AI Terms of Service
 
-**Effective:** [DATE — set when published]
+**Effective:** 2 September 2026
 **Last updated:** 12 August 2026
 
 > **Publishing note (delete before publishing).**
@@ -122,7 +122,7 @@ incidental, special, consequential, or punitive damages, or for lost profits,
 data, or goodwill.
 
 **Our total liability for any claim is limited to the greater of (a) what you
-paid us in the 12 months before the claim, or (b) [USD 100].**
+paid us in the 12 months before the claim, or (b) USD 100.**
 
 Some jurisdictions don't allow these exclusions, in which case they apply to
 the maximum extent permitted and the paragraph above about death and personal

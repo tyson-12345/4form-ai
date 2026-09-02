@@ -210,13 +210,26 @@ to abandon.
   individuals — there is no company, and no separate UK/EU controller), and the
   processors are Railway and Resend.
 
+  Two more were filled 2026-09-02, leaving four values and one of them is really
+  a single action.
+
   | Still blank | Appears in | What it needs |
   |---|---|---|
-  | `[ADDRESS]` | both | A postal address. GDPR and CCPA both require a real, reachable one |
+  | `[ADDRESS]` | both | A postal address. Does not have to be a home one — see below |
   | `[JURISDICTION]` | Terms | Governing law and venue |
-  | `[USD 100]` | Terms | The liability cap — a placeholder value, not yet a decision |
-  | `[DATE — set when published]` | both | Effective date |
-  | `[privacy@…]`, `[security@…]`, `[support@…]` | both | Working mailboxes. The apex `MX` is Porkbun forwarding, so `…@4formai.com` is a few minutes of setup — but do not publish an address that does not receive mail |
+  | `[privacy@…]`, `[security@…]` | Privacy | Working mailboxes |
+  | `[support@…]` | Terms | Working mailbox — **and already live in the landing page footer** |
+
+  Filled 2026-09-02: `[DATE — set when published]` → 2 September 2026 in both, and
+  `[USD 100]` → `USD 100` in the Terms. The cap was only ever bracketed to mark it
+  as unconfirmed; the figure itself is the conventional one and is a real term —
+  it is the ceiling on our exposure, and it is a number to change on purpose, not
+  a blank to fill. The privacy policy's **Last updated** moved to the same date,
+  because its collection table gained the waitlist row that day and the old date
+  had stopped being true of the document.
+
+  If publication slips past 2 September, bump both **Effective** lines. A document
+  cannot be effective from a date on which it returned 503.
 
   Two bugs in the guard were found while filling these in, both of which would
   have defeated it:
@@ -256,6 +269,21 @@ to abandon.
   Send a test to each address before saying it is done. A contact address on a
   privacy policy has to actually receive mail; one that bounces is worse than the
   503 the documents currently return.
+
+  **`support@4formai.com` is already published**, in the landing page footer that
+  went live 2026-09-02 — so unlike the other two, that alias is not waiting on the
+  legal documents. Until it forwards, the only contact route on a live page that
+  asks for an email address is an address that may not receive one. It is the
+  first of the three to add.
+
+  **The address does not have to be a home one.** There is no company here, so the
+  obvious reading of `[ADDRESS]` is a personal one, and it does not have to be: a
+  virtual office, a registered-agent address or a mail-forwarding service is what
+  solo developers normally publish, and it satisfies the same requirement. Worth
+  knowing that Google Play verifies and *publishes* a developer address on the
+  store listing regardless, so one becomes public through that route anyway —
+  which is an argument for choosing a non-home one once, and using it in both
+  places.
 
   Optional while in there: `_dmarc.4formai.com` has no record — the lookup
   returns Porkbun's wildcard, not a policy. `TXT` at host `_dmarc` with
