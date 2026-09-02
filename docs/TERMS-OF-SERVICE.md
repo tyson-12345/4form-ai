@@ -215,4 +215,4 @@ a merger or sale, on notice.
 
 ## 17. Contact
 
-**[support@yourdomain.com]** · Tyson Youm and Oscar Chuang, [ADDRESS]
+**[support@yourdomain.com]** · Tyson Youm and Oscar Chuang

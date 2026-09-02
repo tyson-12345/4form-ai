@@ -215,7 +215,6 @@ to abandon.
 
   | Still blank | Appears in | What it needs |
   |---|---|---|
-  | `[ADDRESS]` | both | A postal address. Does not have to be a home one — see below |
   | `[JURISDICTION]` | Terms | Governing law and venue |
   | `[privacy@…]`, `[security@…]` | Privacy | Working mailboxes |
   | `[support@…]` | Terms | Working mailbox — **and already live in the landing page footer** |
@@ -276,14 +275,42 @@ to abandon.
   asks for an email address is an address that may not receive one. It is the
   first of the three to add.
 
-  **The address does not have to be a home one.** There is no company here, so the
-  obvious reading of `[ADDRESS]` is a personal one, and it does not have to be: a
-  virtual office, a registered-agent address or a mail-forwarding service is what
-  solo developers normally publish, and it satisfies the same requirement. Worth
-  knowing that Google Play verifies and *publishes* a developer address on the
-  store listing regardless, so one becomes public through that route anyway —
-  which is an argument for choosing a non-home one once, and using it in both
-  places.
+  **`[ADDRESS]` was removed, 2026-09-02 — decided, not deferred.** Both documents
+  now identify the operators by name and give an email; §1 says plainly that there
+  is no office and no postal correspondence. Do not put the blank back without
+  reading the next two paragraphs.
+
+  The earlier note here said "GDPR and CCPA both require a real, reachable one".
+  That was wrong and had been repeated without checking. GDPR Article 13(1)(a)
+  requires the controller's *identity and contact details* — not a postal address.
+  The names satisfy the identity; a working mailbox satisfies the contact details.
+  A postal address is conventional and is what a reviewer expects to see, which is
+  a different claim from a requirement, and the two had been run together.
+
+  **What the removal does not remove.** Two obligations sit outside the policy and
+  are untouched by this:
+
+  - **The launch email.** Anti-spam law wants a mailing address *in the commercial
+    message itself* — CAN-SPAM requires a valid physical postal address, and CASL
+    requires a mailing address in every commercial electronic message. The
+    waitlist exists to send exactly one such message. Settle this before sending
+    it, not before publishing the policy; whether CASL applies turns on where the
+    operators actually are, which is not recorded anywhere in this repo.
+  - **Google Play** verifies a developer address and publishes it on the store
+    listing. An address becomes public through that route whether or not it is in
+    the policy.
+
+  Also unresolved, and older than this decision: `LEGAL-RISK.md` §7 flags that EU
+  users with no EU establishment may need an **Article 27 representative**, who is
+  themselves an address that belongs in the policy. The exemption is for occasional
+  low-risk processing, and joint angles with injury-risk flags sit close enough to
+  health data not to assume it.
+
+  One thing to check while in there: §6 rests the UK/EU transfer on the **adequacy
+  decision for Canada**, which covers organisations subject to PIPEDA. That is an
+  assumption about where the operators are established, not just about where
+  Supabase runs. If it is wrong, §6 is wrong — and it was wrong before this
+  change, not because of it.
 
   Optional while in there: `_dmarc.4formai.com` has no record — the lookup
   returns Porkbun's wildcard, not a policy. `TXT` at host `_dmarc` with

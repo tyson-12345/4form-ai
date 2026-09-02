@@ -27,7 +27,9 @@
 
 ## 1. Who we are
 
-4Form AI is operated by Tyson Youm and Oscar Chuang, [ADDRESS].
+4Form AI is operated by Tyson Youm and Oscar Chuang.
+There is no office and no postal correspondence — every route to us is by
+email, and each address below reaches a person.
 Questions: **[privacy@yourdomain.com]**
 
 For UK/EU users, Tyson Youm and Oscar Chuang is the data controller for the information described
@@ -196,4 +198,4 @@ effect.
 
 ## 12. Contact
 
-**[privacy@yourdomain.com]** · Tyson Youm and Oscar Chuang, [ADDRESS]
+**[privacy@yourdomain.com]** · Tyson Youm and Oscar Chuang
