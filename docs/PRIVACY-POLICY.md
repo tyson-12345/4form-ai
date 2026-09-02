@@ -131,10 +131,11 @@ rights and safety of our users.
 **Canada** (Supabase, `ca-central-1`). The other companies that handle it for us
 are listed in §5, and some of them are in the United States.
 
-If you are in the UK or EU, your data therefore moves between countries. We rely
-on the data-protection terms in our agreements with each of the companies in §5
-to protect it when it does. If you want to know more about those arrangements,
-write to privacy@4formai.com and we will tell you.
+If you are in the UK or EU, your data therefore moves between countries. Our
+data processing agreement with each of the companies in §5 incorporates the
+European Commission's **Standard Contractual Clauses**, and the UK addendum to
+them where UK data is involved. If you would like a copy of those arrangements,
+write to privacy@4formai.com and we will send them.
 
 > **Note (delete before publishing).** This section used to say the transfer
 > relied on the European Commission's **adequacy decision for Canada**, and that
@@ -155,10 +156,19 @@ write to privacy@4formai.com and we will tell you.
 > own transfer basis, and one that asserts the wrong one is worse than one that
 > does not assert.
 >
-> **What would make this solid is accepting the four DPAs**, which is free and
-> takes minutes: supabase.com/legal/dpa, railway.com/legal/dpa, Anthropic's
-> commercial terms, resend.com/legal/dpa. Each incorporates Standard Contractual
-> Clauses. Once they are accepted, this section can say so by name.
+> **All four DPAs are now in force**, as of 2026-09-02 — Supabase, Resend and
+> Anthropic bind automatically on acceptance of their terms, and Railway's
+> DocuSign was signed the same day. Each was read before this section was allowed
+> to name them: all four incorporate the EU SCCs by reference, and all four carry
+> a UK addendum. Modules One, Two and Three appear depending on the roles.
+>
+> Note what the sentence above claims and what it does not. It says our
+> agreements *incorporate* the clauses, which is a fact anyone can check against
+> the four published DPAs. It does not say the transfer is therefore lawful under
+> Article 46, because the exporter here is a US controller caught by Article 3(2)
+> rather than an EEA one, and whether SCCs are the right instrument in that
+> position is genuinely unsettled. State what is in the agreements; do not
+> adjudicate. That is the same discipline that removed the adequacy claim.
 
 ## 7. How long we keep it
 

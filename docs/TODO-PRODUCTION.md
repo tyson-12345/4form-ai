@@ -198,7 +198,10 @@ to abandon.
   happen. Replaced with unnamed reference technique models.
 - ✅ **Terms + Privacy now linked at signup** and in Profile, so the agreement is
   presented at account creation rather than buried.
-- 🔴 **Sign DPAs** with hosting, database, Anthropic, and the mail provider.
+- ✅ **DPAs** — all four in force 2026-09-02. Three bound automatically on
+  acceptance of their terms and only Railway needed signing; all four incorporate
+  the EU SCCs and a UK addendum. See §6 of the privacy policy, which now names
+  them.
 - 🔴 **Fill in the bracketed values, then the documents publish themselves.**
   Both files still carry values only a person can supply, and the server
   **refuses to serve either document while any remain** — `/privacy` and
@@ -347,18 +350,18 @@ to abandon.
   | Supabase | *"acceptance of the Agreement shall have the same effect as signing the SCCs"* (§12.2) | ✅ in force |
   | Resend | *"becomes legally binding upon Customer's acceptance of the Agreement"* (§12) | ✅ in force |
   | Anthropic | DPA *"is incorporated into these Terms by reference"* | ✅ in force |
-  | Railway | *"Customer must complete the information requested and submit the DocuSign form"* (§14) | ❌ **needs signing** |
+  | Railway | *"Customer must complete the information requested and submit the DocuSign form"* (§14) | ✅ signed 2026-09-02 |
 
-  So the standing 🔴 "sign DPAs with four processors" was mostly already done by
-  signing up. What remains is **one DocuSign at `railway.com/legal/dpa`** — and it
-  has to be a person, because it asks who is signing and in what capacity.
+  So the standing 🔴 was mostly closed the day the accounts were created, and
+  nobody knew. Railway was the one real gap — and the worst one to have, since it
+  hosts the API server and therefore touches every piece of data rather than one
+  slice. Tyson signed it on 2026-09-02, and §6 of the privacy policy now names the
+  Standard Contractual Clauses instead of describing them at arm's length.
 
-  Railway is the awkward one to be missing: it hosts the API server, so it is the
-  processor that touches everything, not just one slice. That is the reason §6
-  still does not name Standard Contractual Clauses. Once the Railway form is
-  submitted, it can — the sentence becomes "we rely on the Standard Contractual
-  Clauses in our data processing agreements with the companies in §5", which is a
-  materially stronger thing to tell a UK/EU user than what is there now.
+  All four were read before §6 was allowed to say so: each incorporates the EU
+  SCCs by reference and carries a UK addendum, with Modules One, Two and Three
+  appearing according to the roles. Keep the executed Railway PDF — "we have DPAs
+  with our processors" is a much easier claim to make with the documents in hand.
 
   Terms change; re-check before relying on this table.
 

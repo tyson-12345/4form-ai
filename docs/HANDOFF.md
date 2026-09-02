@@ -208,7 +208,7 @@ Read `docs/TODO-PRODUCTION.md` for the full history and reasoning.
 
 | # | Item |
 |---|---|
-| 5 | Sign DPAs — Supabase, Railway, Anthropic, Resend |
+| 5 | ✅ DPAs — all four in force 2026-09-02 (three automatic, Railway signed) |
 | 6 | RevenueCat — keys, receipt validation, webhook. Must call `isPurchasableTier()` before granting |
 | 7 | Create store products — Pro only at $9.99 |
 | 8 | Decide 13–17 parental assent |

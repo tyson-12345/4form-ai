@@ -211,7 +211,10 @@ rather than trusted. This is better handled than most production apps.
 2. ✅ **Age gate** shipped at signup — under-13 refused server-side (§4).
 3. 🔴 **Publish** the privacy policy and terms; the URLs are already read from
    `constants/legal.ts` and just need to resolve.
-4. 🔴 **Sign DPAs** with all four processors.
+4. ✅ **DPAs with all four processors** — done 2026-09-02. Supabase, Resend and
+   Anthropic bind automatically on acceptance of their terms; Railway needed a
+   DocuSign, which was signed. All four incorporate the EU SCCs and a UK
+   addendum.
 5. 🟠 **Lawyer review** of Terms §7 (assumption of risk) and §8 (liability cap).
    Deferred by decision on 2026-08-12 — these are the clauses that carry the
    injury-claim exposure in §1, so this remains the largest untreated item.
