@@ -195,6 +195,41 @@ export type Identity = typeof identitiesTable.$inferSelect;
  */
 export type IdentityProvider = "apple" | "google";
 
+// ─── Waitlist ───────────────────────────────────────────────────────────────
+
+/**
+ * Addresses collected by the landing page, ahead of the TestFlight build.
+ *
+ * Not a user, and deliberately not related to one. Someone on the waitlist has
+ * no account, and joining must never create one — so there is no `userId` and
+ * no foreign key. The table's whole job is a single announcement, after which
+ * it can be dropped.
+ *
+ * `email` is the natural key and carries the unique index; the value written is
+ * always `normalizeEmail()`'s output, exactly as `users.email` is, so a second
+ * submission of the same address in a different case is a no-op rather than a
+ * duplicate send.
+ *
+ * The ownership rule that governs every other table here — every read and write
+ * of a user-owned row takes a `userId` and puts it in the WHERE clause, see
+ * `api-server/src/repositories/analysisRepository.ts` — does not apply, because
+ * these rows are not user-owned. That is an exemption, not an oversight.
+ */
+export const waitlistSignupsTable = pgTable(
+  "waitlist_signups",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    email: text("email").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("waitlist_signups_email_key").on(t.email),
+    index("waitlist_signups_created_at_idx").on(t.createdAt),
+  ],
+);
+
+export type WaitlistSignup = typeof waitlistSignupsTable.$inferSelect;
+
 // ─── Athlete Profiles ───────────────────────────────────────────────────────
 
 export const athleteProfilesTable = pgTable("athlete_profiles", {

@@ -1,5 +1,10 @@
 /**
- * The public pages: a landing page, the privacy policy, and the terms.
+ * The two legal documents: the privacy policy and the terms.
+ *
+ * The landing page at `/` moved to `routes/landingPage.ts` when it became a
+ * real page — it is a large static file with its own stylesheet, script, fonts
+ * and Content-Security-Policy, and it had nothing left in common with these two
+ * beyond the shell they no longer share.
  *
  * ── Why the API serves these ────────────────────────────────────────────────
  * Both stores check the privacy-policy URL during review, and the same URL goes
@@ -175,22 +180,6 @@ function serveDocument(
 
   res.status(200).send(shell(`${title} — 4Form AI`, nonce, renderMarkdown(markdown)));
 }
-
-router.get("/", (_req, res) => {
-  const nonce = startPage(res);
-  res.status(200).send(
-    shell(
-      "4Form AI — your technique, measured",
-      nonce,
-      `<h1>Your technique, measured.</h1>
-  <p class="lede">Film a set. 4Form AI tracks your joints frame by frame and shows
-  you the angles, with the range each one should sit in. Same clip, same numbers,
-  every time.</p>
-  <p>The app is in development. This page exists so the documents below have a
-  home — both app stores check them during review.</p>`,
-    ),
-  );
-});
 
 router.get("/privacy", (_req, res) => {
   serveDocument(res, "Privacy Policy", privacyMarkdown, "privacy");

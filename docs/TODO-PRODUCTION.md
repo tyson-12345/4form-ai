@@ -306,11 +306,64 @@ old name — each needs a console login:
 
   The API now serves `/`, `/privacy` and `/terms` (`routes/legalPages.ts`).
 
-- 🔴 **Design the landing page** — the page at `/` is deliberately plain: a
-  headline, one paragraph, and links to the documents, enough to stop the domain
-  404ing for a store reviewer. It is not a marketing page and does not pretend to
-  be. Tyson is designing the real one; building it is a small job once there is a
-  design, since the serving, the CSP and the styling are already in place.
+- ✅ **The landing page** — done 2026-09-01. Built from Tyson's design, served
+  by `routes/landingPage.ts` from `src/pages/landing.html`, which is inlined into
+  the bundle at build time exactly as the legal documents are.
+
+  Four things about it are worth knowing before editing it.
+
+  **It loads nothing from anywhere.** The design was authored against Google
+  Fonts and GSAP from jsDelivr; both are gone. The three faces are vendored as
+  latin-subset woff2 (138 KB, SIL OFL, `src/assets/fonts/LICENSE.md`) and served
+  from a content-hashed, immutable URL, and the motion is ~200 lines of plain
+  DOM code instead of a 70 KB library. That keeps every reader's IP off a third
+  party — which is what the privacy policy says — and keeps the page working when
+  someone else's CDN does not.
+
+  **The CSP pins hashes, not a nonce**, unlike the other HTML routes here. A
+  nonce makes every response body unique, which costs the ETag and 90 KB on every
+  reload of a page whose content never changes. The digests are computed from the
+  finished HTML at module load and the module refuses to load if it cannot find
+  exactly one `<style>` and two `<script>` blocks — a policy that does not cover
+  the page renders it unstyled and inert, silently, and only in a browser. The
+  test hashes what was actually served and asserts the policy names it.
+
+  **Nothing is hidden that JavaScript is not there to reveal.** Every
+  pre-animation state is scoped to `html.motion`, which the head script sets only
+  when scripting is on and reduced motion is not asked for. There is a test for
+  that scoping, because the failure mode is a blank page.
+
+  **The waitlist is real.** `POST /waitlist` writes to `waitlist_signups`
+  (migration `0009`), and the form works with scripting off — POST, 303, the page
+  comes back in its joined state. A form that thanks you for joining a list that
+  does not exist is the same class of thing as a privacy policy with blanks in it.
+
+- 🟡 **The waitlist has no way to read it out yet.** When TestFlight opens,
+  `psql "$DATABASE_URL" -c "\\copy (SELECT email FROM waitlist_signups ORDER BY created_at) TO STDOUT WITH CSV"` is the whole export. Worth a script if it is
+  ever needed twice.
+
+- 🟡 **Two chips on ink are still under AA.** `+6 VS LAST` measures 3.30:1 and
+  `BACK SQUAT · SIDE ON` 3.91:1 — both are `onInkMuted` on a bone-washed pill,
+  which is the device `constants/caliper.ts` already documents accepting at
+  3.43:1 ("the joint chips on the skeleton"). Left as the app has it rather than
+  diverging on the landing page alone; if that trade is ever revisited, these two
+  move with it. Everything else on the page passes: a sweep of all 254 text
+  nodes at 1440×900 returns only these.
+
+  Three others were fixed on the way. The footer copyright used `textGhost`, a
+  *paper* tone, on ink (3.46:1) and now uses `onInkMuted` (5.59:1). The `TODAY`
+  label and the SVG angle label were true cobalt on ink (2.2:1); blue carries
+  almost no luminance, so cobalt cannot clear 4.5:1 on both grounds — the page
+  now has a `--cobalt-on-ink` for *text*, exactly as the palette already has
+  `rustOnInk`, and the arc and stem keep the true cobalt because a graphic's bar
+  is 3:1 and the accent is theirs.
+
+- 🟡 **Two headings sit very tight at desktop width.** `IN THE APP` and `PLANS`
+  cap their headings at 24ch and 26ch, measured in the *body* font, so at a
+  desktop font size "One reading, one thing to do next." sets in five short
+  lines. That is the design's own value and the stacked look is clearly
+  deliberate across the page, so it was built as drawn — but it is the one place
+  worth a second look on a wide screen.
 - ✅ **Railway** — done 2026-09-01. Service renamed `athleteai` → `fourformai`,
   and the service domain renamed to `fourformai-production-0b7f.up.railway.app`.
   `eas.json`, the mobile `.env` and these docs were repointed in the same
@@ -471,8 +524,13 @@ rules, so nothing looks broken — it is just less refined.
 - **`AppMark`** component for in-app use — same geometry, no bitmap.
 
 **Icon follow-ups**
-- 🟡 **Apple touch icon** for the landing page (`apple-touch-icon.png`, 180×180)
-  — iOS home-screen bookmarks currently fall back to a screenshot.
+- ✅ **Apple touch icon** — done 2026-09-01. `generate-icons.py` now writes a
+  second output, `artifacts/api-server/src/assets/apple-touch-icon.png` (180×180,
+  the 1024 rung, bone role), because `artifacts/fourform-mobile` is excluded from
+  the Docker build context wholesale and the server cannot read the app's assets.
+  The ladder stays the single source of truth for the geometry. The tab favicon
+  is drawn as SVG by the server from the same 29-rung numbers; Safari will not
+  take an SVG for `apple-touch-icon`, which is why that one has to be a bitmap.
 - 🟡 **`icon-store.png` / `icon-tinted.png` are generated but unwired** — the
   store variant goes in App Store Connect by hand; the tinted variant needs an
   iOS 18 `.icon` asset catalog, which Expo does not yet configure from
@@ -488,7 +546,7 @@ rules, so nothing looks broken — it is just less refined.
 |---|---|
 | High | Progress · Sessions · Skeleton overlay |
 | Medium | Coach (2 states) · Profile · Plans |
-| Low | Onboarding (3) · Auth (3) · Landing · Measuring · New-session sheet · empty and error states |
+| Low | Onboarding (3) · Auth (3) · Measuring · New-session sheet · empty and error states |
 
 ---
 

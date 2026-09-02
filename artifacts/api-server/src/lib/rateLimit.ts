@@ -60,6 +60,18 @@ export interface RateLimitOptions {
   windowMs?: number;
   /** Label used to namespace the bucket so limits don't share counters. */
   name: string;
+  /**
+   * How to answer a refused request, when JSON is the wrong answer.
+   *
+   * The default is `429 {"error":"Too many requests…"}`, which is right for the
+   * API and wrong for a form on a web page: a browser without scripting is
+   * *navigating*, so it renders that JSON as the page. A mount that a person can
+   * reach directly passes a handler here and sends them somewhere they can read.
+   *
+   * The rate-limit headers are already set when this runs; the handler owns the
+   * status and the body.
+   */
+  onLimited?: (req: Request, res: Response) => void;
 }
 
 /** Reject a request that exceeded its window. */
@@ -69,12 +81,17 @@ function reject(
   name: string,
   max: number,
   resetInMs: number,
+  onLimited?: (req: Request, res: Response) => void,
 ): void {
   const retryAfterSec = Math.max(1, Math.ceil(resetInMs / 1000));
   res.setHeader("Retry-After", retryAfterSec);
   res.setHeader("RateLimit-Limit", max);
   res.setHeader("RateLimit-Remaining", 0);
   logger.warn({ limiter: name, ip: clientIp(req), path: req.path }, "Rate limit exceeded");
+  if (onLimited) {
+    onLimited(req, res);
+    return;
+  }
   res.status(429).json({ error: "Too many requests. Please slow down." });
 }
 
@@ -97,7 +114,7 @@ function reject(
  * when you least want the limiter gone. Oscar's fork returns `true` (allow) on
  * a Redis error; that is the one part of his design not adopted here.
  */
-export function rateLimit({ max, windowMs = 60_000, name }: RateLimitOptions) {
+export function rateLimit({ max, windowMs = 60_000, name, onLimited }: RateLimitOptions) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const key = `${name}:${clientIp(req)}`;
 
@@ -116,7 +133,7 @@ export function rateLimit({ max, windowMs = 60_000, name }: RateLimitOptions) {
       bucket.count++;
 
       if (bucket.count > max) {
-        reject(req, res, name, max, bucket.resetAt - now);
+        reject(req, res, name, max, bucket.resetAt - now, onLimited);
         return;
       }
 
@@ -129,7 +146,7 @@ export function rateLimit({ max, windowMs = 60_000, name }: RateLimitOptions) {
     incrementWindow(`rl:${key}`, windowMs)
       .then(({ count, resetInMs }) => {
         if (count > max) {
-          reject(req, res, name, max, resetInMs);
+          reject(req, res, name, max, resetInMs, onLimited);
           return;
         }
         res.setHeader("RateLimit-Limit", max);

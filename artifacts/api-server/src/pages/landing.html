@@ -1,0 +1,2400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4Form AI — Your technique, measured.</title>
+<meta name="description" content="Film a set. 4Form AI tracks your joints frame by frame and shows you the angles, with the range each one should sit in.">
+<meta name="theme-color" content="#EDECE7">
+<link rel="canonical" href="https://4formai.com/">
+<link rel="icon" href="__ASSET_FAVICON__" type="image/svg+xml">
+<link rel="apple-touch-icon" href="__ASSET_TOUCH_ICON__">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="4Form AI">
+<meta property="og:title" content="4Form AI — Your technique, measured.">
+<meta property="og:description" content="Film a set. We track your joints frame by frame and show you the angles, with the range each one should sit in. Same clip, same numbers, every time.">
+<meta property="og:url" content="https://4formai.com/">
+<meta name="twitter:card" content="summary">
+<style>
+/* ── Faces ────────────────────────────────────────────────────────────────────
+   Self-hosted, latin subset, served from this origin with an immutable
+   content-hashed URL. Not Google's CDN: the page would then leak every reader's
+   IP to a third party, which the privacy policy does not permit, and the CSP
+   would have to open `font-src` and `style-src` to another origin to allow it.
+   All three families are SIL Open Font License 1.1 — see assets/fonts/LICENSE. */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("__ASSET_FONT_DISPLAY__") format("woff2");
+  font-weight: 200 800;
+  font-stretch: 75% 100%;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("__ASSET_FONT_SANS__") format("woff2");
+  font-weight: 400 700;
+  font-stretch: 75% 100%;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("__ASSET_FONT_MONO__") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Tokens ───────────────────────────────────────────────────────────────── */
+:root {
+  /* Caliper's palette. Same three hexes as the app icon and the app itself
+     (artifacts/fourform-mobile/scripts/generate-icons.py). */
+  --ink: #101312;
+  --bone: #EDECE7;
+  --cobalt: #2436E8;
+  /**
+   * Cobalt, for text on an ink ground.
+   *
+   * A single mid-tone cobalt cannot clear 4.5:1 on both paper and ink — blue
+   * carries almost none of the luminance, so #2436E8 is 8.1:1 on white and
+   * 2.2:1 on the dark panel. So cobalt gets a dark-ground variant, exactly as
+   * `rust` and `rustOnInk` already do in the app's palette, and for the same
+   * arithmetic reason.
+   *
+   * This is for *text* only — the arc, the stem and the band swaths are
+   * graphics and keep the true cobalt, both because 3:1 is their bar and
+   * because the accent is theirs to carry.
+   */
+  --cobalt-on-ink: #6E80F5;
+  --white: #FFFFFF;
+
+  /* Text on bone, darkest to lightest. */
+  --on-bone-1: #101312;
+  --on-bone-2: #454946;
+  --on-bone-3: #55595E;
+  --on-bone-4: #646763;
+  --on-bone-5: #686B67;
+  --on-bone-6: #5F625E;
+
+  /* Text on ink. */
+  --on-ink-1: #EDECE7;
+  --on-ink-2: #8A8D8F;
+
+  /* Out-of-band. Rust reads as a flag without reading as an alarm. */
+  --rust-on-ink: #D2683F;
+  --rust-on-bone: #A84726;
+
+  /* Hairlines and washes, keyed to the ground they sit on. */
+  --line-on-bone: rgba(16, 19, 18, 0.10);
+  --line-on-bone-strong: rgba(16, 19, 18, 0.16);
+  --wash-on-bone: rgba(16, 19, 18, 0.06);
+  --line-on-ink: rgba(237, 236, 231, 0.12);
+  --line-on-ink-strong: rgba(237, 236, 231, 0.24);
+  --wash-on-ink: rgba(237, 236, 231, 0.06);
+  --wash-on-ink-strong: rgba(237, 236, 231, 0.14);
+
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --gutter: clamp(20px, 4vw, 56px);
+  --measure-max: 1560px;
+  --nav-h: 88px;
+
+  /* The design's eases, as their cubic-bezier equivalents. GSAP's `powerN`
+     ladder is off by one from the CSS names: power1 = quad, power2 = cubic,
+     power3 = quart. Reading them as the same word gives every reveal the wrong
+     curve, so they are named here for what GSAP called them. */
+  --expo-out: cubic-bezier(0.19, 1, 0.22, 1);
+  --power3-out: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --power2-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --power1-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  /* back.out(2) overshoots to 1.132; the stock easeOutBack bezier only reaches
+     1.10, which reads as a different gesture. */
+  --back-out: cubic-bezier(0.175, 0.885, 0.32, 1.362);
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bone);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a { color: var(--cobalt); text-decoration: none; }
+a:hover { color: var(--ink); }
+::selection { background: var(--cobalt); color: var(--white); }
+
+img, svg { display: block; max-width: 100%; }
+button, input { font: inherit; color: inherit; }
+
+/* Visible focus, everywhere, on both grounds. The design has no focus state at
+   all; a page whose only conversion point is a form needs one. */
+:focus-visible {
+  outline: 2px solid var(--cobalt);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.on-ink :focus-visible { outline-color: var(--on-ink-1); }
+
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 100;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bone);
+  font-size: 14px;
+  font-weight: 600;
+  transition: top 160ms var(--power2-out);
+}
+.skip-link:focus-visible { top: 12px; color: var(--bone); }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: 0; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Type scale ───────────────────────────────────────────────────────────── */
+.eyebrow {
+  display: inline-block;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1.3;
+  letter-spacing: 1.6px;
+  color: var(--on-bone-4);
+}
+.eyebrow--on-ink { color: var(--on-ink-2); }
+
+.eyebrow-row {
+  margin: 0 0 26px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.eyebrow-row__dot {
+  width: 7px; height: 7px;
+  border-radius: 999px;
+  background: var(--cobalt);
+  flex: none;
+}
+
+.h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(34px, 6.4vw, 100px);
+  line-height: 0.9;
+  letter-spacing: -0.045em;
+  color: var(--on-bone-1);
+}
+.h2 {
+  margin: 18px 0 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(32px, 4vw, 60px);
+  line-height: 0.96;
+  letter-spacing: -0.04em;
+  color: var(--on-bone-1);
+}
+.h2--tight { font-size: clamp(28px, 3.2vw, 48px); line-height: 1; }
+.h3 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--on-bone-1);
+}
+.h3--sm {
+  font-size: 19px;
+  line-height: 25px;
+  letter-spacing: -0.3px;
+}
+.lede {
+  margin: 26px 0 0;
+  max-width: 44ch;
+  font-size: clamp(16px, 1.3vw, 19px);
+  line-height: 1.6;
+  color: var(--on-bone-2);
+  text-wrap: pretty;
+}
+.lede--on-ink { color: var(--on-ink-2); max-width: 40ch; font-size: clamp(15px, 1.2vw, 18px); }
+.body { margin: 12px 0 0; font-size: 15px; line-height: 1.6; color: var(--on-bone-3); }
+.body--lead { margin-top: 14px; line-height: 22px; }
+.mono-sm { font-family: var(--mono); font-size: 11px; letter-spacing: 1.2px; color: var(--on-bone-5); }
+
+section[id] { scroll-margin-top: var(--nav-h); }
+
+.shell {
+  max-width: var(--measure-max);
+  margin: 0 auto;
+  padding-left: var(--gutter);
+  padding-right: var(--gutter);
+}
+
+/* ── Nav ──────────────────────────────────────────────────────────────────── */
+.nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px var(--gutter);
+  background: rgba(237, 236, 231, 0.82);
+  border-bottom: 1px solid rgba(16, 19, 18, 0.08);
+  transition: transform 400ms var(--power3-out);
+  will-change: transform;
+}
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+  .nav {
+    background: rgba(237, 236, 231, 0.72);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+  }
+}
+.nav.is-retracted { transform: translateY(-110%); }
+/* A retracted bar must not keep keyboard focus off-screen. */
+.nav:focus-within { transform: none; }
+
+.nav__brand { display: flex; align-items: center; gap: 12px; color: var(--ink); }
+.nav__mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px; height: 34px;
+  flex: none;
+  background: var(--ink);
+  border-radius: 8px;
+}
+.nav__wordmark {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  color: var(--ink);
+}
+.nav__links { display: flex; align-items: center; gap: clamp(14px, 2vw, 30px); }
+.nav__link { display: none; font-size: 14px; font-weight: 500; color: var(--on-bone-2); }
+.nav__link:hover { color: var(--ink); }
+.nav__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 42px;
+  padding: 0 20px;
+  border-radius: 999px;
+  background: var(--cobalt);
+  color: var(--white);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 200ms var(--power2-out);
+}
+.nav__cta:hover { background: var(--ink); color: var(--white); }
+.nav__cta-long { display: none; }
+@media (min-width: 431px) {
+  .nav__cta-long { display: inline; }
+  .nav__cta-short { display: none; }
+}
+@media (max-width: 430px) { .nav__wordmark { display: none; } }
+@media (min-width: 861px) { .nav__link { display: inline; } }
+
+/* ── Hero ─────────────────────────────────────────────────────────────────── */
+.hero {
+  position: relative;
+  padding-top: clamp(120px, 15vh, 180px);
+  padding-bottom: clamp(60px, 8vh, 110px);
+}
+.hero__grid {
+  display: grid;
+  /* `min(…, 100%)` matters: a bare `minmax(340px, …)` is a hard floor, and on a
+     320px screen the track is wider than the page — which `overflow-x: hidden`
+     then clips, with no way to scroll to what was cut. */
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: clamp(32px, 5vw, 80px);
+  align-items: center;
+}
+/* Each line rides up out of its own mask. The padding keeps descenders and the
+   tall cap of "Y" inside the clip; the negative margin takes the padding back
+   out of the line box so the two lines still set at 0.9. */
+.hero__line-mask {
+  display: block;
+  overflow: hidden;
+  padding: 0.06em 0 0.16em;
+  margin-bottom: -0.14em;
+}
+.hero__line { display: block; white-space: nowrap; }
+.hero__mark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(20px, 4vw, 44px);
+  will-change: transform;
+}
+.hero__figure { width: 100%; max-width: 520px; height: auto; overflow: visible; }
+.hero__deg-wrap { margin: -8px 0 0; }
+.hero__deg {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: clamp(22px, 2.4vw, 30px);
+  color: var(--cobalt);
+  font-variant-numeric: tabular-nums;
+}
+.hero__caption {
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  color: var(--on-bone-5);
+}
+
+/* ── The waitlist form ────────────────────────────────────────────────────── */
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 34px;
+  max-width: 520px;
+}
+.form__field { flex: 1 1 220px; min-width: 0; }
+.form__input {
+  width: 100%;
+  height: 56px;
+  padding: 0 20px;
+  border: 1px solid var(--line-on-bone-strong);
+  border-radius: 999px;
+  background: var(--white);
+  font-size: 16px;
+  color: var(--ink);
+  transition: border-color 160ms var(--power2-out);
+}
+.form__input::placeholder { color: var(--on-bone-5); }
+.form__input:focus { outline: none; border-color: var(--cobalt); box-shadow: 0 0 0 3px rgba(36, 54, 232, 0.18); }
+.form__input:focus-visible { outline: none; }
+.form__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 26px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--cobalt);
+  color: var(--white);
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 200ms var(--power2-out);
+}
+.form__button:hover:not(:disabled) { background: var(--ink); }
+.form__button:disabled { opacity: 0.6; cursor: progress; }
+.form__note { margin: 14px 0 0; font-size: 13px; color: var(--on-bone-4); }
+.form__error {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--rust-on-bone);
+}
+.form__error { flex: 1 1 100%; }
+.form__error:empty { display: none; }
+
+/* The one state the page has: joined, or not. The server sets it on <body> for
+   the no-JavaScript POST → redirect path; the fetch path sets the same class.
+   One mechanism, so the two paths cannot disagree. */
+.swap-done { display: none; }
+.is-joined .swap-idle { display: none; }
+.is-joined .swap-done { display: inline; }
+
+/* The dark twin, in the closing section. */
+.form--on-ink { justify-content: center; margin: 38px auto 0; max-width: 540px; }
+.form--on-ink .form__field { flex: 1 1 240px; }
+.form--on-ink .form__input {
+  height: 58px;
+  padding: 0 22px;
+  border-color: rgba(237, 236, 231, 0.22);
+  background: var(--wash-on-ink);
+  color: var(--on-ink-1);
+}
+.form--on-ink .form__input::placeholder { color: var(--on-ink-2); }
+.form--on-ink .form__button { height: 58px; padding: 0 28px; }
+.form--on-ink .form__button:hover:not(:disabled) { background: var(--bone); color: var(--ink); }
+.form--on-ink .form__note { color: var(--on-ink-2); text-align: center; }
+.form--on-ink .form__error { color: var(--rust-on-ink); text-align: center; }
+
+/* ── The pinned measurement ───────────────────────────────────────────────── */
+/* Three columns will not fit a short or narrow window, and a pinned panel that
+   does not fit is a panel that clips its own payoff. Below the threshold the
+   section unpins and flows: same scrub, no clipping. The threshold lives in a
+   media query rather than in JavaScript so the layout is correct on the first
+   paint and a mobile URL bar resizing the viewport cannot thrash it. */
+.measure {
+  position: relative;
+  background: var(--ink);
+  padding: clamp(72px, 10vh, 120px) 0;
+}
+.measure__pin { display: block; }
+.measure__grid {
+  width: 100%;
+  max-width: var(--measure-max);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(28px, 5vw, 52px);
+  align-items: center;
+}
+@media (min-width: 1080px) and (min-height: 700px) {
+  .measure { height: 340vh; padding: 0; }
+  .measure__pin {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+  }
+  .measure__grid {
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.84fr) minmax(0, 1.02fr);
+    gap: clamp(18px, 3vw, 52px);
+  }
+}
+.measure__h2 {
+  margin: 18px 0 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(34px, 4.4vw, 68px);
+  line-height: 0.94;
+  letter-spacing: -0.04em;
+  color: var(--on-ink-1);
+}
+.frame-count { margin-top: 34px; display: flex; align-items: baseline; gap: 14px; }
+.frame-count__n {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(46px, 5.6vw, 86px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--on-ink-1);
+  font-variant-numeric: tabular-nums;
+}
+.frame-count__of {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 1.4px;
+  color: var(--on-ink-2);
+}
+/* A hatched rule that fills with cobalt hatching as the clip is measured. */
+.frame-bar {
+  margin-top: 16px;
+  position: relative;
+  height: 26px;
+  background-image: repeating-linear-gradient(to right, rgba(237, 236, 231, 0.28) 0 1px, transparent 1px 8px);
+  background-position: left center;
+  background-size: 100% 12px;
+  background-repeat: repeat-x;
+}
+.frame-bar__fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0%;
+  background-image: repeating-linear-gradient(to right, var(--cobalt) 0 1px, transparent 1px 8px);
+  background-position: left center;
+  background-size: 100% 26px;
+  background-repeat: repeat-x;
+}
+.stamps { margin-top: 30px; display: flex; flex-wrap: wrap; gap: 10px; }
+.stamp {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  color: var(--on-ink-1);
+  background: var(--wash-on-ink-strong);
+  border-radius: 999px;
+  padding: 7px 13px;
+}
+.stamp--muted { color: var(--on-ink-2); }
+
+.figure-col { display: flex; justify-content: center; }
+.figure { width: 100%; max-width: 360px; height: auto; }
+/* The number the arc measures. Cobalt-on-ink rather than cobalt: it is text,
+   and true cobalt on this ground is 2.2:1. The arc it belongs to keeps the
+   accent, so the pairing survives. */
+.figure__angle { fill: var(--cobalt-on-ink); }
+
+.readouts { display: flex; flex-direction: column; gap: 16px; }
+.readout {
+  background: var(--wash-on-ink);
+  border: 1px solid var(--line-on-ink);
+  border-radius: 22px;
+  padding: 18px 20px;
+}
+.readout__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.readout__label {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  color: var(--on-ink-2);
+}
+.readout__value {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--on-ink-1);
+  font-variant-numeric: tabular-nums;
+}
+.readout__value.is-out { color: var(--rust-on-ink); }
+.ruler { position: relative; height: 12px; margin-top: 14px; }
+.ruler__axis { position: absolute; left: 0; right: 0; top: 5px; height: 1px; background: var(--line-on-ink-strong); }
+.ruler__band { position: absolute; top: 2px; height: 7px; border-radius: 2px; background: rgba(36, 54, 232, 0.34); }
+.ruler__mark {
+  position: absolute;
+  left: 0%; top: 0;
+  width: 2px; height: 12px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--on-ink-1);
+}
+.ruler__mark.is-out { background: var(--rust-on-ink); }
+/* The swaths are the design's, which sit a couple of points off the arithmetic
+   band edges; they are what the mock reads as, so they are kept. */
+.ruler__band--knee { left: 24%; width: 64%; }
+.ruler__band--hip { left: 22%; width: 66%; }
+.ruler__band--lean { left: 0%; width: 58%; }
+/* pose(0) — the standing frame the markup already draws. JavaScript overwrites
+   these inline the moment it runs; without them a reader with scripting off
+   gets three markers stacked at zero. */
+.ruler__mark--knee { left: 91.60%; }
+.ruler__mark--hip { left: 86.59%; }
+.ruler__mark--lean { left: 13.37%; }
+.ruler__scale { display: flex; justify-content: space-between; margin-top: 8px; }
+.ruler__scale span { font-family: var(--mono); font-size: 11px; color: var(--on-ink-2); }
+.flag {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 14px 0 0;
+  opacity: 0;
+  transition: opacity 240ms var(--power2-out);
+}
+.flag.is-on { opacity: 1; }
+.flag svg { flex: none; margin-top: 1px; }
+.flag span { font-size: 13px; line-height: 1.4; color: var(--rust-on-ink); }
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+/* Vertical only. `.section` and `.shell` sit on the same element, so a
+   `padding` shorthand here would reset the sides and take the page's gutter
+   with it — which is exactly what it did, on three sections at once. */
+.section {
+  padding-top: clamp(80px, 11vh, 150px);
+  padding-bottom: clamp(80px, 11vh, 150px);
+}
+.section--ink {
+  background: var(--ink);
+  padding-top: clamp(80px, 12vh, 160px);
+  padding-bottom: clamp(80px, 12vh, 160px);
+}
+.section--clip { overflow: hidden; }
+
+.how__head { max-width: 22ch; }
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
+  gap: clamp(16px, 2vw, 26px);
+  margin-top: clamp(40px, 6vh, 72px);
+}
+.card {
+  background: var(--white);
+  border-radius: 26px;
+  padding: clamp(24px, 2.4vw, 34px);
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+.card__num {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  color: var(--cobalt);
+}
+
+/* ── The band ─────────────────────────────────────────────────────────────── */
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: clamp(32px, 5vw, 80px);
+  align-items: center;
+}
+.band-h2 {
+  margin: 18px 0 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(32px, 4.4vw, 66px);
+  line-height: 0.94;
+  letter-spacing: -0.04em;
+  color: var(--on-ink-1);
+  text-wrap: balance;
+}
+.refs { display: flex; flex-wrap: wrap; gap: 26px; margin-top: 34px; }
+.ref__label { font-family: var(--mono); font-size: 11px; letter-spacing: 1.2px; color: var(--on-ink-2); }
+.ref__value { font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--on-ink-1); margin-top: 4px; }
+.ref--on-bone .ref__label { color: var(--on-bone-5); }
+.ref--on-bone .ref__value { font-size: 12px; color: var(--on-bone-1); margin-top: 3px; }
+
+.panel {
+  background: var(--wash-on-ink);
+  border: 1px solid var(--line-on-ink);
+  border-radius: 30px;
+  padding: clamp(24px, 3vw, 44px);
+}
+.panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.panel__meta { font-family: var(--mono); font-size: 11px; letter-spacing: 1px; color: var(--on-ink-2); }
+.panel__score-row { display: flex; align-items: baseline; gap: 14px; margin-top: 10px; }
+.panel__score {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(64px, 8vw, 116px);
+  line-height: 0.88;
+  letter-spacing: -0.05em;
+  color: var(--on-ink-1);
+  font-variant-numeric: tabular-nums;
+}
+.delta {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--on-ink-2);
+  background: var(--wash-on-ink-strong);
+  border-radius: 999px;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+.panel__foot {
+  margin: 30px 0 0;
+  padding-top: 22px;
+  border-top: 1px solid var(--line-on-ink);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--on-ink-2);
+}
+
+/* The index ruler: 40–100 across the full width, so 60 sits at 33.3% and the
+   band 68–84 at 46.7% with a 26.6% span. */
+.index-ruler { position: relative; height: 74px; margin-top: 34px; }
+.index-ruler__axis { position: absolute; left: 0; right: 0; top: 34px; height: 1px; background: var(--line-on-ink-strong); }
+.index-ruler__band {
+  position: absolute;
+  left: 46.7%; width: 26.6%;
+  top: 28px; height: 13px;
+  border-radius: 3px;
+  background: rgba(36, 54, 232, 0.34);
+}
+.index-ruler__ticks {
+  position: absolute;
+  left: 0; right: 0; top: 22px; height: 16px;
+  background-image: repeating-linear-gradient(to right, rgba(237, 236, 231, 0.28) 0 1px, transparent 1px calc(100% / 24));
+  background-repeat: repeat-x;
+}
+.index-ruler__stem {
+  position: absolute;
+  left: 63.3%; top: 19px;
+  width: 3px; height: 26px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--cobalt);
+  transform-origin: top center;
+}
+/* margin-left is -30px on a 72px box, a deliberate 6px right bias — true
+   centring would be -36px. It is how the mock reads.
+
+   The label takes the dark-ground cobalt, not the true one. Cobalt text on this
+   panel measures 2.16:1; the stem below it stays true cobalt, because a 3px
+   graphic is held to 3:1 and the accent is its job. The twin inside the phone
+   mock is on white, where cobalt is 8.1:1, and keeps it. */
+.index-ruler__stem-label {
+  position: absolute;
+  left: 63.3%; top: 0;
+  margin-left: -30px;
+  width: 72px;
+  text-align: center;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--cobalt-on-ink);
+}
+.index-ruler__scale { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; }
+.index-ruler__scale span { font-family: var(--mono); font-size: 11px; color: var(--on-ink-2); }
+
+/* ── In-the-app ───────────────────────────────────────────────────────────── */
+.app-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+.app-head__lead { max-width: 24ch; }
+.app-head__aside { max-width: 38ch; font-size: 16px; line-height: 1.6; color: var(--on-bone-3); text-wrap: pretty; }
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: clamp(24px, 3vw, 56px);
+  margin-top: clamp(44px, 6vh, 80px);
+  align-items: start;
+  justify-items: center;
+}
+.side-cards { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 440px; }
+.card--flat { display: block; padding: clamp(22px, 2.4vw, 30px); }
+.card--flat .body { line-height: 22px; }
+.side-cards__h3 { margin-top: 16px; }
+.card--ink { background: var(--ink); }
+.card--ink p { color: var(--on-ink-1); }
+
+.tag {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--on-bone-1);
+  background: var(--wash-on-bone);
+  border-radius: 999px;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+.tag--flag { color: var(--rust-on-bone); background: rgba(168, 71, 38, 0.12); }
+.tag--sm { padding: 5px 10px; }
+.tag-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.tag-row--head { align-items: center; gap: 10px; margin-top: 0; }
+
+/* The observed-vs-safe ruler on the flag card. Bone ground, so the wash and the
+   rust are the on-bone pair. */
+.obs-ruler { position: relative; height: 24px; margin-top: 18px; }
+.obs-ruler__axis { position: absolute; left: 0; right: 0; top: 11px; height: 1px; background: var(--line-on-bone-strong); }
+.obs-ruler__safe { position: absolute; left: 0; width: 62%; top: 6px; height: 11px; border-radius: 3px; background: var(--line-on-bone); }
+.obs-ruler__span { position: absolute; left: 14%; width: 64%; top: 11px; height: 2px; border-radius: 1px; background: var(--rust-on-bone); }
+.obs-ruler__cap { position: absolute; top: 7px; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; background: var(--rust-on-bone); }
+.obs-ruler__cap--lo { left: 14%; }
+.obs-ruler__cap--hi { left: 78%; }
+.obs-ruler__scale { display: flex; justify-content: space-between; margin-top: 8px; }
+.obs-ruler__scale span { font-family: var(--mono); font-size: 11px; color: var(--on-bone-5); }
+
+/* ── The phone ────────────────────────────────────────────────────────────── */
+.phone-wrap { width: 100%; max-width: 376px; }
+.phone {
+  width: 100%;
+  background: var(--ink);
+  border-radius: 52px;
+  padding: 11px;
+  box-shadow: 0 40px 90px rgba(16, 19, 18, 0.22);
+  will-change: transform;
+}
+.phone__screen { background: var(--bone); border-radius: 42px; overflow: hidden; position: relative; }
+.phone__status {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 26px;
+}
+.phone__clock { font-family: var(--mono); font-weight: 700; font-size: 12px; color: var(--ink); }
+.phone__island { width: 74px; height: 24px; background: var(--ink); border-radius: 999px; }
+.phone__battery { font-family: var(--mono); font-size: 11px; color: var(--ink); }
+.phone__body { padding: 14px 22px 100px; }
+.phone__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.phone__top-main { flex: 1; min-width: 0; }
+.phone__stamp { font-family: var(--mono); font-weight: 700; font-size: 11px; letter-spacing: 1.6px; color: var(--on-bone-4); }
+.phone__headline {
+  margin-top: 8px;
+  max-width: 280px;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 30px;
+  line-height: 34px;
+  letter-spacing: -1px;
+  color: var(--ink);
+}
+.phone__avatar {
+  width: 40px; height: 40px;
+  flex: none;
+  border-radius: 20px;
+  background: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--bone);
+}
+.phone__card { margin-top: 22px; background: var(--white); border-radius: 26px; padding: 20px; }
+.phone__card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.phone__index { display: flex; align-items: baseline; gap: 10px; margin-top: 4px; }
+.phone__index-n {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 82px;
+  line-height: 74px;
+  letter-spacing: -4px;
+  color: var(--ink);
+}
+.delta--on-bone { color: var(--on-bone-3); background: var(--wash-on-bone); padding: 4px 9px; }
+
+/* The in-phone index ruler, bone ground. */
+.mini-ruler { position: relative; height: 57px; margin-top: 28px; }
+.mini-ruler__axis { position: absolute; left: 0; right: 0; top: 25px; height: 1px; background: var(--line-on-bone-strong); }
+.mini-ruler__band { position: absolute; left: 46.7%; width: 26.6%; top: 19px; height: 13px; border-radius: 3px; background: rgba(36, 54, 232, 0.10); }
+.mini-ruler__ticks {
+  position: absolute;
+  left: 0; right: 0; top: 13px; height: 16px;
+  background-image: repeating-linear-gradient(to right, rgba(16, 19, 18, 0.28) 0 1px, transparent 1px calc(100% / 24));
+  background-repeat: repeat-x;
+}
+.mini-ruler__prev { position: absolute; left: 53.3%; top: 17px; width: 2px; height: 18px; margin-left: -1px; background: rgba(16, 19, 18, 0.28); }
+.mini-ruler__stem { position: absolute; left: 63.3%; top: 10px; width: 3px; height: 26px; margin-left: -1.5px; border-radius: 2px; background: var(--cobalt); }
+.mini-ruler__stem-label {
+  position: absolute;
+  left: 63.3%; top: 0;
+  margin-left: -30px; width: 72px;
+  text-align: center;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--cobalt);
+}
+.mini-ruler__scale { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; }
+.mini-ruler__scale span { font-family: var(--mono); font-size: 11px; color: var(--on-bone-5); }
+
+.phone__refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  row-gap: 14px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(16, 19, 18, 0.08);
+}
+.phone__do { margin-top: 22px; background: var(--cobalt); border-radius: 26px; padding: 20px; }
+.phone__do-label { font-family: var(--mono); font-weight: 700; font-size: 11px; letter-spacing: 1.6px; color: rgba(255, 255, 255, 0.78); }
+.phone__do-text {
+  margin: 10px 0 0;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 19px;
+  line-height: 25px;
+  letter-spacing: -0.3px;
+  color: var(--white);
+}
+.phone__do-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }
+.phone__do-from { font-size: 13px; line-height: 18px; color: rgba(255, 255, 255, 0.78); }
+.phone__do-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: var(--white);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cobalt);
+  white-space: nowrap;
+}
+.phone__list-head { display: flex; align-items: baseline; justify-content: space-between; margin: 24px 0 12px; }
+.phone__list-all { font-size: 13px; font-weight: 600; color: var(--on-bone-2); }
+.phone__row { display: flex; align-items: center; gap: 12px; padding: 11px 0; }
+.phone__row + .phone__row { border-top: 1px solid var(--line-on-bone); }
+.phone__row-day { min-width: 36px; font-family: var(--mono); font-size: 11px; letter-spacing: 1px; color: var(--on-bone-5); }
+.phone__row-main { flex: 1; min-width: 0; }
+.phone__row-title { font-size: 14px; font-weight: 600; line-height: 18px; color: var(--ink); }
+.phone__row-sport { font-size: 12px; line-height: 16px; color: var(--on-bone-4); margin-top: 1px; }
+.phone__row-right { text-align: right; }
+.phone__row-score {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 18px;
+  line-height: 22px;
+  letter-spacing: -0.5px;
+  color: var(--ink);
+}
+.spark { position: relative; width: 34px; height: 2px; margin-top: 4px; background: var(--line-on-bone); border-radius: 1px; }
+.spark__band { position: absolute; left: 46.7%; width: 26.6%; height: 2px; background: rgba(16, 19, 18, 0.28); border-radius: 1px; }
+.spark__mark { position: absolute; top: -1.5px; width: 2px; height: 5px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
+.spark__mark--78 { left: 63.3%; }
+.spark__mark--72 { left: 53.3%; }
+.spark__mark--69 { left: 48.3%; }
+.phone__tabs {
+  position: absolute;
+  left: 22px; right: 22px; bottom: 14px;
+  height: 62px;
+  border-radius: 31px;
+  background: rgba(16, 19, 18, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0 18px;
+}
+.phone__tab-add {
+  width: 46px; height: 46px;
+  border-radius: 23px;
+  background: var(--cobalt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Marquee ──────────────────────────────────────────────────────────────── */
+.sports {
+  padding: clamp(60px, 9vh, 120px) 0;
+  border-top: 1px solid var(--line-on-bone);
+  border-bottom: 1px solid var(--line-on-bone);
+}
+.sports__head { margin-bottom: 44px; }
+.sports__h2 { max-width: 20ch; margin-top: 16px; }
+.marquees {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+}
+.marquee { display: flex; width: max-content; }
+.marquee + .marquee { margin-top: 10px; }
+.marquee__set { display: flex; gap: 10px; padding-right: 10px; }
+.marquee--l { animation: marquee-l 46s linear infinite; }
+.marquee--r { animation: marquee-r 52s linear infinite; }
+.marquees:hover .marquee { animation-play-state: paused; }
+@keyframes marquee-l { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-25%, 0, 0); } }
+@keyframes marquee-r { from { transform: translate3d(-25%, 0, 0); } to { transform: translate3d(0, 0, 0); } }
+.chip {
+  white-space: nowrap;
+  padding: 11px 20px;
+  border-radius: 999px;
+  border: 1px solid var(--line-on-bone-strong);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--on-bone-1);
+}
+
+/* ── Pricing ──────────────────────────────────────────────────────────────── */
+.notice {
+  background: var(--white);
+  border-radius: 22px;
+  padding: 16px 18px;
+  margin-top: 28px;
+  border-left: 3px solid var(--ink);
+  max-width: 660px;
+}
+.pricing__head { max-width: 26ch; }
+.notice p { margin: 0; font-size: 13px; line-height: 18px; color: var(--on-bone-1); }
+.plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: clamp(16px, 2vw, 24px);
+  margin-top: clamp(28px, 4vh, 44px);
+  align-items: start;
+}
+.plan { border-radius: 28px; padding: clamp(24px, 2.6vw, 34px); background: var(--white); }
+.plan--pro { background: var(--cobalt); }
+.plan--soon { background: rgba(16, 19, 18, 0.045); border: 1px solid rgba(16, 19, 18, 0.08); }
+/* The card's own wash darkens the ground just enough to put the standard label
+   tone at 4.45:1 — under the floor by a hair. One step down clears it. */
+.plan--soon .plan__label { color: var(--on-bone-3); }
+.plan__head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.plan__price { display: flex; align-items: baseline; gap: 6px; margin-top: 8px; }
+.plan__amount {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(40px, 4vw, 54px);
+  line-height: 1;
+  letter-spacing: -1.8px;
+  color: var(--on-bone-1);
+}
+.plan--pro .plan__amount { color: var(--white); }
+.plan__per { font-family: var(--mono); font-weight: 700; font-size: 11px; color: rgba(255, 255, 255, 0.78); }
+.plan__label { font-family: var(--mono); font-weight: 700; font-size: 11px; letter-spacing: 1.6px; color: var(--on-bone-4); }
+.plan--pro .plan__label { color: rgba(255, 255, 255, 0.78); }
+.plan__quota { font-family: var(--mono); font-weight: 700; font-size: 11px; color: var(--on-bone-1); }
+.plan__quota--soon { color: var(--on-bone-6); }
+.plan__features { display: flex; flex-direction: column; gap: 12px; margin-top: 26px; }
+.plan__feature { display: flex; align-items: flex-start; gap: 10px; }
+.plan__feature svg { flex: none; margin-top: 3px; }
+.plan__feature span { font-size: 14px; line-height: 21px; color: var(--on-bone-1); }
+.plan--pro .plan__feature span { color: var(--white); }
+.plan__soon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  border-radius: 999px;
+  background: var(--white);
+  margin-top: 26px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--cobalt);
+}
+.plan__foot { margin: 26px 0 0; font-size: 13px; line-height: 18px; color: var(--on-bone-4); }
+.plans__foot {
+  margin: 32px auto 0;
+  max-width: 560px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-bone-4);
+}
+
+/* ── FAQ ──────────────────────────────────────────────────────────────────── */
+.faq { max-width: 1000px; margin: 0 auto; padding: 0 var(--gutter) clamp(80px, 11vh, 150px); }
+.faq__h2 { margin: 0 0 clamp(28px, 4vh, 48px); }
+.faq__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--line-on-bone);
+  border-top: 1px solid var(--line-on-bone);
+  border-bottom: 1px solid var(--line-on-bone);
+}
+.faq__item {
+  background: var(--bone);
+  padding: 26px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px clamp(16px, 3vw, 48px);
+}
+.faq__q { flex: 1 1 220px; margin: 0; }
+.faq__a { flex: 2 1 320px; margin: 0; font-size: 15px; line-height: 22px; color: var(--on-bone-3); }
+
+/* ── Closing ──────────────────────────────────────────────────────────────── */
+.close { background: var(--ink); padding: clamp(80px, 13vh, 170px) var(--gutter); }
+.close__inner { max-width: 900px; margin: 0 auto; text-align: center; }
+.close__h2 {
+  margin: 22px 0 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(38px, 6vw, 92px);
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+  color: var(--on-ink-1);
+  text-wrap: balance;
+}
+.close__lede {
+  margin: 22px auto 0;
+  max-width: 46ch;
+  font-size: clamp(15px, 1.3vw, 19px);
+  line-height: 1.6;
+  color: var(--on-ink-2);
+  text-wrap: pretty;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+.foot {
+  background: var(--ink);
+  border-top: 1px solid var(--line-on-ink);
+  padding: clamp(36px, 5vh, 60px) var(--gutter);
+}
+.foot__inner {
+  max-width: var(--measure-max);
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.foot__brand { display: flex; align-items: center; gap: 12px; }
+.foot__mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px; height: 30px;
+  flex: none;
+  background: rgba(237, 236, 231, 0.10);
+  border-radius: 7px;
+}
+.foot__name { font-family: var(--mono); font-weight: 700; font-size: 11px; letter-spacing: 1.6px; color: var(--on-ink-2); }
+.foot__links { display: flex; flex-wrap: wrap; gap: clamp(16px, 2vw, 30px); }
+.foot__links a { font-size: 14px; color: var(--on-ink-2); }
+.foot__links a:hover { color: var(--on-ink-1); }
+/* The design set this to #686B67, which is `textGhost` in the app's palette —
+   a *paper* tone. On solid ink it measures 3.46:1, under the 4.5:1 floor for
+   11px text. The system already has a tone for this ground: `onInkMuted`, which
+   is 5.59:1 on solid ink. The wordmark beside it keeps its own weight, so the
+   hierarchy survives the change. */
+.foot__copy { font-family: var(--mono); font-size: 11px; letter-spacing: 1px; color: var(--on-ink-2); }
+
+/* ── Motion ───────────────────────────────────────────────────────────────────
+   Everything below is opt-in. `<html>` gets the `motion` class from the head
+   script only when scripting is on AND the reader has not asked for reduced
+   motion, so the pre-animation states — opacity 0, offset transforms, a band
+   rewound to zero — can never strand content on a page whose JavaScript did
+   not run. The base rules are the finished state; `.motion` is what rewinds
+   them. */
+
+.motion [data-reveal] {
+  opacity: 0;
+  transform: translateY(40px);
+}
+.motion [data-reveal].is-in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 950ms var(--expo-out), transform 950ms var(--expo-out);
+}
+
+/* Staggered groups. The delay is positional rather than scripted, so nothing
+   has to write a style attribute — which a nonce CSP would refuse anyway. */
+.motion [data-reveal-item] {
+  opacity: 0;
+  transform: translateY(54px);
+}
+.motion [data-reveal-item].is-in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 1000ms var(--expo-out), transform 1000ms var(--expo-out);
+}
+.motion [data-reveal-item]:nth-child(2).is-in { transition-delay: 100ms; }
+.motion [data-reveal-item]:nth-child(3).is-in { transition-delay: 200ms; }
+
+.motion [data-readout] {
+  opacity: 0;
+  transform: translateY(28px);
+}
+@media (min-width: 1080px) and (min-height: 700px) {
+  .motion [data-readout] { transform: translateX(34px); }
+}
+.motion [data-readout].is-in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 900ms var(--expo-out), transform 900ms var(--expo-out);
+}
+.motion [data-readout]:nth-child(2).is-in { transition-delay: 100ms; }
+.motion [data-readout]:nth-child(3).is-in { transition-delay: 200ms; }
+
+.motion .phone {
+  opacity: 0;
+  transform: translateY(60px);
+}
+.motion .phone.is-in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 1100ms var(--expo-out), transform 1100ms var(--expo-out);
+}
+
+/* The parallax pair. The entrance tween and the parallax both want `transform`,
+   so they are kept on different elements — the wrapper carries the scroll-linked
+   offset, the phone itself carries the entrance. The transition is what the
+   design's `scrub: 0.8` actually is: a retargeted tween, not a per-frame lerp. */
+.motion .phone-wrap { transition: transform 800ms var(--expo-out); }
+.motion .hero__mark { transition: transform 600ms var(--expo-out); }
+
+/* The band arrives drawn; motion rewinds it so it can be drawn again on entry. */
+.motion .index-ruler__band { width: 0%; }
+.motion .index-ruler__stem { opacity: 0; transform: scaleY(0); }
+.motion .index-ruler__stem.is-on {
+  opacity: 1;
+  transform: scaleY(1);
+  transition: opacity 400ms var(--power2-out), transform 500ms var(--back-out);
+}
+.motion .index-ruler__stem-label { opacity: 0; }
+.motion .index-ruler__stem-label.is-on { opacity: 1; transition: opacity 400ms var(--power1-out); }
+
+/* The hero plays on load, so it is a keyframe animation rather than an observed
+   one — nothing needs to wait for a scroll position that is already satisfied.
+   Timings are the design's timeline, made absolute: line 1 at 0s, line 2 at
+   0.08s, the lede/form/fine print from 0.35s at 0.08s apart, the mark at 0.2s. */
+@keyframes hero-line { from { transform: translateY(112%); } to { transform: translateY(0); } }
+@keyframes hero-fade { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+/* `scale` rather than `transform: scale()`: the parallax owns this element's
+   transform, and an animation beats an inline style in the cascade — so writing
+   both to `transform` would let the intro silently cancel the parallax. */
+@keyframes hero-mark { from { opacity: 0; scale: 0.94; } to { opacity: 1; scale: 1; } }
+
+.motion .hero__line {
+  transform: translateY(112%);
+  animation: hero-line 1150ms var(--expo-out) forwards;
+}
+.motion .hero__line--2 { animation-delay: 80ms; }
+.motion [data-hero-fade] {
+  opacity: 0;
+  animation: hero-fade 900ms var(--expo-out) 350ms forwards;
+}
+.motion [data-hero-fade="2"] { animation-delay: 430ms; }
+.motion [data-hero-fade="3"] { animation-delay: 510ms; }
+.motion .hero__mark {
+  opacity: 0;
+  animation: hero-mark 1100ms var(--expo-out) 200ms forwards;
+}
+
+/* Reduced motion, or no JavaScript: the marquee holds still and the page is
+   simply laid out. Nothing is hidden and nothing waits for a trigger. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .marquee { animation: none; }
+  .nav, .flag { transition: none; }
+}
+.no-motion .marquee { animation: none; }
+</style>
+<script>
+  /* Set before first paint: the pre-animation states in the stylesheet are
+     scoped to `.motion`, so a reader with JavaScript off, or with reduced
+     motion asked for, gets the page fully laid out and fully visible rather
+     than a screen of elements waiting for a trigger that will never fire. */
+  (function () {
+    var el = document.documentElement;
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.className = reduce ? "no-motion" : "motion";
+  })();
+</script>
+</head>
+<body class="__BODY_CLASS__">
+
+<a class="skip-link" href="#top">Skip to content</a>
+
+<nav class="nav" id="nav" aria-label="Primary">
+  <a class="nav__brand" href="#top">
+    <span class="nav__mark" aria-hidden="true">
+      <svg width="34" height="34" viewBox="0 0 168 168" focusable="false"><line x1="106" y1="34" x2="106" y2="136" stroke="#EDECE7" stroke-width="19" stroke-linecap="round"/><line x1="28" y1="114" x2="136" y2="114" stroke="#EDECE7" stroke-width="19" stroke-linecap="round"/><line x1="106" y1="34" x2="28" y2="114" stroke="#2436E8" stroke-width="19" stroke-linecap="round"/></svg>
+    </span>
+    <span class="nav__wordmark">4FORM AI</span>
+    <span class="sr-only">4Form AI — home</span>
+  </a>
+  <div class="nav__links">
+    <a class="nav__link" href="#measure">How it works</a>
+    <a class="nav__link" href="#band">The band</a>
+    <a class="nav__link" href="#pricing">Pricing</a>
+    <a class="nav__cta" href="#waitlist">
+      <span class="nav__cta-long">Join the waitlist</span>
+      <span class="nav__cta-short">Waitlist</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M5 12h13" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round"/><polyline points="12 5 19 12 12 19" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+    </a>
+  </div>
+</nav>
+
+<main id="main">
+
+<section class="hero shell" id="top">
+  <div class="hero__grid">
+    <div>
+      <p class="eyebrow-row">
+        <span class="eyebrow-row__dot" aria-hidden="true"></span>
+        <span class="eyebrow">COMING TO iOS · JOIN THE WAITLIST</span>
+      </p>
+
+      <h1 class="h1">
+        <span class="hero__line-mask"><span class="hero__line">Your technique,</span></span>
+        <span class="hero__line-mask"><span class="hero__line hero__line--2">measured.</span></span>
+      </h1>
+
+      <p class="lede" data-hero-fade="1">
+        Film a set. We track your joints frame by frame and show you the angles, with the range each one should sit in. Same clip, same numbers, every time.
+      </p>
+
+      <form class="form" method="post" action="/waitlist" data-waitlist data-hero-fade="2">
+        <input type="hidden" name="from" value="hero">
+        <div class="form__field">
+          <label class="sr-only" for="waitlist-email-hero">Email address</label>
+          <input class="form__input" id="waitlist-email-hero" type="email" name="email" required maxlength="254" autocomplete="email" spellcheck="false" placeholder="you@email.com">
+        </div>
+        <button class="form__button" type="submit">
+          <span class="swap-idle">Join the waitlist</span>
+          <span class="swap-done">You&rsquo;re on the list</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M5 12h13" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round"/><polyline points="12 5 19 12 12 19" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+        </button>
+        <p class="form__error" data-form-error role="alert">__FORM_ERROR__</p>
+      </form>
+
+      <p class="form__note" data-hero-fade="3">Free to start. No card required. We measure &mdash; we don&rsquo;t diagnose.</p>
+    </div>
+
+    <div class="hero__mark">
+      <svg class="hero__figure" viewBox="0 0 340 240" role="img" aria-label="Two limbs meeting at a joint, with the angle between them measured at 142 degrees." focusable="false">
+        <line x1="34" y1="34" x2="150" y2="132" stroke="#101312" stroke-width="5" stroke-linecap="round"/>
+        <line x1="150" y1="132" x2="298" y2="108" stroke="#101312" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="150" cy="132" r="11" fill="#101312"/>
+        <circle cx="34" cy="34" r="7" fill="#101312" opacity="0.35"/>
+        <circle cx="298" cy="108" r="7" fill="#101312" opacity="0.35"/>
+        <circle id="heroArc" cx="150" cy="132" r="58" stroke="#2436E8" stroke-width="4" fill="none" stroke-dasharray="92 400" stroke-dashoffset="-11"/>
+        <line x1="150" y1="132" x2="150" y2="196" stroke="rgba(16,19,18,0.28)" stroke-width="1.5" stroke-dasharray="4 5"/>
+      </svg>
+      <p class="hero__deg-wrap"><span class="hero__deg" id="heroDeg">142&deg;</span></p>
+      <p class="hero__caption">KNEE · FRAME 088</p>
+    </div>
+  </div>
+</section>
+
+<section class="measure" id="measure" aria-labelledby="measure-h2">
+  <div class="measure__pin" id="measurePin">
+    <div class="measure__grid on-ink">
+
+      <div>
+        <span class="eyebrow eyebrow--on-ink">THE MEASUREMENT</span>
+        <h2 class="measure__h2" id="measure-h2">148 frames.<br>One reading.</h2>
+        <p class="lede lede--on-ink">
+          Nothing is inferred from a description of your set. A pose tracker runs over the clip on your phone, joint by joint, frame by frame &mdash; and the analysis is only created once real angles exist.
+        </p>
+
+        <div class="frame-count">
+          <span class="frame-count__n" id="frameNum">000</span>
+          <span class="frame-count__of">/ 148 FRAMES</span>
+        </div>
+
+        <div class="frame-bar"><div class="frame-bar__fill" id="frameFill"></div></div>
+
+        <div class="stamps">
+          <span class="stamp" id="repStamp">REP 1 OF 2</span>
+          <span class="stamp stamp--muted">BACK SQUAT · SIDE ON</span>
+        </div>
+      </div>
+
+      <div class="figure-col">
+        <svg class="figure" id="figure" viewBox="0 0 320 420" role="img" aria-label="A side-on stick figure squatting, with the knee angle drawn and labelled as the depth changes." focusable="false">
+          <line x1="40" y1="368" x2="290" y2="368" stroke="rgba(237,236,231,0.18)" stroke-width="1.5"/>
+          <path id="fKneeArc" d="" stroke="#2436E8" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <line id="fShin" x1="130" y1="360" x2="130" y2="264" stroke="#EDECE7" stroke-width="5" stroke-linecap="round"/>
+          <line id="fThigh" x1="130" y1="264" x2="124" y2="164" stroke="#EDECE7" stroke-width="5" stroke-linecap="round"/>
+          <line id="fTorso" x1="124" y1="164" x2="137" y2="69" stroke="#EDECE7" stroke-width="5" stroke-linecap="round"/>
+          <line id="fUpperArm" x1="137" y1="69" x2="163" y2="115" stroke="rgba(237,236,231,0.55)" stroke-width="4" stroke-linecap="round"/>
+          <line id="fForearm" x1="163" y1="115" x2="177" y2="159" stroke="rgba(237,236,231,0.55)" stroke-width="4" stroke-linecap="round"/>
+          <line id="fFoot" x1="112" y1="366" x2="172" y2="366" stroke="#EDECE7" stroke-width="5" stroke-linecap="round"/>
+          <circle id="fHead" cx="142" cy="36" r="16" fill="none" stroke="#EDECE7" stroke-width="5"/>
+          <circle id="fHip" cx="124" cy="164" r="7" fill="#EDECE7"/>
+          <circle id="fKnee" cx="130" cy="264" r="7" fill="#EDECE7"/>
+          <circle id="fAnkle" cx="130" cy="360" r="6" fill="rgba(237,236,231,0.55)"/>
+          <circle id="fShoulder" cx="137" cy="69" r="6" fill="rgba(237,236,231,0.55)"/>
+          <text id="fKneeLabel" class="figure__angle" x="176" y="262" font-family="JetBrains Mono, monospace" font-size="15" font-weight="700">177&#176;</text>
+        </svg>
+      </div>
+
+      <div class="readouts">
+        <div class="readout" data-readout="knee">
+          <div class="readout__head">
+            <span class="readout__label">KNEE FLEXION</span>
+            <span class="readout__value is-out" data-rv="knee">177&deg;</span>
+          </div>
+          <div class="ruler">
+            <div class="ruler__axis"></div>
+            <div class="ruler__band ruler__band--knee"></div>
+            <div class="ruler__mark ruler__mark--knee is-out" data-rm="knee"></div>
+          </div>
+          <div class="ruler__scale">
+            <span>30</span>
+            <span>BAND 72&ndash;175</span>
+            <span>190</span>
+          </div>
+        </div>
+
+        <div class="readout" data-readout="hip">
+          <div class="readout__head">
+            <span class="readout__label">HIP FLEXION</span>
+            <span class="readout__value" data-rv="hip">169&deg;</span>
+          </div>
+          <div class="ruler">
+            <div class="ruler__axis"></div>
+            <div class="ruler__band ruler__band--hip"></div>
+            <div class="ruler__mark ruler__mark--hip" data-rm="hip"></div>
+          </div>
+          <div class="ruler__scale">
+            <span>30</span>
+            <span>BAND 65&ndash;175</span>
+            <span>190</span>
+          </div>
+        </div>
+
+        <div class="readout" data-readout="lean">
+          <div class="readout__head">
+            <span class="readout__label">TORSO LEAN</span>
+            <span class="readout__value" data-rv="lean">8&deg;</span>
+          </div>
+          <div class="ruler">
+            <div class="ruler__axis"></div>
+            <div class="ruler__band ruler__band--lean"></div>
+            <div class="ruler__mark ruler__mark--lean" data-rm="lean"></div>
+          </div>
+          <div class="ruler__scale">
+            <span>0</span>
+            <span>BAND 0&ndash;35</span>
+            <span>60</span>
+          </div>
+          <p class="flag" id="leanFlag">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.2" stroke="#D2683F" stroke-width="1.9" fill="none"/><line x1="12" y1="7.4" x2="12" y2="13" stroke="#D2683F" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="16.4" r="1.1" fill="#D2683F"/></svg>
+            <span>Outside the band at depth. The flag carries the angle that produced it.</span>
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="section shell" aria-labelledby="how-h2">
+  <div class="how__head" data-reveal>
+    <span class="eyebrow">HOW IT WORKS</span>
+    <h2 class="h2" id="how-h2">Three steps, no wearables.</h2>
+  </div>
+
+  <div class="cards" data-reveal-group>
+    <div class="card" data-reveal-item>
+      <span class="card__num">01</span>
+      <div>
+        <h3 class="h3">Film side-on</h3>
+        <p class="body">Whole body in frame, ten seconds or longer. Any phone camera. No markers, no sensors, no gym rig.</p>
+      </div>
+    </div>
+    <div class="card" data-reveal-item>
+      <span class="card__num">02</span>
+      <div>
+        <h3 class="h3">We measure it</h3>
+        <p class="body">Pose tracking runs over every frame and accumulates real joint angles. Progress shows the actual frame count, because that is what is happening.</p>
+      </div>
+    </div>
+    <div class="card" data-reveal-item>
+      <span class="card__num">03</span>
+      <div>
+        <h3 class="h3">You read it</h3>
+        <p class="body">Plain-language instructions, not recited joint angles &mdash; with the exact degrees one tap away in the skeleton view.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section--ink" id="band" aria-labelledby="band-h2">
+  <div class="shell split on-ink">
+    <div data-reveal>
+      <span class="eyebrow eyebrow--on-ink">RULE FOUR</span>
+      <h2 class="band-h2" id="band-h2">A score without its range is a scoreboard.</h2>
+      <p class="lede lede--on-ink">
+        Every number arrives against the band it came from &mdash; your own working range across your measured history, not an abstract hundred. That is the difference between a reading and a rating.
+      </p>
+      <div class="refs">
+        <div class="ref">
+          <div class="ref__label">YOUR BAND</div>
+          <div class="ref__value">68 &ndash; 84</div>
+        </div>
+        <div class="ref">
+          <div class="ref__label">PREVIOUS</div>
+          <div class="ref__value">72 · 08 AUG</div>
+        </div>
+        <div class="ref">
+          <div class="ref__label">BEST</div>
+          <div class="ref__value">84 · 02 AUG</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel__head">
+        <span class="readout__label">FORM INDEX</span>
+        <span class="panel__meta">4 REPS · 148 FRAMES MEASURED</span>
+      </div>
+      <div class="panel__score-row">
+        <span class="panel__score" id="bandScore">78</span>
+        <span class="delta">+6 VS LAST</span>
+      </div>
+
+      <div class="index-ruler">
+        <div class="index-ruler__axis"></div>
+        <div class="index-ruler__band" id="bandFill"></div>
+        <div class="index-ruler__ticks"></div>
+        <div class="index-ruler__stem" id="bandStem"></div>
+        <div class="index-ruler__stem-label" id="bandStemLabel">TODAY</div>
+        <div class="index-ruler__scale">
+          <span>40</span><span>60</span><span>80</span><span>100</span>
+        </div>
+      </div>
+
+      <p class="panel__foot">
+        Measured sessions only. An unscored clip has no measurement behind its number, so it never enters the band.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="section shell section--clip" aria-labelledby="app-h2">
+  <div class="app-head" data-reveal>
+    <div class="app-head__lead">
+      <span class="eyebrow">IN THE APP</span>
+      <h2 class="h2" id="app-h2">One reading, one thing to do next.</h2>
+    </div>
+    <p class="app-head__aside">Home is an instrument panel, not a feed. The Form Index sits against your band; below it, the single highest-signal correction from your last clip.</p>
+  </div>
+
+  <div class="app-grid">
+
+    <div class="phone-wrap">
+    <div class="phone" aria-label="The 4Form AI home screen" role="img">
+      <div class="phone__screen">
+        <div class="phone__status" aria-hidden="true">
+          <span class="phone__clock">9:41</span>
+          <span class="phone__island"></span>
+          <span class="phone__battery">100%</span>
+        </div>
+
+        <div class="phone__body">
+          <div class="phone__top">
+            <div class="phone__top-main">
+              <div class="phone__stamp">MON 10 AUG · SESSION 7</div>
+              <div class="phone__headline">Sit back into the hip before the knee travels.</div>
+            </div>
+            <div class="phone__avatar">TY</div>
+          </div>
+
+          <div class="phone__card">
+            <div class="phone__card-head">
+              <span class="phone__stamp">FORM INDEX</span>
+              <span class="mono-sm">4 REPS · 148 FRAMES</span>
+            </div>
+            <div class="phone__index">
+              <span class="phone__index-n">78</span>
+              <span class="delta delta--on-bone">+6 VS LAST</span>
+            </div>
+
+            <div class="mini-ruler">
+              <div class="mini-ruler__axis"></div>
+              <div class="mini-ruler__band"></div>
+              <div class="mini-ruler__ticks"></div>
+              <div class="mini-ruler__prev"></div>
+              <div class="mini-ruler__stem"></div>
+              <div class="mini-ruler__stem-label">TODAY</div>
+              <div class="mini-ruler__scale">
+                <span>40</span><span>60</span><span>80</span><span>100</span>
+              </div>
+            </div>
+
+            <div class="phone__refs">
+              <div class="ref ref--on-bone">
+                <div class="ref__label">YOUR BAND</div>
+                <div class="ref__value">68 &ndash; 84</div>
+              </div>
+              <div class="ref ref--on-bone">
+                <div class="ref__label">PREVIOUS</div>
+                <div class="ref__value">72 · 08 AUG</div>
+              </div>
+              <div class="ref ref--on-bone">
+                <div class="ref__label">BEST</div>
+                <div class="ref__value">84 · 02 AUG</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="phone__do">
+            <span class="phone__do-label">DO THIS NEXT</span>
+            <p class="phone__do-text">Break at the hip first, then the knee. Two counts down, one up.</p>
+            <div class="phone__do-foot">
+              <span class="phone__do-from">From Back squat &mdash; 5&times;3</span>
+              <span class="phone__do-open">Open</span>
+            </div>
+          </div>
+
+          <div class="phone__list-head">
+            <span class="phone__stamp">LAST 3 SESSIONS</span>
+            <span class="phone__list-all">All</span>
+          </div>
+
+          <div class="phone__row">
+            <span class="phone__row-day">MON</span>
+            <div class="phone__row-main">
+              <div class="phone__row-title">Back squat &mdash; 5&times;3</div>
+              <div class="phone__row-sport">Weightlifting</div>
+            </div>
+            <div class="phone__row-right">
+              <div class="phone__row-score">78</div>
+              <div class="spark"><div class="spark__band"></div><div class="spark__mark spark__mark--78"></div></div>
+            </div>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><polyline points="9 18 15 12 9 6" stroke="#686B67" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </div>
+
+          <div class="phone__row">
+            <span class="phone__row-day">FRI</span>
+            <div class="phone__row-main">
+              <div class="phone__row-title">Clean pull &mdash; 4&times;2</div>
+              <div class="phone__row-sport">Weightlifting</div>
+            </div>
+            <div class="phone__row-right">
+              <div class="phone__row-score">72</div>
+              <div class="spark"><div class="spark__band"></div><div class="spark__mark spark__mark--72"></div></div>
+            </div>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><polyline points="9 18 15 12 9 6" stroke="#686B67" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </div>
+
+          <div class="phone__row">
+            <span class="phone__row-day">WED</span>
+            <div class="phone__row-main">
+              <div class="phone__row-title">Tempo run &mdash; 3 km</div>
+              <div class="phone__row-sport">Running</div>
+            </div>
+            <div class="phone__row-right">
+              <div class="phone__row-score">69</div>
+              <div class="spark"><div class="spark__band"></div><div class="spark__mark spark__mark--69"></div></div>
+            </div>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><polyline points="9 18 15 12 9 6" stroke="#686B67" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </div>
+        </div>
+
+        <div class="phone__tabs" aria-hidden="true">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" focusable="false"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="#EDECE7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M9 22V12h6v10" stroke="#EDECE7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" focusable="false"><path d="M23 6l-9.5 9.5-5-5L1 18" stroke="#8A8D8F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M17 6h6v6" stroke="#8A8D8F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          <span class="phone__tab-add">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" focusable="false"><path d="M12 5v14" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/><path d="M5 12h14" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </span>
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" focusable="false"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z" stroke="#8A8D8F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" focusable="false"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="#8A8D8F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="12" cy="7" r="4" stroke="#8A8D8F" stroke-width="1.8" fill="none"/></svg>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <div class="side-cards">
+      <div class="card card--flat" data-reveal>
+        <div class="tag-row tag-row--head">
+          <span class="tag tag--flag tag--sm">EVERY REP</span>
+          <span class="eyebrow">TORSO LEAN</span>
+        </div>
+        <h3 class="h3 h3--sm side-cards__h3">Chest dropped past the band at the bottom of every rep.</h3>
+        <p class="body">Observed 8&deg; to 44&deg; from vertical, against a safe band of 0&deg; to 35&deg;. Flags carry evidence &mdash; the angle that produced this one is on the ruler below.</p>
+        <div class="obs-ruler">
+          <div class="obs-ruler__axis"></div>
+          <div class="obs-ruler__safe"></div>
+          <div class="obs-ruler__span"></div>
+          <div class="obs-ruler__cap obs-ruler__cap--lo"></div>
+          <div class="obs-ruler__cap obs-ruler__cap--hi"></div>
+        </div>
+        <div class="obs-ruler__scale">
+          <span>OBSERVED 8&deg;&ndash;44&deg;</span>
+          <span>SAFE 0&deg;&ndash;35&deg;</span>
+        </div>
+      </div>
+
+      <div class="card card--flat" data-reveal>
+        <span class="eyebrow">THE SKELETON VIEW</span>
+        <p class="body body--lead">The write-up gives you instructions. The skeleton overlay keeps the exact degrees, frame by frame, for when you want to check the work yourself.</p>
+        <div class="tag-row">
+          <span class="tag">KNEE 86&deg;</span>
+          <span class="tag">HIP 73&deg;</span>
+          <span class="tag tag--flag">LEAN 44&deg;</span>
+          <span class="tag">ANKLE 112&deg;</span>
+        </div>
+      </div>
+
+      <div class="card card--flat card--ink" data-reveal>
+        <span class="eyebrow eyebrow--on-ink">WHAT WE WON&rsquo;T SAY</span>
+        <p class="body body--lead">We measure joint angles. We don&rsquo;t diagnose injuries, and we don&rsquo;t claim to prevent them. Your clips stay on your device unless you send one for measurement.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sports" aria-labelledby="sports-h2">
+  <div class="shell sports__head" data-reveal>
+    <span class="eyebrow">TWENTY-ONE MOVEMENTS, ONE METHOD</span>
+    <h2 class="h2 h2--tight sports__h2" id="sports-h2">Ordered by how well side-on tracking holds up.</h2>
+  </div>
+
+  <div class="marquees" aria-hidden="true">
+    <div class="marquee marquee--l">
+      <div class="marquee__set">
+        <span class="chip">Weightlifting</span>
+        <span class="chip">Running</span>
+        <span class="chip">CrossFit</span>
+        <span class="chip">Boxing</span>
+        <span class="chip">Martial Arts</span>
+        <span class="chip">Gymnastics</span>
+        <span class="chip">Basketball</span>
+        <span class="chip">Soccer</span>
+        <span class="chip">Tennis</span>
+        <span class="chip">Golf</span>
+        <span class="chip">Swimming</span>
+      </div>
+      <div class="marquee__set">
+        <span class="chip">Weightlifting</span>
+        <span class="chip">Running</span>
+        <span class="chip">CrossFit</span>
+        <span class="chip">Boxing</span>
+        <span class="chip">Martial Arts</span>
+        <span class="chip">Gymnastics</span>
+        <span class="chip">Basketball</span>
+        <span class="chip">Soccer</span>
+        <span class="chip">Tennis</span>
+        <span class="chip">Golf</span>
+        <span class="chip">Swimming</span>
+      </div>
+      <div class="marquee__set">
+        <span class="chip">Weightlifting</span>
+        <span class="chip">Running</span>
+        <span class="chip">CrossFit</span>
+        <span class="chip">Boxing</span>
+        <span class="chip">Martial Arts</span>
+        <span class="chip">Gymnastics</span>
+        <span class="chip">Basketball</span>
+        <span class="chip">Soccer</span>
+        <span class="chip">Tennis</span>
+        <span class="chip">Golf</span>
+        <span class="chip">Swimming</span>
+      </div>
+      <div class="marquee__set">
+        <span class="chip">Weightlifting</span>
+        <span class="chip">Running</span>
+        <span class="chip">CrossFit</span>
+        <span class="chip">Boxing</span>
+        <span class="chip">Martial Arts</span>
+        <span class="chip">Gymnastics</span>
+        <span class="chip">Basketball</span>
+        <span class="chip">Soccer</span>
+        <span class="chip">Tennis</span>
+        <span class="chip">Golf</span>
+        <span class="chip">Swimming</span>
+      </div>
+    </div>
+
+    <div class="marquee marquee--r">
+      <div class="marquee__set">
+        <span class="chip">Cycling</span>
+        <span class="chip">Rowing</span>
+        <span class="chip">Volleyball</span>
+        <span class="chip">Baseball</span>
+        <span class="chip">Track &amp; Field</span>
+        <span class="chip">Skiing</span>
+        <span class="chip">Climbing</span>
+        <span class="chip">Dance</span>
+        <span class="chip">Fencing</span>
+        <span class="chip">Other</span>
+      </div>
+      <div class="marquee__set">
+        <span class="chip">Cycling</span>
+        <span class="chip">Rowing</span>
+        <span class="chip">Volleyball</span>
+        <span class="chip">Baseball</span>
+        <span class="chip">Track &amp; Field</span>
+        <span class="chip">Skiing</span>
+        <span class="chip">Climbing</span>
+        <span class="chip">Dance</span>
+        <span class="chip">Fencing</span>
+        <span class="chip">Other</span>
+      </div>
+      <div class="marquee__set">
+        <span class="chip">Cycling</span>
+        <span class="chip">Rowing</span>
+        <span class="chip">Volleyball</span>
+        <span class="chip">Baseball</span>
+        <span class="chip">Track &amp; Field</span>
+        <span class="chip">Skiing</span>
+        <span class="chip">Climbing</span>
+        <span class="chip">Dance</span>
+        <span class="chip">Fencing</span>
+        <span class="chip">Other</span>
+      </div>
+      <div class="marquee__set">
+        <span class="chip">Cycling</span>
+        <span class="chip">Rowing</span>
+        <span class="chip">Volleyball</span>
+        <span class="chip">Baseball</span>
+        <span class="chip">Track &amp; Field</span>
+        <span class="chip">Skiing</span>
+        <span class="chip">Climbing</span>
+        <span class="chip">Dance</span>
+        <span class="chip">Fencing</span>
+        <span class="chip">Other</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="sr-only">
+    Sports supported: Weightlifting, Running, CrossFit, Boxing, Martial Arts, Gymnastics,
+    Basketball, Soccer, Tennis, Golf, Swimming, Cycling, Rowing, Volleyball, Baseball,
+    Track &amp; Field, Skiing, Climbing, Dance, Fencing, and Other.
+  </p>
+</section>
+
+<section class="section shell" id="pricing" aria-labelledby="pricing-h2">
+  <div class="pricing__head" data-reveal>
+    <span class="eyebrow">PLANS</span>
+    <!-- The heading is capped at 26ch, and at a desktop font size "a warm-up."
+       does not fit a line. A plain hyphen is a break opportunity, so it split
+       as "warm-" / "up."; binding the whole phrase instead sets it as
+       "Three clips / a month is / a warm-up." Both characters render exactly
+       as a space and a hyphen do. -->
+    <h2 class="h2" id="pricing-h2">Three clips a month is a&#160;warm&#8209;up.</h2>
+  </div>
+
+  <div class="notice" data-reveal>
+    <p>Paid plans aren&rsquo;t on sale yet. You can see what&rsquo;s coming, but nothing can be purchased or charged right now.</p>
+  </div>
+
+  <div class="plans" data-reveal-group>
+    <div class="plan plan--pro" data-reveal-item>
+      <div class="plan__head">
+        <div>
+          <span class="plan__label">PRO</span>
+          <div class="plan__price">
+            <span class="plan__amount">$9.99</span>
+            <span class="plan__per">/MO</span>
+          </div>
+        </div>
+      </div>
+      <div class="plan__features">
+        <div class="plan__feature"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Unlimited video analyses</span></div>
+        <div class="plan__feature"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>AI coach chat</span></div>
+        <div class="plan__feature"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Detailed coaching tips &amp; drills</span></div>
+        <div class="plan__feature"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Progress tracking &amp; charts</span></div>
+      </div>
+      <div class="plan__soon">Coming soon</div>
+    </div>
+
+    <div class="plan" data-reveal-item>
+      <div class="plan__head">
+        <span class="plan__label">FREE</span>
+        <span class="plan__quota">3 CLIPS / MO</span>
+      </div>
+      <div class="plan__price">
+        <span class="plan__amount">$0</span>
+      </div>
+      <div class="plan__features">
+        <div class="plan__feature"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12" stroke="#2436E8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>3 video analyses per month</span></div>
+        <div class="plan__feature"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12" stroke="#2436E8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Pose tracking with joint-angle measurement</span></div>
+        <div class="plan__feature"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12" stroke="#2436E8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Technique scores against your own band</span></div>
+        <div class="plan__feature"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12" stroke="#2436E8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Flags with the angle that produced them</span></div>
+      </div>
+      <p class="plan__foot">Measurement, flags and history stay yours. Everything you&rsquo;ve already measured keeps working.</p>
+    </div>
+
+    <div class="plan plan--soon" data-reveal-item>
+      <div class="plan__head">
+        <span class="plan__label">ELITE</span>
+        <span class="plan__quota plan__quota--soon">IN DEVELOPMENT</span>
+      </div>
+      <p class="body body--lead">Elite is still in development. We&rsquo;re not selling it until the features behind it are real.</p>
+    </div>
+  </div>
+
+  <p class="plans__foot" data-reveal>
+    When plans go on sale, purchases will be handled entirely by the App Store or Google Play. 4Form AI will never see or store your card details.
+  </p>
+</section>
+
+<section class="faq" aria-labelledby="faq-h2">
+  <h2 class="h2 h2--tight faq__h2" id="faq-h2" data-reveal>Questions we get asked.</h2>
+
+  <div class="faq__list" data-reveal>
+    <div class="faq__item">
+      <h3 class="h3 h3--sm faq__q">Do I need a special camera?</h3>
+      <p class="faq__a">No. Any phone camera, filmed side-on, whole body in frame, ten seconds or longer. No markers and no wearables.</p>
+    </div>
+    <div class="faq__item">
+      <h3 class="h3 h3--sm faq__q">Is this an injury screen?</h3>
+      <p class="faq__a">No. We measure joint angles against published bands and tell you where you sat outside them. We don&rsquo;t diagnose, and we don&rsquo;t claim to prevent injury.</p>
+    </div>
+    <div class="faq__item">
+      <h3 class="h3 h3--sm faq__q">Will the same clip give the same score twice?</h3>
+      <p class="faq__a">Yes. Scores are computed from measured angles, not written by a model from your session title. Same clip, same numbers.</p>
+    </div>
+    <div class="faq__item">
+      <h3 class="h3 h3--sm faq__q">What happens to my video?</h3>
+      <p class="faq__a">Measurement runs on your device. Deleting a session removes the local video with it. Your profile photo is device-local and never uploaded.</p>
+    </div>
+    <div class="faq__item">
+      <h3 class="h3 h3--sm faq__q">Who can sign up?</h3>
+      <p class="faq__a">Thirteen and over. Sign-up asks for a date of birth for that reason.</p>
+    </div>
+    <div class="faq__item">
+      <h3 class="h3 h3--sm faq__q">When does it ship?</h3>
+      <p class="faq__a">iOS first. Join the waitlist and you&rsquo;ll get one email when TestFlight opens &mdash; not a newsletter.</p>
+    </div>
+  </div>
+</section>
+
+<section class="close on-ink" id="waitlist" aria-labelledby="close-h2">
+  <div class="close__inner">
+    <span class="eyebrow eyebrow--on-ink" data-reveal>4FORMAI.COM</span>
+    <h2 class="close__h2" id="close-h2" data-reveal>Stop guessing at your form.</h2>
+    <p class="close__lede" data-reveal>One email when the TestFlight build opens. Nothing else, and nothing sold in between.</p>
+
+    <form class="form form--on-ink" method="post" action="/waitlist" data-waitlist data-reveal>
+      <input type="hidden" name="from" value="close">
+      <div class="form__field">
+        <label class="sr-only" for="waitlist-email-close">Email address</label>
+        <input class="form__input" id="waitlist-email-close" type="email" name="email" required maxlength="254" autocomplete="email" spellcheck="false" placeholder="you@email.com">
+      </div>
+      <button class="form__button" type="submit">
+        <span class="swap-idle">Join the waitlist</span>
+        <span class="swap-done">You&rsquo;re on the list</span>
+      </button>
+      <p class="form__error" data-form-error role="alert">__FORM_ERROR__</p>
+      <p class="form__note">
+        <span class="swap-idle">13+. Free to start. No card required.</span>
+        <span class="swap-done">Thanks &mdash; we&rsquo;ll email you once, when TestFlight opens.</span>
+      </p>
+    </form>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot__inner">
+    <div class="foot__brand">
+      <span class="foot__mark" aria-hidden="true">
+        <svg width="30" height="30" viewBox="0 0 168 168" focusable="false"><line x1="107" y1="32" x2="107" y2="136" stroke="#EDECE7" stroke-width="20" stroke-linecap="round"/><line x1="22" y1="118" x2="140" y2="118" stroke="#EDECE7" stroke-width="20" stroke-linecap="round"/><line x1="107" y1="32" x2="23" y2="118" stroke="#2436E8" stroke-width="20" stroke-linecap="round"/></svg>
+      </span>
+      <span class="foot__name">4FORM AI · 4FORMAI.COM</span>
+    </div>
+    <nav class="foot__links" aria-label="Legal and support">
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/terms">Terms of Service</a>
+      <a href="mailto:support@4formai.com">Support</a>
+    </nav>
+    <span class="foot__copy">&copy; 2026 4FORM AI</span>
+  </div>
+</footer>
+
+<script>
+/*
+ * The page's motion, without a library.
+ *
+ * The design was authored against GSAP + ScrollTrigger from a CDN. Nothing here
+ * needs a library: the reveals are an IntersectionObserver, the scrubbed panel
+ * is one division against a bounding rect, and the eases are cubic-beziers that
+ * CSS already knows. Doing it natively keeps the CSP at `script-src 'nonce-…'`
+ * with no third-party origin, keeps the page working when a CDN is slow or
+ * blocked, and removes ~70 KB before a single pixel of ours is painted.
+ *
+ * Everything below is progressive enhancement. The stylesheet's pre-animation
+ * states are scoped to `html.motion`, which the head script only sets when
+ * scripting is on and reduced motion is not requested — so if this file fails
+ * to parse, the page is simply the page.
+ */
+(function () {
+  "use strict";
+
+  var root = document.documentElement;
+  var motion = root.classList.contains("motion");
+  var $ = function (sel, ctx) { return (ctx || document).querySelector(sel); };
+  var $$ = function (sel, ctx) { return Array.prototype.slice.call((ctx || document).querySelectorAll(sel)); };
+
+  var clamp01 = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; };
+
+  // ── The squat model ────────────────────────────────────────────────────────
+  // Everything on the measurement panel is derived from one depth value, so the
+  // figure and the three readouts can never disagree.
+  var REPS = 2;
+  var TOTAL_FRAMES = 148;
+
+  function pose(d) {
+    var ankle = { x: 130, y: 360 };
+    var knee = { x: 130 + 44 * d, y: 264 + 20 * d };
+    var hip = { x: 124 - 18 * d, y: knee.y - 100 + 66 * d };
+    var lean = 0.14 + 0.62 * d;
+    var shoulder = { x: hip.x + 96 * Math.sin(lean), y: hip.y - 96 * Math.cos(lean) };
+    var head = { x: shoulder.x + 34 * Math.sin(lean), y: shoulder.y - 34 * Math.cos(lean) };
+    var elbow = { x: shoulder.x + 26 + 16 * d, y: shoulder.y + 46 - 14 * d };
+    var hand = { x: elbow.x + 14 + 40 * d, y: elbow.y + 44 - 56 * d };
+    return {
+      ankle: ankle, knee: knee, hip: hip, shoulder: shoulder,
+      head: head, elbow: elbow, hand: hand,
+      lean: (lean * 180) / Math.PI,
+    };
+  }
+
+  /** The interior angle at `v` between the rays to `a` and to `b`, in degrees. */
+  function angleAt(v, a, b) {
+    var ax = a.x - v.x, ay = a.y - v.y, bx = b.x - v.x, by = b.y - v.y;
+    var dot = ax * bx + ay * by;
+    var m = Math.hypot(ax, ay) * Math.hypot(bx, by) || 1;
+    return (Math.acos(Math.max(-1, Math.min(1, dot / m))) * 180) / Math.PI;
+  }
+
+  /** The arc that draws that angle, swept the short way round. */
+  function arcPath(v, a, b, r) {
+    var a1 = Math.atan2(a.y - v.y, a.x - v.x);
+    var a2 = Math.atan2(b.y - v.y, b.x - v.x);
+    var delta = a1 - a2;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    var sx = v.x + r * Math.cos(a2), sy = v.y + r * Math.sin(a2);
+    var ex = v.x + r * Math.cos(a1), ey = v.y + r * Math.sin(a1);
+    return "M " + sx.toFixed(1) + " " + sy.toFixed(1) +
+      " A " + r + " " + r + " 0 0 " + (delta > 0 ? 1 : 0) +
+      " " + ex.toFixed(1) + " " + ey.toFixed(1);
+  }
+
+  var fig = {
+    shin: $("#fShin"), thigh: $("#fThigh"), torso: $("#fTorso"),
+    upperArm: $("#fUpperArm"), forearm: $("#fForearm"),
+    head: $("#fHead"), hip: $("#fHip"), knee: $("#fKnee"),
+    shoulder: $("#fShoulder"), kneeArc: $("#fKneeArc"), kneeLabel: $("#fKneeLabel"),
+    frameNum: $("#frameNum"), frameFill: $("#frameFill"), repStamp: $("#repStamp"),
+    leanFlag: $("#leanFlag"),
+  };
+
+  function setAttrs(el, attrs) {
+    if (!el) return;
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+  }
+
+  /** One readout: the number, its out-of-band state, and the mark on its ruler. */
+  function putReadout(key, value, lo, hi, bandLo, bandHi) {
+    var v = $('[data-rv="' + key + '"]');
+    var m = $('[data-rm="' + key + '"]');
+    var out = value < bandLo || value > bandHi;
+    if (v) {
+      v.textContent = Math.round(value) + "°";
+      v.classList.toggle("is-out", out);
+    }
+    if (m) {
+      m.style.left = Math.max(0, Math.min(100, ((value - lo) / (hi - lo)) * 100)) + "%";
+      m.classList.toggle("is-out", out);
+    }
+  }
+
+  var lastFrameP = -1;
+
+  function drawFrame(p) {
+    if (!fig.shin) return;
+    // Two decimals is finer than a pixel at this size; skipping identical
+    // frames keeps a fast scroll from re-writing 20 attributes per rAF.
+    var q = Math.round(p * 1000) / 1000;
+    if (q === lastFrameP) return;
+    lastFrameP = q;
+
+    var d = (1 - Math.cos(q * REPS * Math.PI * 2)) / 2;
+    var P = pose(d);
+
+    setAttrs(fig.shin, { x1: P.ankle.x, y1: P.ankle.y, x2: P.knee.x, y2: P.knee.y });
+    setAttrs(fig.thigh, { x1: P.knee.x, y1: P.knee.y, x2: P.hip.x, y2: P.hip.y });
+    setAttrs(fig.torso, { x1: P.hip.x, y1: P.hip.y, x2: P.shoulder.x, y2: P.shoulder.y });
+    setAttrs(fig.upperArm, { x1: P.shoulder.x, y1: P.shoulder.y, x2: P.elbow.x, y2: P.elbow.y });
+    setAttrs(fig.forearm, { x1: P.elbow.x, y1: P.elbow.y, x2: P.hand.x, y2: P.hand.y });
+    setAttrs(fig.head, { cx: P.head.x, cy: P.head.y });
+    setAttrs(fig.hip, { cx: P.hip.x, cy: P.hip.y });
+    setAttrs(fig.knee, { cx: P.knee.x, cy: P.knee.y });
+    setAttrs(fig.shoulder, { cx: P.shoulder.x, cy: P.shoulder.y });
+    setAttrs(fig.kneeArc, { d: arcPath(P.knee, P.hip, P.ankle, 30) });
+
+    var kneeAngle = angleAt(P.knee, P.hip, P.ankle);
+    var hipAngle = angleAt(P.hip, P.shoulder, P.knee);
+    var lean = P.lean;
+
+    if (fig.kneeLabel) {
+      fig.kneeLabel.setAttribute("x", (P.knee.x + 42).toFixed(0));
+      fig.kneeLabel.setAttribute("y", (P.knee.y - 4).toFixed(0));
+      fig.kneeLabel.textContent = Math.round(kneeAngle) + "°";
+    }
+    if (fig.frameNum) {
+      var n = String(Math.round(q * TOTAL_FRAMES));
+      while (n.length < 3) n = "0" + n;
+      fig.frameNum.textContent = n;
+    }
+    if (fig.frameFill) fig.frameFill.style.width = (q * 100).toFixed(1) + "%";
+    if (fig.repStamp) {
+      fig.repStamp.textContent =
+        "REP " + Math.min(REPS, Math.floor(q * REPS) + 1) + " OF " + REPS;
+    }
+
+    putReadout("knee", kneeAngle, 30, 190, 72, 175);
+    putReadout("hip", hipAngle, 30, 190, 65, 175);
+    putReadout("lean", lean, 0, 60, 0, 35);
+
+    if (fig.leanFlag) fig.leanFlag.classList.toggle("is-on", lean > 35);
+  }
+
+  // ── The waitlist form ──────────────────────────────────────────────────────
+  // The form is a real form with a real action, so it works with scripting off
+  // (POST → 303 → the page comes back in its joined state). This upgrades it to
+  // a fetch so the reader keeps their scroll position.
+  function wireForms() {
+    $$("form[data-waitlist]").forEach(function (form) {
+      form.addEventListener("submit", function (e) {
+        var input = form.querySelector('input[name="email"]');
+        var button = form.querySelector("button[type=submit]");
+        var errorEl = form.querySelector("[data-form-error]");
+        if (!input || !window.fetch) return; // let the browser submit it
+        if (!input.checkValidity()) return;  // let the browser show its message
+
+        e.preventDefault();
+        if (errorEl) errorEl.textContent = "";
+        if (button) button.disabled = true;
+
+        var fail = function (message) {
+          if (errorEl) errorEl.textContent = message;
+          if (button) button.disabled = false;
+        };
+
+        fetch("/waitlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ email: input.value }),
+        }).then(function (res) {
+          if (res.ok) {
+            document.body.classList.add("is-joined");
+            input.blur();
+            if (button) button.disabled = false;
+            return;
+          }
+          if (res.status === 429) {
+            fail("That is a lot of sign-ups from here. Try again in a minute.");
+          } else if (res.status === 400) {
+            fail("That does not look like an email address.");
+          } else {
+            fail("Something went wrong. Try again, or email support@4formai.com.");
+          }
+        }).catch(function () {
+          fail("We could not reach the server. Check your connection and try again.");
+        });
+      });
+    });
+  }
+
+  wireForms();
+
+  if (!motion) {
+    // Reduced motion still gets a measurement to look at, just not a moving
+    // one: the bottom of the first rep, where the readouts actually say
+    // something. A standing figure at frame 000 reads as a page that failed.
+    drawFrame(0.25);
+    return;
+  }
+
+  // ── Eases ─────────────────────────────────────────────────────────────────
+  // Named for what the design called them. GSAP's ladder is power1 = quad,
+  // power2 = cubic, power3 = quart — one rung off the CSS names, which is an
+  // easy way to ship the wrong curve everywhere.
+  var expoOut = function (t) { return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t); };
+  var power3Out = function (t) { return 1 - Math.pow(1 - t, 4); };
+  var power2Out = function (t) { return 1 - Math.pow(1 - t, 3); };
+  var power3InOut = function (t) {
+    return t < 0.5 ? 8 * t * t * t * t : 1 - 8 * Math.pow(1 - t, 4);
+  };
+
+  /** A time-based tween on a scalar, driven by rAF. */
+  function tween(opts) {
+    var start = null;
+    var step = function (now) {
+      if (start === null) start = now;
+      var t = clamp01((now - start) / opts.duration);
+      opts.onUpdate(opts.from + (opts.to - opts.from) * opts.ease(t));
+      if (t < 1) requestAnimationFrame(step);
+      else if (opts.onComplete) opts.onComplete();
+    };
+    if (opts.delay) window.setTimeout(function () { requestAnimationFrame(step); }, opts.delay);
+    else requestAnimationFrame(step);
+  }
+
+  /** The layout switch, read from the same query the stylesheet uses. */
+  var pinnable = window.matchMedia("(min-width: 1080px) and (min-height: 700px)");
+
+  // ── Reveals ───────────────────────────────────────────────────────────────
+  // ScrollTrigger's "top 88%" fires when the element's top passes 88% of the
+  // viewport. An IntersectionObserver whose root box is shortened from the
+  // bottom by 12% fires at exactly the same line.
+  function revealer(selector, startPercent, onFirst) {
+    var els = $$(selector);
+    if (!els.length) return;
+    if (!("IntersectionObserver" in window)) {
+      els.forEach(function (el) { el.classList.add("is-in"); });
+      if (onFirst) onFirst();
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("is-in");
+        io.unobserve(entry.target);
+        if (onFirst) onFirst();
+      });
+    }, { rootMargin: "0px 0px -" + (100 - startPercent) + "% 0px", threshold: 0 });
+    els.forEach(function (el) { io.observe(el); });
+  }
+
+  /**
+   * Some groups are triggered by a container rather than by themselves — the
+   * three readouts come in when `#measure` reaches 40% of the viewport, which is
+   * well before the panel sticks, and the band draws when `#band` reaches 62%.
+   * Watching each card individually would fire them at the wrong moment, and
+   * inside a sticky container it would fire them at the wrong moment twice.
+   */
+  function groupRevealer(triggerSelector, targetSelector, startPercent, onFire) {
+    var trigger = $(triggerSelector);
+    if (!trigger) return;
+    var targets = $$(targetSelector);
+    var fire = function () {
+      targets.forEach(function (el) { el.classList.add("is-in"); });
+      if (onFire) onFire();
+    };
+    if (!("IntersectionObserver" in window)) { fire(); return; }
+    var io = new IntersectionObserver(function (entries) {
+      if (!entries.some(function (e) { return e.isIntersecting; })) return;
+      io.disconnect();
+      fire();
+    }, { rootMargin: "0px 0px -" + (100 - startPercent) + "% 0px", threshold: 0 });
+    io.observe(trigger);
+  }
+
+  revealer("[data-reveal]", 88);
+  revealer(".phone", 90);
+  // The readouts are the pinned panel's third column, so they come in early —
+  // 40% of the viewport, which is well before the panel sticks. Unpinned they
+  // are stacked at the *bottom* of a 1500px section, and the same trigger fires
+  // them 800px below the fold, where nobody sees it happen. Then they arrive
+  // with the rest of the column.
+  var measureTrigger = pinnable.matches
+    ? { trigger: "#measure", at: 40 }
+    : { trigger: ".readouts", at: 88 };
+  groupRevealer(measureTrigger.trigger, "[data-readout]", measureTrigger.at);
+  $$("[data-reveal-group]").forEach(function (group, i) {
+    group.setAttribute("data-reveal-group-i", String(i));
+    groupRevealer(
+      '[data-reveal-group-i="' + i + '"]',
+      '[data-reveal-group-i="' + i + '"] [data-reveal-item]',
+      84
+    );
+  });
+
+  // ── Hero: the arc draws, the reading counts up ────────────────────────────
+  var arc = $("#heroArc");
+  if (arc) {
+    arc.setAttribute("stroke-dasharray", "0 400");
+    tween({
+      from: 0, to: 92, duration: 1400, delay: 500, ease: power3InOut,
+      onUpdate: function (v) { arc.setAttribute("stroke-dasharray", v.toFixed(1) + " 400"); },
+    });
+  }
+  var deg = $("#heroDeg");
+  if (deg) {
+    deg.textContent = "0°";
+    tween({
+      from: 0, to: 142, duration: 1500, delay: 500, ease: power3Out,
+      onUpdate: function (v) { deg.textContent = Math.round(v) + "°"; },
+    });
+  }
+
+  // ── The band draws, then today's reading drops onto it ────────────────────
+  // The band draws, then today's reading drops onto it: score 0→1.3s, swath
+  // from 0.25s, the stem at 0.95s, its label at 1.10s. Absolute positions on
+  // one clock, not a sequence.
+  var bandDrawn = false;
+  function drawBand() {
+    if (bandDrawn) return;
+    bandDrawn = true;
+    var score = $("#bandScore");
+    var fill = $("#bandFill");
+    var stem = $("#bandStem");
+    var label = $("#bandStemLabel");
+    if (score) {
+      score.textContent = "0";
+      tween({
+        from: 0, to: 78, duration: 1300, ease: power3Out,
+        onUpdate: function (v) { score.textContent = String(Math.round(v)); },
+      });
+    }
+    if (fill) {
+      tween({
+        from: 0, to: 26.6, duration: 1100, delay: 250, ease: expoOut,
+        onUpdate: function (v) { fill.style.width = v.toFixed(2) + "%"; },
+      });
+    }
+    if (stem) window.setTimeout(function () { stem.classList.add("is-on"); }, 950);
+    if (label) window.setTimeout(function () { label.classList.add("is-on"); }, 1100);
+  }
+  groupRevealer("#band", "#bandFill", 62, drawBand);
+
+  // ── Scroll-linked: the nav, the parallax, the scrub ───────────────────────
+  var nav = $("#nav");
+  var heroSection = $("#top");
+  var heroMark = $(".hero__mark");
+  var phoneWrap = $(".phone-wrap");
+  var measure = $("#measure");
+  var lastY = window.scrollY || 0;
+  var ticking = false;
+
+  function onScrollFrame() {
+    ticking = false;
+    var y = window.scrollY || window.pageYOffset || 0;
+    var vh = window.innerHeight || 1;
+
+    // The bar retracts once you are past the hero's first screen and still
+    // going down, and comes back the moment you reverse.
+    if (nav) {
+      var retract = y > 140 && y > lastY;
+      nav.classList.toggle("is-retracted", retract);
+    }
+    lastY = y;
+
+    if (heroMark && heroSection) {
+      var hero = heroSection.getBoundingClientRect();
+      var heroP = clamp01(-hero.top / Math.max(1, hero.height));
+      heroMark.style.transform = "translateY(" + (-14 * heroP).toFixed(2) + "%)";
+    }
+
+    if (phoneWrap) {
+      var pr = phoneWrap.getBoundingClientRect();
+      // 0 when the element's top is at the viewport bottom, 1 when its bottom
+      // has left the top — ScrollTrigger's "top bottom" → "bottom top".
+      var phoneP = clamp01((vh - pr.top) / Math.max(1, vh + pr.height));
+      phoneWrap.style.transform = "translateY(" + (-6 * phoneP).toFixed(2) + "%)";
+    }
+
+    if (measure) {
+      var r = measure.getBoundingClientRect();
+      var p;
+      if (pinnable.matches) {
+        // Pinned: the section is 340vh with a sticky 100vh child. Progress runs
+        // from the section's top hitting the viewport top to its bottom hitting
+        // the viewport bottom — which is exactly the sticky child's travel.
+        p = clamp01(-r.top / Math.max(1, r.height - vh));
+      } else {
+        // Unpinned: "top 80%" → "bottom 20%".
+        p = clamp01((0.8 * vh - r.top) / Math.max(1, r.height + 0.6 * vh));
+      }
+      drawFrame(p);
+    }
+  }
+
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(onScrollFrame);
+  }
+
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
+  if (pinnable.addEventListener) pinnable.addEventListener("change", onScroll);
+
+  drawFrame(0);
+  onScrollFrame();
+})();
+</script>
+
+</body>
+</html>

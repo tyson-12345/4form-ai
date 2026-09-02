@@ -2,8 +2,10 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import landingPageRouter from "./routes/landingPage.js";
 import legalPagesRouter from "./routes/legalPages.js";
 import resetPageRouter from "./routes/resetPage";
+import waitlistRouter, { wantsJson } from "./routes/waitlist.js";
 import { logger } from "./lib/logger";
 import { rateLimit } from "./lib/rateLimit";
 import { recordAlert } from "./lib/alerting";
@@ -73,17 +75,18 @@ const configuredOrigins = process.env.ALLOWED_ORIGINS
   : ["http://localhost:8081", "http://localhost:19006", "exp://localhost:8081"];
 
 /**
- * Our own public origin, always allowed.
+ * Our own public origin, from configuration.
  *
- * The API serves one HTML page — the password-reset landing page — and that page
- * fetches this API. Browsers attach an `Origin` header to that request even
- * though it is same-origin, so without this the server rejects a request from
- * its own page. That is exactly what happened on the first real password reset:
- * `cors_rejected`, then a 500, and the user saw "Something went wrong."
+ * The API serves HTML pages that talk back to it — the password-reset page
+ * posts a new password, the landing page posts a waitlist address, and the
+ * landing page's stylesheet loads three fonts. Browsers attach an `Origin`
+ * header to all of those even though they are same-origin, so without an
+ * exemption the server rejects requests from its own pages. That is exactly
+ * what happened on the first real password reset: `cors_rejected`, then a 500,
+ * and the user saw "Something went wrong."
  *
  * Derived from APP_PUBLIC_URL rather than hard-coded, so it stays correct when
- * the deployment moves to a custom domain. Same-origin is not a cross-origin
- * risk by definition — this grants nothing that the page could not already do.
+ * the deployment moves to a custom domain.
  */
 const selfOrigin = (() => {
   const raw = process.env.APP_PUBLIC_URL?.trim();
@@ -93,7 +96,7 @@ const selfOrigin = (() => {
   } catch {
     logger.warn(
       { event: "app_public_url_invalid" },
-      "APP_PUBLIC_URL is not a valid URL; the reset page will be blocked by CORS",
+      "APP_PUBLIC_URL is not a valid URL; same-origin requests fall back to the Host header",
     );
     return null;
   }
@@ -103,30 +106,59 @@ const allowedOrigins = selfOrigin
   ? [...new Set([...configuredOrigins, selfOrigin])]
   : configuredOrigins;
 
+/**
+ * The origin this very request was addressed to.
+ *
+ * APP_PUBLIC_URL is a good default but it is one string, and the server answers
+ * on more than one name: the Railway hostname as well as the custom domain, and
+ * `localhost:PORT` in development. When a page served on one of those loads a
+ * font or posts its own form, the browser sends that name as the `Origin`, and
+ * matching it against a single configured value fails — which is how the
+ * landing page's own self-hosted fonts came back 403 the first time it was run.
+ *
+ * A request whose `Origin` equals its own `Host` is same-origin by definition,
+ * and allowing it grants nothing: the page making it is a page we served. Both
+ * halves come from the same request, so a caller forging them is only fooling
+ * itself — a real browser sends the true `Host`, and a non-browser client was
+ * never bound by CORS in the first place.
+ *
+ * `req.protocol` honours `X-Forwarded-Proto` under the `trust proxy` setting
+ * above, so this is `https://…` behind the load balancer and `http://…` locally.
+ */
+function isSameOrigin(req: Request, origin: string): boolean {
+  const host = req.get("host");
+  return host !== undefined && origin === `${req.protocol}://${host}`;
+}
+
 app.use(
-  cors({
-    origin(origin, callback) {
-      // Native apps and curl send no Origin header; there is no browser
-      // same-origin policy to enforce for them.
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+  cors((req: Request, done) => {
+    const origin = req.headers.origin;
+
+    // Native apps and curl send no Origin header; there is no browser
+    // same-origin policy to enforce for them.
+    const allowed =
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      isSameOrigin(req, origin) ||
       // Previously any origin was allowed whenever NODE_ENV !== "production",
       // which meant an unset NODE_ENV (the common case) disabled CORS entirely.
       // Dev now requires an explicit opt-in.
-      if (process.env.NODE_ENV === "development" && process.env.CORS_ALLOW_ALL === "true") {
-        return callback(null, true);
-      }
-      recordAlert("cors_rejected");
-      logger.warn({ origin, event: "cors_rejected" }, "Blocked cross-origin request");
-      // Tagged 403 so the error handler does not report a policy decision as a
-      // server fault. Previously this surfaced as a 500 "Something went wrong",
-      // which sent us looking for a bug in the reset route when the actual
-      // problem was the allowlist.
-      const err = new Error("Not allowed by CORS") as Error & { status?: number };
-      err.status = 403;
-      return callback(err);
-    },
-    credentials: true,
+      (process.env.NODE_ENV === "development" && process.env.CORS_ALLOW_ALL === "true");
+
+    if (allowed) {
+      done(null, { origin: true, credentials: true });
+      return;
+    }
+
+    recordAlert("cors_rejected");
+    logger.warn({ origin, event: "cors_rejected" }, "Blocked cross-origin request");
+    // Tagged 403 so the error handler does not report a policy decision as a
+    // server fault. Previously this surfaced as a 500 "Something went wrong",
+    // which sent us looking for a bug in the reset route when the actual
+    // problem was the allowlist.
+    const err = new Error("Not allowed by CORS") as Error & { status?: number };
+    err.status = 403;
+    done(err);
   }),
 );
 
@@ -178,10 +210,58 @@ app.use("/reset-password", rateLimit({ name: "reset-page", max: 20 }));
 app.use(resetPageRouter);
 
 // ── Public pages ──────────────────────────────────────────────────────────────
-// The landing page and the two legal documents, mounted at the root for the same
-// reason as the reset page: they are opened by people, not by the app. Both
-// stores fetch the privacy URL during review, so a 404 here is a rejection.
-app.use("/", rateLimit({ name: "public-pages", max: 60 }));
+// The landing page, its assets, the waitlist form's target, and the two legal
+// documents. Mounted at the root for the same reason as the reset page: they are
+// opened by people, not by the app. Both stores fetch the privacy URL during
+// review, so a 404 here is a rejection.
+//
+// The waitlist limiter is first and much tighter than the page limiter, which it
+// stacks with: it is an unauthenticated write, and a person joining a waitlist
+// does it once. The budget is per IP, not per address — five a minute leaves
+// room for a fat-fingered retry and for a couple of people behind one office
+// NAT, and not much else.
+//
+// A refused form post must not answer JSON. Without scripting the browser is
+// *navigating*, so `{"error":"Too many requests…"}` becomes the page — the
+// same dead end the reset page exists to prevent. It goes back to the landing
+// page instead, which has a state that says so in the reader's own words.
+app.use(
+  "/waitlist",
+  rateLimit({
+    name: "waitlist",
+    max: 5,
+    onLimited(req, res) {
+      if (wantsJson(req.get("accept"), req.get("content-type"))) {
+        res.status(429).json({ error: "Too many requests. Please slow down." });
+        return;
+      }
+      res.redirect(303, "/?busy=1#waitlist");
+    },
+  }),
+);
+
+// The page's own files, which are static, content-addressed and immutable, and
+// so are not worth rationing at the rate the HTML is. A cold visit costs five
+// requests — the page, three faces and the mark — so one 60/min bucket shared
+// between them is twelve first visits per IP per minute, and a shared egress
+// (carrier CGNAT, an office, a campus) is one IP for everybody behind it. The
+// failure was silent, too: a refused font renders the page in fallback faces
+// with nothing to say why.
+//
+// The exemption below is the part that makes this work. Limiters *stack* — the
+// comment at the top of this section says so — and `app.use("/", …)` matches
+// `/assets` as well, so a wide asset budget mounted under a narrow page budget
+// is still the narrow one. The page limiter has to step aside for the paths
+// that carry their own.
+const publicAssets = rateLimit({ name: "public-assets", max: 600 });
+const publicPages = rateLimit({ name: "public-pages", max: 60 });
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const isAsset = req.path.startsWith("/assets/") || req.path === "/favicon.ico";
+  (isAsset ? publicAssets : publicPages)(req, res, next);
+});
+app.use(landingPageRouter);
+app.use(waitlistRouter);
 app.use(legalPagesRouter);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────

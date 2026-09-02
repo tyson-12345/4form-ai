@@ -330,11 +330,27 @@ OUTPUTS = [
 ]
 
 
-def main() -> None:
-    out = pathlib.Path(__file__).resolve().parent.parent / "assets" / "images"
+# The same marks, for the API server that serves the landing page.
+#
+# A second destination rather than a second script: the ladder above is the
+# source of truth for this geometry, and a hand-drawn copy in the server would
+# be a copy that can silently disagree with the app icon. The server needs its
+# own file because `artifacts/fourform-mobile` is excluded from the Docker build
+# context wholesale, so it cannot read the app's assets — the PNG is inlined
+# into the server bundle from its own tree instead.
+#
+# 180px is the Apple touch icon size; iOS rounds the corners itself, so corner
+# is 0. Safari will not accept an SVG for `apple-touch-icon`, which is why this
+# one has to be a bitmap at all — the tab favicon is drawn as SVG in the page.
+WEB_OUTPUTS = [
+    ("apple-touch-icon.png", 180, "1024", "bone", 0.0, None),
+]
+
+
+def _render_all(outputs, out: pathlib.Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
 
-    for name, size, rung, role, corner, inset in OUTPUTS:
+    for name, size, rung, role, corner, inset in outputs:
         geom = LADDER[rung]
         if inset is not None:
             geom = fit_to_fraction(geom, inset)
@@ -351,7 +367,13 @@ def main() -> None:
         inset_note = f" inset {inset:.2f}" if inset else ""
         print(f"  {name:<20} {size:>5}px  rung {rung:<5} {role:<11} counter {span}px{inset_note}")
 
-    print(f"\nWrote {len(OUTPUTS)} files to {out}")
+    print(f"\nWrote {len(outputs)} files to {out}")
+
+
+def main() -> None:
+    root = pathlib.Path(__file__).resolve().parent.parent
+    _render_all(OUTPUTS, root / "assets" / "images")
+    _render_all(WEB_OUTPUTS, root.parent / "api-server" / "src" / "assets")
 
 
 if __name__ == "__main__":

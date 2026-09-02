@@ -1,24 +1,47 @@
 import { defineConfig } from "vitest/config";
 
+import { readFileSync } from "node:fs";
+
 /**
- * Load `.md` as a string, mirroring esbuild's `loader: { ".md": "text" }` in
- * build.mjs. The legal pages import the documents directly, so without this the
- * suite cannot even parse them — Vite tries to read the Markdown as JavaScript.
+ * Mirror `build.mjs`'s loaders, so the suite parses what production ships.
  *
- * `enforce: "pre"` matters: it has to run before vite:import-analysis, which is
- * what reports the syntax error.
+ * Without these Vite tries to read the landing page as JavaScript and the suite
+ * cannot even import `app.ts`. The mirroring is the point: `build.mjs`,
+ * `src/types/assets.d.ts` and this file are three statements of the same fact,
+ * and a disagreement between them is a test that passes over a build that does
+ * not work.
+ *
+ * `enforce: "pre"` matters: this has to run before vite:import-analysis, which
+ * is what reports the syntax error.
  */
-const markdownAsText = {
-  name: "markdown-as-text",
+const textAsString = {
+  name: "text-as-string",
   enforce: "pre" as const,
   transform(code: string, id: string) {
-    if (!id.endsWith(".md")) return null;
+    if (!/\.(md|html)$/.test(id.split("?")[0] ?? "")) return null;
     return { code: `export default ${JSON.stringify(code)};`, map: null };
   },
 };
 
+/**
+ * `.woff2` and `.png` need a `load` hook, not a `transform`.
+ *
+ * Both extensions are in Vite's own asset list, so `vite:asset` claims them and
+ * returns a URL string before any transform sees the file. Loading it here,
+ * first, is the only way to get esbuild's `base64` behaviour.
+ */
+const binaryAsBase64 = {
+  name: "binary-as-base64",
+  enforce: "pre" as const,
+  load(id: string) {
+    const file = id.split("?")[0] ?? "";
+    if (!/\.(woff2|png)$/.test(file)) return null;
+    return `export default ${JSON.stringify(readFileSync(file).toString("base64"))};`;
+  },
+};
+
 export default defineConfig({
-  plugins: [markdownAsText],
+  plugins: [textAsString, binaryAsBase64],
   test: {
     environment: "node",
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],

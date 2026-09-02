@@ -21,10 +21,26 @@ async function buildAll() {
     format: "esm",
     outdir: distDir,
     outExtension: { ".js": ".mjs" },
-    // The legal documents are inlined as strings rather than read from disk at
-    // runtime: the runtime image contains only dist/ and lib/, so a file read
-    // would work locally and 404 in production.
-    loader: { ".md": "text" },
+    // Everything the server serves but does not execute is inlined here rather
+    // than read from disk at runtime: the runtime image contains only dist/ and
+    // lib/, so a file read would work locally and 404 in production.
+    //
+    //   .md    the two legal documents
+    //   .html  the landing page (markup, stylesheet and script in one file)
+    //   .woff2 its three self-hosted faces
+    //   .png   its Apple touch icon
+    //
+    // The two binary kinds use `base64`, not `binary`, and that is deliberate.
+    // esbuild's `binary` loader emits `Uint8Array.fromBase64(...)`, which no
+    // Node 22 has — the base image is node:22-alpine, and this build failed at
+    // startup with "Uint8Array.fromBase64 is not a function". It compiled, it
+    // typechecked and the whole suite passed first; only booting it caught it,
+    // which is the same lesson as the @opentelemetry note below. `base64` emits
+    // a plain string and the decoding is done explicitly in routes/landingPage.ts.
+    //
+    // Mirror any change here in vitest.config.ts and src/types/assets.d.ts, or
+    // the suite parses something different from what ships.
+    loader: { ".md": "text", ".html": "text", ".woff2": "base64", ".png": "base64" },
     logLevel: "info",
     // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
     // Some of the packages below may not be imported or installed, but we're adding them in case they are in the future.

@@ -32,6 +32,14 @@ export const logger = pino({
       "passwordHash",
       "token",
       "err.config.headers.authorization",
+      // Drizzle's DrizzleQueryError carries the SQL and its bind values as own
+      // properties, and pino's error serializer emits both. The bind values of
+      // any query are user data by definition. `repositories/waitlistRepository`
+      // already strips them at the throw site; this is the net under it, for
+      // every other query in the app.
+      "err.query",
+      "err.params",
+      "*.params",
     ],
     censor: "[REDACTED]",
   },

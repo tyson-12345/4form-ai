@@ -143,16 +143,11 @@ describe("findPlaceholders", () => {
   });
 });
 
-describe("public pages", () => {
-  it("serves a landing page at the root", async () => {
-    const res = await request(app).get("/");
-    expect(res.status).toBe(200);
-    expect(res.headers["content-type"]).toMatch(/html/);
-    expect(res.text).toContain("Your technique, measured.");
-  });
-
-  it("locks the pages down to their own inline styles", async () => {
-    const res = await request(app).get("/");
+describe("the legal documents", () => {
+  // The landing page has moved to routes/landingPage.ts and has its own suite;
+  // these two are still the nonce-and-prose pages this router was written for.
+  it.each(["/privacy", "/terms"])("locks %s down to its own inline styles", async (path) => {
+    const res = await request(app).get(path);
     const csp = res.headers["content-security-policy"] ?? "";
     expect(csp).toContain("default-src 'none'");
     expect(csp).toMatch(/style-src 'nonce-[^']+'/);

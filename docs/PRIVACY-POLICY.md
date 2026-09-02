@@ -45,6 +45,7 @@ here.
 | Sport, level, goals, injury concerns | Tailoring your coaching notes | Until you delete your account |
 | Session titles | Labelling your own sessions | Until you delete your account |
 | Messages to the AI coach | Answering them, and continuity between messages | Until you delete your account |
+| Email address, if you join the waitlist on 4formai.com | Sending you one email when the TestFlight build opens | Until the build opens, or until you ask us to remove it |
 
 ### Information created when you analyse a clip
 
