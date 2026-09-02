@@ -233,6 +233,36 @@ to abandon.
 
   Both are pinned by regression tests.
 
+  **Porkbun email forwarding — deferred 2026-09-01, do this first.** It unblocks
+  three of the five remaining blanks and takes minutes. Forwarding is already the
+  mail handler for the apex (`MX 10 fwd1.porkbun.com`, `20 fwd2.porkbun.com`), so
+  nothing needs enabling — only aliases adding, under **Domain Management →
+  4formai.com → Email Forwarding**, which is its own section and not DNS Records:
+
+  | Forward from | Forward to |
+  |---|---|
+  | `privacy@4formai.com` | a real inbox |
+  | `security@4formai.com` | a real inbox |
+  | `support@4formai.com` | a real inbox |
+
+  Skip the catch-all Porkbun offers — an address published in a privacy policy
+  attracts enough spam without one.
+
+  Two things not to touch. **Anything under `mail.4formai.com`**: that is the
+  Resend sending domain, with its own DKIM, SPF and `MX`, and apex forwarding
+  does not collide with it. And **the apex `MX` itself** — `fwd1`/`fwd2` are what
+  make forwarding work at all.
+
+  Send a test to each address before saying it is done. A contact address on a
+  privacy policy has to actually receive mail; one that bounces is worse than the
+  503 the documents currently return.
+
+  Optional while in there: `_dmarc.4formai.com` has no record — the lookup
+  returns Porkbun's wildcard, not a policy. `TXT` at host `_dmarc` with
+  `v=DMARC1; p=none; rua=mailto:security@4formai.com` is monitor-only, changes
+  nothing about delivery, and stops others spoofing the domain. Add it after the
+  forwarding, so the reports have somewhere to land.
+
   The four "delete before publishing" blocks need no action: the renderer strips
   any blockquote marked that way, so the Markdown stays the single source of
   truth rather than being hand-edited into a second copy.
