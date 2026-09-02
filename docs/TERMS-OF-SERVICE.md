@@ -171,8 +171,8 @@ Sections 4, 5, 7, 8, 13 and 14 survive termination.
 
 ## 13. Governing law
 
-These Terms are governed by the laws of [JURISDICTION], without regard to
-conflict-of-laws rules. If you're a consumer, you keep the protection of the
+These Terms are governed by the laws of the United States of America, without
+regard to conflict-of-laws rules. If you're a consumer, you keep the protection of the
 mandatory laws of the country you live in.
 
 ## 14. Disputes
@@ -181,8 +181,8 @@ mandatory laws of the country you live in.
 [support@yourdomain.com]. Please give us 30 days — we'd rather fix it than
 argue about it.
 
-If we can't resolve it that way, either of us may bring the dispute before the
-courts identified in section 13. If you are a consumer, you keep the right to
+If we can't resolve it that way, either of us may bring the dispute before any
+court of competent jurisdiction. If you are a consumer, you keep the right to
 bring proceedings in the courts of the country where you live.
 
 > **Note on what used to be here (delete before publishing).**
