@@ -169,8 +169,12 @@ than promised, since video never leaves the device.
 **What remains:**
 
 - Publish the policy at a public URL (§ store compliance).
-- Sign **Data Processing Agreements** with each processor — hosting, database,
-  Anthropic, mail. Most offer a click-through DPA.
+- Sign **Data Processing Agreements** with each processor. Checked 2026-09-02:
+  Supabase, Resend and Anthropic all bind theirs automatically on acceptance of
+  their terms, so those three are already in force and carry SCCs. **Railway is
+  the exception** — its §14 requires a DocuSign form, and it is unsigned. It
+  hosts the API server, so it is the processor that touches everything. See
+  TODO-PRODUCTION for the wording it unlocks in the privacy policy.
 - If you have EU users and no EU establishment, assess whether an **Article 27
   representative** is required.
 - Keep a short Record of Processing Activities. For an app this size it is a

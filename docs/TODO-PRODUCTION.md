@@ -339,11 +339,28 @@ to abandon.
   agreements with those companies carry data-protection terms — all checkable —
   and asserts nothing about which legal instrument applies.
 
-  **Accepting the four DPAs is what turns that from modest into solid**, and it is
-  free: `supabase.com/legal/dpa`, `railway.com/legal/dpa`, Anthropic's commercial
-  terms, `resend.com/legal/dpa` — all four published and reachable as of
-  2026-09-02. Each incorporates SCCs. Once accepted, §6 can name them, and the
-  🔴 DPA item below is closed by the same action.
+  **Three of the four DPAs are already in force. One is not.** Checked against the
+  published terms on 2026-09-02:
+
+  | Processor | How its DPA comes into force | State |
+  |---|---|---|
+  | Supabase | *"acceptance of the Agreement shall have the same effect as signing the SCCs"* (§12.2) | ✅ in force |
+  | Resend | *"becomes legally binding upon Customer's acceptance of the Agreement"* (§12) | ✅ in force |
+  | Anthropic | DPA *"is incorporated into these Terms by reference"* | ✅ in force |
+  | Railway | *"Customer must complete the information requested and submit the DocuSign form"* (§14) | ❌ **needs signing** |
+
+  So the standing 🔴 "sign DPAs with four processors" was mostly already done by
+  signing up. What remains is **one DocuSign at `railway.com/legal/dpa`** — and it
+  has to be a person, because it asks who is signing and in what capacity.
+
+  Railway is the awkward one to be missing: it hosts the API server, so it is the
+  processor that touches everything, not just one slice. That is the reason §6
+  still does not name Standard Contractual Clauses. Once the Railway form is
+  submitted, it can — the sentence becomes "we rely on the Standard Contractual
+  Clauses in our data processing agreements with the companies in §5", which is a
+  materially stronger thing to tell a UK/EU user than what is there now.
+
+  Terms change; re-check before relying on this table.
 
   Optional while in there: `_dmarc.4formai.com` has no record — the lookup
   returns Porkbun's wildcard, not a policy. `TXT` at host `_dmarc` with
