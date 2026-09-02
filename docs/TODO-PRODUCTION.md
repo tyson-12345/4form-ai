@@ -430,6 +430,26 @@ old name — each needs a console login:
   `psql "$DATABASE_URL" -c "\\copy (SELECT email FROM waitlist_signups ORDER BY created_at) TO STDOUT WITH CSV"` is the whole export. Worth a script if it is
   ever needed twice.
 
+- 🟡 **The landing page gained structured data, robots.txt and sitemap.xml on
+  2026-09-02, and no human has read them.** They arrived in commit `ec6ef3f`,
+  whose message describes only the privacy policy and cites a test count taken
+  before they existed. The record is wrong; this note is the correction, because
+  the commit is pushed and rewriting shared history to fix a message is a worse
+  trade than a note that outlives it.
+
+  What actually landed: a JSON-LD `@graph` in the page head (Organization +
+  WebSite, with `alternateName` spellings and no `sameAs` until real profiles
+  exist), a `SITE_ORIGIN` constant for the two places that need an absolute URL,
+  and `GET /robots.txt` and `GET /sitemap.xml`. The `<script>` count the CSP
+  guard asserts moved from 2 to 3 to cover the data block.
+
+  It is verified working — production serves all of it, the JSON-LD parses, its
+  `logo` resolves, and the suite is 549 — but *working* and *reviewed* are not the
+  same thing, and only the first is true. Worth twenty minutes from someone who
+  cares what the search result says: the `description`, the `alternateName` list
+  and the founder names are all public claims about the product, and none of them
+  was a decision anybody made on purpose.
+
 - 🟡 **Two chips on ink are still under AA.** `+6 VS LAST` measures 3.30:1 and
   `BACK SQUAT · SIDE ON` 3.91:1 — both are `onInkMuted` on a bone-washed pill,
   which is the device `constants/caliper.ts` already documents accepting at
