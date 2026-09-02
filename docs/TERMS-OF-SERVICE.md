@@ -171,8 +171,8 @@ Sections 4, 5, 7, 8, 13 and 14 survive termination.
 
 ## 13. Governing law
 
-These Terms are governed by the laws of the United States of America, without
-regard to conflict-of-laws rules. If you're a consumer, you keep the protection of the
+These Terms are governed by the laws of the State of New York, without regard
+to conflict-of-laws rules. If you're a consumer, you keep the protection of the
 mandatory laws of the country you live in.
 
 ## 14. Disputes

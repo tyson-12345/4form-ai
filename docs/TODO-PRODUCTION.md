@@ -218,21 +218,27 @@ to abandon.
   | `[privacy@…]`, `[security@…]` | Privacy | Working mailboxes |
   | `[support@…]` | Terms | Working mailbox — **and already live in the landing page footer** |
 
-  **`[JURISDICTION]` → the United States of America, 2026-09-02.** Chosen with the
-  trade-off on the table rather than by default: US contract law is state law, so
-  a national choice leaves a court to run the conflict-of-laws analysis that the
-  same sentence disclaims, and the clause partly argues with itself. Naming a
-  single state would be the stronger drafting, and it is a one-word change if that
-  is ever wanted — but it is a decision about where a dispute would be fought, not
-  a blank, so it was not made on Tyson's behalf.
+  **`[JURISDICTION]` → the State of New York, 2026-09-02.** Briefly set to "the
+  United States of America" the same day and then changed. Worth recording why the
+  second answer is the better one, in case anyone is tempted back: US contract law
+  is state law, so a national choice left a court to run the conflict-of-laws
+  analysis that the very same sentence disclaims — the clause argued with itself.
+  Naming a state makes that disclaimer mean something.
+
+  Note what §13 does **not** do: it chooses a law, not a venue. That pairing is
+  deliberate and normal. An exclusive-venue clause would be a separate decision —
+  it is about where a dispute must be *fought* rather than which law decides it,
+  and forcing a distant consumer into New York courts is the kind of term many
+  courts decline to enforce anyway. If one is ever added, it belongs in §13, and
+  §14 would then be able to point at it again (see below).
 
   While filling it: **§14 pointed at "the courts identified in section 13", and
   §13 identifies no courts** — only a governing law. A dispute clause aimed at a
   venue that does not exist is worse than one that names none, so §14 now reads
-  "any court of competent jurisdiction". That was a defect in the draft and not a
-  consequence of the choice above; naming a state later does not resolve it,
-  because §13 would still have to gain a venue sentence for the old wording to
-  mean anything.
+  "any court of competent jurisdiction". That was a defect in the draft, not a
+  consequence of the choice above, and naming New York did not resolve it either:
+  a governing law is not a venue. It stays fixed as written unless §13 gains a
+  venue sentence.
 
   Filled 2026-09-02: `[DATE — set when published]` → 2 September 2026 in both, and
   `[USD 100]` → `USD 100` in the Terms. The cap was only ever bracketed to mark it
