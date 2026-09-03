@@ -4,10 +4,11 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import landingPageRouter from "./routes/landingPage.js";
 import legalPagesRouter from "./routes/legalPages.js";
+import mediapipeRouter from "./routes/mediapipe.js";
 import resetPageRouter from "./routes/resetPage";
 import waitlistRouter, { wantsJson } from "./routes/waitlist.js";
 import { logger } from "./lib/logger";
-import { rateLimit } from "./lib/rateLimit";
+import { rateLimit, clientIp } from "./lib/rateLimit";
 import { recordAlert } from "./lib/alerting";
 import { reportError } from "./lib/observability";
 
@@ -130,20 +131,75 @@ function isSameOrigin(req: Request, origin: string): boolean {
   return host !== undefined && origin === `${req.protocol}://${host}`;
 }
 
+/**
+ * The allowlist decision, extracted so the limiter below can ask the same
+ * question the `cors` callback does without a second copy of the rules.
+ */
+function isOriginAllowed(req: Request, origin: string | undefined): boolean {
+  return (
+    /**
+     * The pose runtime is readable from any origin, including `null`.
+     *
+     * The WebView that loads it is a `file://` document, and its `<script>` tag
+     * carries `crossorigin="anonymous"` — which it must, because an `integrity`
+     * attribute on a cross-origin script is ignored without it. A `file://`
+     * document with that attribute sends `Origin: null`, which matches nothing
+     * in the allowlist and is not same-origin with anything, so every one of
+     * these requests was refused with a 403 the moment they stopped coming from
+     * a CDN. Caught by sending `Origin: null` at the route before deploying;
+     * the symptom in production would have been the analysis engine failing to
+     * start, on every device, with a CORS rejection in a log nobody reads.
+     *
+     * Exempting them grants nothing. These are 22 MB of public third-party
+     * vendor bytes, identical to what the CDN served to anyone who asked, behind
+     * no authentication and carrying no user data — there is nothing here for a
+     * cross-origin reader to steal. The exemption is scoped to that one path
+     * prefix, so the rest of the API keeps the allowlist exactly as it was.
+     *
+     * Note this is *not* the same as adding `"null"` to `allowedOrigins`, which
+     * would let any sandboxed or `file://` context call the authenticated API.
+     */
+    req.path.startsWith("/assets/mediapipe/") ||
+    // Native apps and curl send no Origin header; there is no browser
+    // same-origin policy to enforce for them.
+    !origin ||
+    allowedOrigins.includes(origin) ||
+    isSameOrigin(req, origin) ||
+    // Previously any origin was allowed whenever NODE_ENV !== "production",
+    // which meant an unset NODE_ENV (the common case) disabled CORS entirely.
+    // Dev now requires an explicit opt-in.
+    (process.env.NODE_ENV === "development" && process.env.CORS_ALLOW_ALL === "true")
+  );
+}
+
+/**
+ * Rejected origins are rate limited, and this has to run *before* `cors`.
+ *
+ * A rejected origin takes `done(err)`, which goes straight to the error handler
+ * — past every limiter, all of which are mounted below. So a request carrying
+ * `Origin: https://evil.example` cost the sender nothing, consumed no bucket,
+ * and still incremented the `cors_rejected` counter on its way through. A
+ * hundred of them, needing no account and no valid path, used to pin
+ * `/api/health/metrics` to "degraded" for the life of the process (the counters
+ * are windowed now, but the free request path was the other half of it).
+ *
+ * Only requests that would be *refused* are charged. A same-origin or allowlisted
+ * request never reaches the limiter, so nothing legitimate is rationed twice.
+ */
+const rejectedOriginLimit = rateLimit({ name: "cors-rejected", max: 30 });
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (isOriginAllowed(req, req.headers.origin)) {
+    next();
+    return;
+  }
+  rejectedOriginLimit(req, res, next);
+});
+
 app.use(
   cors((req: Request, done) => {
     const origin = req.headers.origin;
-
-    // Native apps and curl send no Origin header; there is no browser
-    // same-origin policy to enforce for them.
-    const allowed =
-      !origin ||
-      allowedOrigins.includes(origin) ||
-      isSameOrigin(req, origin) ||
-      // Previously any origin was allowed whenever NODE_ENV !== "production",
-      // which meant an unset NODE_ENV (the common case) disabled CORS entirely.
-      // Dev now requires an explicit opt-in.
-      (process.env.NODE_ENV === "development" && process.env.CORS_ALLOW_ALL === "true");
+    const allowed = isOriginAllowed(req, origin);
 
     if (allowed) {
       done(null, { origin: true, credentials: true });
@@ -165,6 +221,57 @@ app.use(
 // Bodies are small JSON documents. Videos are never uploaded through this API.
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: false, limit: "256kb" }));
+
+/**
+ * Body-parser failures, handled here rather than falling through.
+ *
+ * ── Why this is not left to the global error handler ────────────────────────
+ * A parse failure calls `next(err)`, and Express then skips every remaining
+ * three-arity middleware to reach the first four-arity one. The rate limiters
+ * are all three-arity and all mounted below this line, so a request with a
+ * deliberately malformed body used to reach the error handler having consumed
+ * **no bucket at all** — an unlimited, uncounted, unauthenticated request path
+ * on every route in the app, available to anyone willing to send `{`.
+ *
+ * Being first and four-arity, this catches those before they can skip anything,
+ * and charges them to a bucket of their own. Well-formed bodies never come
+ * through here, so the normal path is untouched.
+ *
+ * ── And why the error is not passed on ──────────────────────────────────────
+ * body-parser attaches the entire raw body to the error it raises, as
+ * `err.body`. The global handler logs the error object wholesale, so a failed
+ * parse of a login request wrote the plaintext password into the log — with
+ * `app.use(pinoHttp(...))` above carrying the comment "Never log request
+ * bodies — they carry passwords and reset tokens". The body is dropped here,
+ * before anything can serialize it.
+ */
+const malformedBodyLimit = rateLimit({ name: "malformed-body", max: 20 });
+
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  const type = (err as { type?: string }).type;
+  const isBodyError =
+    typeof type === "string" &&
+    ["entity.parse.failed", "entity.too.large", "encoding.unsupported", "request.aborted"].includes(
+      type,
+    );
+
+  if (!isBodyError) {
+    next(err);
+    return;
+  }
+
+  // Drop the raw body before this error can be logged or reported.
+  delete (err as { body?: unknown }).body;
+
+  logger.warn(
+    { type, ip: clientIp(req), path: req.path, event: "malformed_body" },
+    "Rejected a request whose body could not be parsed",
+  );
+
+  malformedBodyLimit(req, res, () => {
+    res.status(400).json({ error: "Invalid request." });
+  });
+});
 
 // ── Rate limits ───────────────────────────────────────────────────────────────
 // Ordered most-specific first; Express runs every matching middleware, so the
@@ -189,12 +296,42 @@ app.use("/api/auth/oauth", rateLimit({ name: "auth-oauth", max: 15 }));
 
 app.use("/api/auth", rateLimit({ name: "auth", max: 20 }));
 
-// Endpoints that cost us money on every call (Claude inference).
-app.use("/api/chat", rateLimit({ name: "chat", max: 20 }));
-app.use("/api/analyses", rateLimit({ name: "analyses", max: 20 }));
+// Account deletion checks a password, so it is a credential endpoint and needs a
+// credential endpoint's budget. It is authenticated, but a session token is
+// exactly what an attacker with a stolen phone has, and without this the only
+// bound on guessing here was the 120/min catch-all — twelve times the login
+// route's. The handler now also runs the shared lockout path, so this is the
+// volumetric half of the same control.
+app.use("/api/profile/account", rateLimit({ name: "account-delete", max: 5 }));
 
-// Catch-all for everything else under /api.
-app.use("/api", rateLimit({ name: "global", max: 120 }));
+// Endpoints that cost us money on every call (Claude inference).
+//
+// These ration per *account*, not per IP. Every athlete on a gym's wifi, in an
+// office, or behind carrier NAT shares one address, so an IP-keyed budget means
+// one heavy user throttles strangers and an individual's real limit depends on
+// who else is on their carrier. It is also the weaker control once a session
+// exists: a token holder can rotate IPs and cannot rotate their account.
+// Unauthenticated callers still fall back to the IP.
+app.use("/api/chat", rateLimit({ name: "chat", max: 20, keyBy: "account" }));
+// The write path is the one that costs a Claude call, so it keeps the tight
+// budget — and it is now the only thing in that bucket. Reads used to share it,
+// and the app's own analysis screen could not survive that: [id].tsx polls a
+// pending write-up every 3s for its first 20 polls, which is 20 GETs in the
+// first minute on top of the POST that started it, the detail and history GETs
+// on first focus, and the usage GET the analyze tab fetches before recording.
+// The 21st request landed at ~51s and the screen 429'd itself — and a 429 there
+// is not a stale poll, it flips the screen to its "couldn't load" error state,
+// whose "Try again" button fires straight back into the exhausted bucket.
+//
+// `app.post`, not `app.use`: `use` matches by prefix and would catch the reads
+// again.
+app.post("/api/analyses", rateLimit({ name: "analyses-create", max: 5, keyBy: "account" }));
+app.use("/api/analyses", rateLimit({ name: "analyses-read", max: 90, keyBy: "account" }));
+
+// Catch-all for everything else under /api. Account-keyed for the same reason,
+// falling back to the IP for anything unauthenticated — which is most of what
+// this one actually catches.
+app.use("/api", rateLimit({ name: "global", max: 120, keyBy: "account" }));
 
 app.use("/api", router);
 
@@ -260,6 +397,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const isAsset = req.path.startsWith("/assets/") || req.path === "/favicon.ico";
   (isAsset ? publicAssets : publicPages)(req, res, next);
 });
+// The pose runtime. Mounted with the other root-served files and above the
+// landing page router so its `/assets/:file` handler does not see these names
+// first and 404 them. It is under `/assets/`, so the wide asset budget applies:
+// a cold pose session is nine requests, and the app is the only caller.
+app.use(mediapipeRouter);
 app.use(landingPageRouter);
 app.use(waitlistRouter);
 app.use(legalPagesRouter);
