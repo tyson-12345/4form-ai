@@ -26,6 +26,14 @@ dist
 .env
 **/.env
 .env.*
+# `.env.*` is root-only and `**/.env` does not match `.env.local`, so
+# `artifacts/api-server/.env.local` — which exists on a developer machine and
+# holds a live DATABASE_URL — was matched by none of the three and was pulled
+# into the build layer by the broad `COPY artifacts/api-server/`. It never
+# reached the final image (only `dist/` crosses stages), but a secret in an
+# intermediate layer is a secret in the build cache and in anything that
+# exports it.
+**/.env.*
 !**/.env.example
 *.pem
 *.key

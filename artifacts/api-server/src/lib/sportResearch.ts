@@ -22,7 +22,20 @@ export interface SportResearch {
   emphasis: string;
 }
 
-const RESEARCH: Record<string, SportResearch> = {
+/**
+ * The per-sport table, keyed by the lowercased sport string.
+ *
+ * A null-prototype object, because a plain one answers `RESEARCH["constructor"]`
+ * with a function and `RESEARCH["__proto__"]` with an object — and the `??
+ * DEFAULT_RESEARCH` fallback in `researchForSport` only guards null. `sport` is
+ * request-derived: `safeText(1, 40)` in routes/analyses.ts accepts both words
+ * and `.toLowerCase()` leaves them intact, so any authenticated caller could
+ * post `{"sport":"constructor"}` and have the prompt builder handed something
+ * with no `injury`, `performance` or `emphasis` field at all.
+ *
+ * Same fix, and the same reason, as `RETURN_TO` in routes/waitlist.ts.
+ */
+const RESEARCH: Record<string, SportResearch> = Object.assign(Object.create(null) as Record<string, SportResearch>, {
   running: {
     injury:
       "Heiderscheit et al. (2011, J Orthop Sports Phys Ther) on step rate and joint loading; Novacheck (1998, Gait Posture) on running injury biomechanics; van Gent et al. (2007, Br J Sports Med) on lower-limb running injuries",
@@ -191,7 +204,7 @@ const RESEARCH: Record<string, SportResearch> = {
     emphasis:
       "The lunge — deep front knee, extended weapon arm — is the sport's core action and never a fault in itself. Knee position and left/right loading through repeated lunges are the highest-value observations; fencing is inherently asymmetric, so read asymmetry as dominance, not dysfunction.",
   },
-};
+});
 
 const DEFAULT_RESEARCH: SportResearch = {
   injury:

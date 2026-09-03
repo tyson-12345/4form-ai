@@ -92,9 +92,119 @@ function sslConfig(): SslConfig {
   return { rejectUnauthorized: true };
 }
 
+/**
+ * Query parameters `pg` turns into a TLS configuration of its own.
+ *
+ * These matter because the driver does not merge them with the config above —
+ * it replaces it. `pg/lib/connection-parameters.js` runs
+ * `config = Object.assign({}, config, parse(config.connectionString))`, so the
+ * connection string is applied *over* the explicit options, and then
+ * `this.ssl = typeof config.ssl === 'undefined' ? … : config.ssl` takes
+ * whatever came out. Measured against the installed pg 8.20.0 /
+ * pg-connection-string 2.12.0, passing `ssl: { rejectUnauthorized: true, ca }`
+ * explicitly and varying only the string:
+ *
+ *   (no parameter)       → { rejectUnauthorized: true, ca }   as written
+ *   ?sslmode=no-verify   → { rejectUnauthorized: false }      verification gone
+ *   ?sslmode=disable     → false                              TLS gone
+ *   ?ssl=0               → false                              TLS gone
+ *   ?ssl=true            → true                               the CA is gone
+ *   ?sslmode=require     → {}                                 the CA is gone
+ *   ?sslmode=verify-full → {}                                 the CA is gone
+ *
+ * The first three are the `rejectUnauthorized: false` the block above refuses
+ * to write, reachable from a string an operator pastes out of a provider's
+ * dashboard, with nothing logged and a connection that looks healthy.
+ *
+ * So the parameters are taken out of the string before `pg` is handed it, and
+ * the explicit config becomes the only one there is. Stripping rather than
+ * arguing about precedence is also what survives pg 9 / pg-connection-string 3,
+ * which change what `prefer`, `require` and `verify-ca` mean.
+ */
+const SSL_URL_PARAMS = new Set([
+  "ssl",
+  "sslmode",
+  "sslcert",
+  "sslkey",
+  "sslrootcert",
+  "uselibpqcompat",
+]);
+
+/**
+ * The values that ask for no more than we already do, and can therefore be
+ * dropped without argument.
+ *
+ * `verify-full` is what this module does. `require`, `verify-ca` and `prefer`
+ * all ask for something weaker, so honouring our own config gives the operator
+ * more than they asked for, never less — nothing is lost by ignoring them, and
+ * a Supabase or Neon string that carries `?sslmode=require` keeps working.
+ *
+ * Everything else is refused rather than ignored: `disable` and `no-verify` are
+ * a deliberate request to drop encryption or authentication, and answering that
+ * by quietly doing the opposite would leave an operator debugging a TLS error
+ * they thought they had turned off. `sslrootcert`, `sslcert`, `sslkey` and
+ * `uselibpqcompat` are refused because they replace the trust anchor — which is
+ * what DATABASE_CA_CERT is for, and which is the one thing that must not be
+ * decided by a string.
+ */
+const REDUNDANT_SSL_VALUES: Record<string, ReadonlySet<string>> = {
+  sslmode: new Set(["prefer", "require", "verify-ca", "verify-full"]),
+  ssl: new Set(["1", "true"]),
+};
+
+function hardenConnectionString(raw: string, tlsRequired: boolean): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    // `pg` parses with the same WHATWG parser, so a string this cannot read is
+    // one the driver cannot read either — and it reports that better than a
+    // guess here would. Nothing to strip, nothing to refuse.
+    return raw;
+  }
+
+  const refused: string[] = [];
+
+  // A snapshot of distinct names, because the loop deletes as it goes. `getAll`
+  // rather than `get`: a repeated parameter (`?ssl=1&ssl=0`) must be judged on
+  // every value it carries, not just the first one.
+  for (const name of new Set(url.searchParams.keys())) {
+    const key = name.toLowerCase();
+    if (!SSL_URL_PARAMS.has(key)) continue;
+
+    for (const value of url.searchParams.getAll(name)) {
+      // On a loopback database in development `sslConfig()` has already chosen
+      // no TLS, so there is no guarantee left for the string to weaken and
+      // `sslmode=disable` simply agrees with us.
+      if (tlsRequired && !REDUNDANT_SSL_VALUES[key]?.has(value.toLowerCase())) {
+        refused.push(`${name}=${value}`);
+      }
+    }
+    url.searchParams.delete(name);
+  }
+
+  if (refused.length > 0) {
+    throw new Error(
+      `DATABASE_URL carries ${refused.join(", ")}, which node-postgres applies *over* ` +
+        "this module's TLS settings rather than alongside them — replacing " +
+        "certificate verification, or TLS itself, with whatever the string says. " +
+        "Refusing to start rather than honouring it. Remove the parameter; TLS is " +
+        "already on and verified. If the connection then fails with " +
+        '"self-signed certificate in certificate chain", supply the provider\'s CA ' +
+        "bundle in DATABASE_CA_CERT — that is the supported way to fix it, and it " +
+        "keeps the authentication that stops a man-in-the-middle.",
+    );
+  }
+
+  // `toString()` leaves a bare "?" behind when the last parameter goes.
+  return url.toString().replace(/\?$/, "");
+}
+
+const ssl = sslConfig();
+
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: sslConfig(),
+  connectionString: hardenConnectionString(process.env.DATABASE_URL!, ssl !== false),
+  ssl,
   /**
    * Bounded so a burst of requests cannot exhaust the database's connection
    * limit. Supabase's pooler allows far more client connections than direct
