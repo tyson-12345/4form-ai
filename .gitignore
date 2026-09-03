@@ -55,3 +55,8 @@ Thumbs.db
 
 # Local Claude Code tooling config (launch.json, settings.local.json)
 .claude/
+
+# Vendored MediaPipe pose runtime — 22 MB of pinned third-party binaries,
+# fetched and hash-verified by scripts/fetch-mediapipe.mjs rather than committed.
+# Run `pnpm mediapipe:fetch` after a clone; the build does it automatically.
+vendor/
