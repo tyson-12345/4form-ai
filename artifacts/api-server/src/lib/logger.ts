@@ -1,5 +1,7 @@
 import pino from "pino";
 
+import { stripBoundValues } from "./dbErrors.js";
+
 const isProduction = process.env.NODE_ENV === "production";
 
 /**
@@ -42,6 +44,20 @@ export const logger = pino({
       "*.params",
     ],
     censor: "[REDACTED]",
+  },
+  serializers: {
+    /**
+     * Drizzle interpolates bind values into the error's own `message` (and so
+     * into `stack`), which no redact path can reach — a path matches a
+     * property, not a substring of one. `stripBoundValues` swaps the whole
+     * error for one carrying only the SQLSTATE and the constraint name, then
+     * the standard serializer formats that.
+     *
+     * At the serializer rather than at each `logger.error` call, because the
+     * call sites that matter are the ones nobody remembered to change: the
+     * global error handler in app.ts logs whatever reached it.
+     */
+    err: (error: unknown) => pino.stdSerializers.err(stripBoundValues(error) as Error),
   },
   ...(isProduction
     ? {}

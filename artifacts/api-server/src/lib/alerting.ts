@@ -44,9 +44,9 @@ export type AlertEvent = (typeof ALERT_EVENTS)[number];
 /**
  * Thresholds above which a counter is reported as alerting.
  *
- * Deliberately conservative: these are counts since process start, so a
- * threshold that is too low will fire on a long-running healthy process. They
- * are a smoke signal for a polling check, not a paging rule.
+ * These are counts within `ALERT_WINDOW_MS`, not since process start, so a
+ * threshold is a rate rather than a lifetime total. They are a smoke signal for
+ * a polling check, not a paging rule.
  */
 const THRESHOLDS: Record<AlertEvent, number> = {
   narrative_unavailable: 25,
@@ -60,8 +60,54 @@ const THRESHOLDS: Record<AlertEvent, number> = {
   email_delivery_failed: 5,
 };
 
-const counters = new Map<AlertEvent, number>();
+/**
+ * How far back a threshold looks.
+ *
+ * ── Why the counters are windowed and not cumulative ────────────────────────
+ * They used to be totals since process start, with no decay and no reset outside
+ * tests. A threshold crossed once stayed crossed for the life of the process, so
+ * `GET /api/health/metrics` reported "degraded" forever and the uptime check
+ * that polls it became noise the moment anything ever went briefly wrong.
+ *
+ * `cors_rejected` made that trivially reachable by an outsider: a rejected
+ * origin is refused *before* any rate limiter, so a hundred requests carrying
+ * `Origin: https://evil.example` — costing nothing, needing no account — pinned
+ * the endpoint to degraded permanently.
+ *
+ * An hour is long enough that a real, sustained fault still crosses, and short
+ * enough that a one-off burst ages out.
+ */
+export const ALERT_WINDOW_MS = 60 * 60 * 1000;
+
+interface Counter {
+  /** Occurrences inside the current window. */
+  windowCount: number;
+  /** When the current window began. */
+  windowStart: number;
+  /** Occurrences since process start. Reported, never compared to a threshold. */
+  total: number;
+  /** Whether the crossing has been logged for the current window. */
+  logged: boolean;
+}
+
+const counters = new Map<AlertEvent, Counter>();
 const startedAt = Date.now();
+
+/** Read a counter, rotating the window first if it has expired. */
+function current(event: AlertEvent, now: number): Counter {
+  const existing = counters.get(event);
+  if (!existing) {
+    const fresh: Counter = { windowCount: 0, windowStart: now, total: 0, logged: false };
+    counters.set(event, fresh);
+    return fresh;
+  }
+  if (now - existing.windowStart >= ALERT_WINDOW_MS) {
+    existing.windowCount = 0;
+    existing.windowStart = now;
+    existing.logged = false;
+  }
+  return existing;
+}
 
 /**
  * Record one occurrence.
@@ -71,14 +117,17 @@ const startedAt = Date.now();
  */
 export function recordAlert(event: AlertEvent): void {
   try {
-    const next = (counters.get(event) ?? 0) + 1;
-    counters.set(event, next);
+    const now = Date.now();
+    const counter = current(event, now);
+    counter.windowCount++;
+    counter.total++;
 
-    // Log exactly once at the crossing, so the threshold shows up in the log
-    // stream without every subsequent occurrence repeating it.
-    if (next === THRESHOLDS[event]) {
+    // Log exactly once per window at the crossing, so the threshold shows up in
+    // the log stream without every subsequent occurrence repeating it.
+    if (!counter.logged && counter.windowCount >= THRESHOLDS[event]) {
+      counter.logged = true;
       logger.error(
-        { event: "alert_threshold_crossed", alert: event, count: next },
+        { event: "alert_threshold_crossed", alert: event, count: counter.windowCount },
         `Alert threshold crossed for ${event}`,
       );
     }
@@ -89,24 +138,38 @@ export function recordAlert(event: AlertEvent): void {
 
 export interface AlertSnapshot {
   uptimeSec: number;
+  /** Occurrences inside the current window — what `alerting` is derived from. */
   counts: Record<string, number>;
-  /** Events currently at or above their threshold. */
+  /** Occurrences since process start, for context. Not compared to thresholds. */
+  totals: Record<string, number>;
+  windowSec: number;
+  /** Events currently at or above their threshold *within the window*. */
   alerting: string[];
 }
 
 export function alertSnapshot(): AlertSnapshot {
+  const now = Date.now();
   const counts: Record<string, number> = {};
+  const totals: Record<string, number> = {};
   const alerting: string[] = [];
 
   for (const event of ALERT_EVENTS) {
-    const count = counters.get(event) ?? 0;
-    counts[event] = count;
-    if (count >= THRESHOLDS[event]) alerting.push(event);
+    const counter = counters.get(event);
+    // Rotate a stale window on read too, so a quiet process reports zero rather
+    // than the last burst it saw.
+    const windowCount =
+      counter && now - counter.windowStart < ALERT_WINDOW_MS ? counter.windowCount : 0;
+
+    counts[event] = windowCount;
+    totals[event] = counter?.total ?? 0;
+    if (windowCount >= THRESHOLDS[event]) alerting.push(event);
   }
 
   return {
-    uptimeSec: Math.floor((Date.now() - startedAt) / 1000),
+    uptimeSec: Math.floor((now - startedAt) / 1000),
     counts,
+    totals,
+    windowSec: Math.floor(ALERT_WINDOW_MS / 1000),
     alerting,
   };
 }

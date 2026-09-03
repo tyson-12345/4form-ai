@@ -22,6 +22,7 @@
 
 import * as Sentry from "@sentry/node";
 import { logger } from "./logger.js";
+import { stripBoundValues } from "./dbErrors.js";
 
 export function sentryEnabled(): boolean {
   return Boolean(process.env.SENTRY_DSN);
@@ -40,6 +41,47 @@ function redact(value: unknown, depth = 0): unknown {
     out[k] = SENSITIVE_KEY.test(k) ? "[redacted]" : redact(v, depth + 1);
   }
   return out;
+}
+
+/**
+ * Strip everything that must not leave our infrastructure from an event.
+ *
+ * Used for both error and transaction events — see `beforeSendTransaction`.
+ */
+function scrubEvent<E extends Sentry.Event>(event: E): E {
+  // Request bodies carry passwords and reset tokens. We never want them,
+  // and the redaction below would only mask the keys it recognises.
+  if (event.request) {
+    delete event.request.data;
+    delete event.request.cookies;
+    if (event.request.headers) {
+      event.request.headers = redact(event.request.headers) as Record<string, string>;
+    }
+    // Query strings should never hold anything sensitive, but the reset
+    // link puts a token in one, so the whole string goes.
+    delete event.request.query_string;
+    /**
+     * ...and so does the query half of the URL.
+     *
+     * Deleting `query_string` alone was not enough: Sentry populates
+     * `request.url` from the full original URL, so the reset token survived in
+     * it. This mirrors what the pino req serializer already does in app.ts.
+     */
+    if (typeof event.request.url === "string") {
+      event.request.url = event.request.url.split("?")[0];
+    }
+  }
+
+  if (event.extra) event.extra = redact(event.extra) as Record<string, unknown>;
+  if (event.contexts) event.contexts = redact(event.contexts) as typeof event.contexts;
+
+  // A user id is useful for correlating reports and is not itself PII in
+  // our schema (a random uuid). Email and IP are.
+  if (event.user) {
+    event.user = { id: event.user.id };
+  }
+
+  return event;
 }
 
 export function initObservability(): void {
@@ -64,31 +106,22 @@ export function initObservability(): void {
     // than dependent on a default that could change.
     sendDefaultPii: false,
 
-    beforeSend(event) {
-      // Request bodies carry passwords and reset tokens. We never want them,
-      // and the redaction below would only mask the keys it recognises.
-      if (event.request) {
-        delete event.request.data;
-        delete event.request.cookies;
-        if (event.request.headers) {
-          event.request.headers = redact(event.request.headers) as Record<string, string>;
-        }
-        // Query strings should never hold anything sensitive, but the reset
-        // link puts a token in one, so the whole string goes.
-        delete event.request.query_string;
-      }
+    beforeSend: scrubEvent,
 
-      if (event.extra) event.extra = redact(event.extra) as Record<string, unknown>;
-      if (event.contexts) event.contexts = redact(event.contexts) as typeof event.contexts;
-
-      // A user id is useful for correlating reports and is not itself PII in
-      // our schema (a random uuid). Email and IP are.
-      if (event.user) {
-        event.user = { id: event.user.id };
-      }
-
-      return event;
-    },
+    /**
+     * Transactions are events too, and they were leaving unscrubbed.
+     *
+     * `beforeSend` is only called for *error* events. With `tracesSampleRate`
+     * defaulting to 0.1 the SDK also emits transaction events, and those go
+     * through `beforeSendTransaction` — which did not exist here. One request
+     * in ten therefore shipped `request.headers.authorization` (a live 7-day
+     * session JWT) and the full `request.url` off-box. On the reset-page route
+     * that URL is `/reset-password?token=<single-use credential>`.
+     *
+     * Same function for both, so a transaction can never carry anything an
+     * error could not.
+     */
+    beforeSendTransaction: scrubEvent,
   });
 
   logger.info(
@@ -105,7 +138,12 @@ export function initObservability(): void {
  */
 export function reportError(err: unknown, context?: Record<string, unknown>): void {
   if (!sentryEnabled()) return;
-  Sentry.captureException(err, context ? { extra: redact(context) as Record<string, unknown> } : undefined);
+  // Same reason as the pino serializer: a DrizzleQueryError's own message
+  // carries the statement and every bind value, and this one goes off-box.
+  Sentry.captureException(
+    stripBoundValues(err),
+    context ? { extra: redact(context) as Record<string, unknown> } : undefined,
+  );
 }
 
 /** Associate the current scope with a user id. Never pass an email. */
