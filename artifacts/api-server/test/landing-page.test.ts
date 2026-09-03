@@ -410,7 +410,7 @@ describe("the landing page", () => {
   });
 
   it("ships the standing frame's real numbers, for a reader without scripting", async () => {
-    // frame(0) computes knee 176.57, hip 168.55, lean 8.02 — and the knee is
+    // frame(0) computes knee 176.57, hip 168.54, elbow 168.17 — and the knee is
     // outside its own 72–175 band there, which is why it ships marked. Without
     // scripting these are the only numbers anyone sees, so they have to be the
     // ones the model actually produces rather than round placeholders.
@@ -418,7 +418,7 @@ describe("the landing page", () => {
 
     expect(html).toContain('<span class="readout__value is-out" data-rv="knee">177&deg;</span>');
     expect(html).toContain('<span class="readout__value" data-rv="hip">169&deg;</span>');
-    expect(html).toContain('<span class="readout__value" data-rv="lean">8&deg;</span>');
+    expect(html).toContain('<span class="readout__value" data-rv="elbow">168&deg;</span>');
     expect(html).toMatch(/<text id="fKneeLabel" class="figure__angle"[^>]*>177&#176;<\/text>/);
     // The band panel likewise ships its finished reading, not a zero.
     expect(html).toContain('<span class="panel__score" id="bandScore">78</span>');

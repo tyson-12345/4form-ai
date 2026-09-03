@@ -642,14 +642,17 @@ section[id] { scroll-margin-top: var(--nav-h); }
 /* The swaths are the design's, which sit a couple of points off the arithmetic
    band edges; they are what the mock reads as, so they are kept. */
 .ruler__band--knee { left: 24%; width: 64%; }
-.ruler__band--hip { left: 22%; width: 66%; }
-.ruler__band--lean { left: 0%; width: 58%; }
+.ruler__band--hip { left: 31%; width: 59%; }
+/* There is deliberately no `--elbow` swath. `riskProfiles.ts` leaves the elbow
+   unflagged for weightlifting — lockout is required technique, not a fault —
+   and the app draws no band for a joint with no zones. Drawing one here to make
+   the three rulers match would advertise a flag the product never raises. */
 /* pose(0) — the standing frame the markup already draws. JavaScript overwrites
    these inline the moment it runs; without them a reader with scripting off
    gets three markers stacked at zero. */
 .ruler__mark--knee { left: 91.60%; }
 .ruler__mark--hip { left: 86.59%; }
-.ruler__mark--lean { left: 13.37%; }
+.ruler__mark--elbow { left: 86.36%; }
 .ruler__scale { display: flex; justify-content: space-between; margin-top: 8px; }
 .ruler__scale span { font-family: var(--mono); font-size: 11px; color: var(--on-ink-2); }
 .flag {
@@ -851,15 +854,16 @@ section[id] { scroll-margin-top: var(--nav-h); }
 .tag-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .tag-row--head { align-items: center; gap: 10px; margin-top: 0; }
 
-/* The observed-vs-safe ruler on the flag card. Bone ground, so the wash and the
-   rust are the on-bone pair. */
+/* The observed-against-band ruler on the flag card. Bone ground, so the wash and
+   the rust are the on-bone pair. Same 30–190 axis as the three hero rulers, so
+   the two panels are read against one scale. */
 .obs-ruler { position: relative; height: 24px; margin-top: 18px; }
 .obs-ruler__axis { position: absolute; left: 0; right: 0; top: 11px; height: 1px; background: var(--line-on-bone-strong); }
-.obs-ruler__safe { position: absolute; left: 0; width: 62%; top: 6px; height: 11px; border-radius: 3px; background: var(--line-on-bone); }
-.obs-ruler__span { position: absolute; left: 14%; width: 64%; top: 11px; height: 2px; border-radius: 1px; background: var(--rust-on-bone); }
+.obs-ruler__band { position: absolute; left: 31%; width: 59%; top: 6px; height: 11px; border-radius: 3px; background: var(--line-on-bone); }
+.obs-ruler__span { position: absolute; left: 27%; width: 60%; top: 11px; height: 2px; border-radius: 1px; background: var(--rust-on-bone); }
 .obs-ruler__cap { position: absolute; top: 7px; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; background: var(--rust-on-bone); }
-.obs-ruler__cap--lo { left: 14%; }
-.obs-ruler__cap--hi { left: 78%; }
+.obs-ruler__cap--lo { left: 27%; }
+.obs-ruler__cap--hi { left: 87%; }
 .obs-ruler__scale { display: flex; justify-content: space-between; margin-top: 8px; }
 .obs-ruler__scale span { font-family: var(--mono); font-size: 11px; color: var(--on-bone-5); }
 
@@ -1477,30 +1481,29 @@ section[id] { scroll-margin-top: var(--nav-h); }
           </div>
           <div class="ruler__scale">
             <span>30</span>
-            <span>BAND 65&ndash;175</span>
+            <span>BAND 80&ndash;175</span>
             <span>190</span>
           </div>
-        </div>
-
-        <div class="readout" data-readout="lean">
-          <div class="readout__head">
-            <span class="readout__label">TORSO LEAN</span>
-            <span class="readout__value" data-rv="lean">8&deg;</span>
-          </div>
-          <div class="ruler">
-            <div class="ruler__axis"></div>
-            <div class="ruler__band ruler__band--lean"></div>
-            <div class="ruler__mark ruler__mark--lean" data-rm="lean"></div>
-          </div>
-          <div class="ruler__scale">
-            <span>0</span>
-            <span>BAND 0&ndash;35</span>
-            <span>60</span>
-          </div>
-          <p class="flag" id="leanFlag">
+          <p class="flag" id="hipFlag">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.2" stroke="#D2683F" stroke-width="1.9" fill="none"/><line x1="12" y1="7.4" x2="12" y2="13" stroke="#D2683F" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="16.4" r="1.1" fill="#D2683F"/></svg>
             <span>Outside the band at depth. The flag carries the angle that produced it.</span>
           </p>
+        </div>
+
+        <div class="readout" data-readout="elbow">
+          <div class="readout__head">
+            <span class="readout__label">ELBOW FLEXION</span>
+            <span class="readout__value" data-rv="elbow">168&deg;</span>
+          </div>
+          <div class="ruler">
+            <div class="ruler__axis"></div>
+            <div class="ruler__mark ruler__mark--elbow" data-rm="elbow"></div>
+          </div>
+          <div class="ruler__scale">
+            <span>30</span>
+            <span>NO BAND ON THIS LIFT</span>
+            <span>190</span>
+          </div>
         </div>
       </div>
 
@@ -1729,20 +1732,20 @@ section[id] { scroll-margin-top: var(--nav-h); }
       <div class="card card--flat" data-reveal>
         <div class="tag-row tag-row--head">
           <span class="tag tag--flag tag--sm">EVERY REP</span>
-          <span class="eyebrow">TORSO LEAN</span>
+          <span class="eyebrow">HIP FLEXION</span>
         </div>
-        <h3 class="h3 h3--sm side-cards__h3">Chest dropped past the band at the bottom of every rep.</h3>
-        <p class="body">Observed 8&deg; to 44&deg; from vertical, against a safe band of 0&deg; to 35&deg;. Flags carry evidence &mdash; the angle that produced this one is on the ruler below.</p>
+        <h3 class="h3 h3--sm side-cards__h3">Hip folded past the band at the bottom of every rep.</h3>
+        <p class="body">Observed 73&deg; to 169&deg;, against a band of 80&deg; to 175&deg;. Flags carry evidence &mdash; the angle that produced this one is on the ruler below.</p>
         <div class="obs-ruler">
           <div class="obs-ruler__axis"></div>
-          <div class="obs-ruler__safe"></div>
+          <div class="obs-ruler__band"></div>
           <div class="obs-ruler__span"></div>
           <div class="obs-ruler__cap obs-ruler__cap--lo"></div>
           <div class="obs-ruler__cap obs-ruler__cap--hi"></div>
         </div>
         <div class="obs-ruler__scale">
-          <span>OBSERVED 8&deg;&ndash;44&deg;</span>
-          <span>SAFE 0&deg;&ndash;35&deg;</span>
+          <span>OBSERVED 73&deg;&ndash;169&deg;</span>
+          <span>BAND 80&deg;&ndash;175&deg;</span>
         </div>
       </div>
 
@@ -1751,15 +1754,14 @@ section[id] { scroll-margin-top: var(--nav-h); }
         <p class="body body--lead">The write-up gives you instructions. The skeleton overlay keeps the exact degrees, frame by frame, for when you want to check the work yourself.</p>
         <div class="tag-row">
           <span class="tag">KNEE 86&deg;</span>
-          <span class="tag">HIP 73&deg;</span>
-          <span class="tag tag--flag">LEAN 44&deg;</span>
-          <span class="tag">ANKLE 112&deg;</span>
+          <span class="tag tag--flag">HIP 73&deg;</span>
+          <span class="tag">ELBOW 130&deg;</span>
         </div>
       </div>
 
       <div class="card card--flat card--ink" data-reveal>
         <span class="eyebrow eyebrow--on-ink">WHAT WE WON&rsquo;T SAY</span>
-        <p class="body body--lead">We measure joint angles. We don&rsquo;t diagnose injuries, and we don&rsquo;t claim to prevent them. Your clips stay on your device unless you send one for measurement.</p>
+        <p class="body body--lead">We measure joint angles. We don&rsquo;t diagnose injuries, and we don&rsquo;t claim to prevent them. Measurement happens on your device, and your clips are never uploaded &mdash; we only ever receive the numbers.</p>
       </div>
     </div>
   </div>
@@ -2068,10 +2070,14 @@ section[id] { scroll-margin-top: var(--nav-h); }
     var head = { x: shoulder.x + 34 * Math.sin(lean), y: shoulder.y - 34 * Math.cos(lean) };
     var elbow = { x: shoulder.x + 26 + 16 * d, y: shoulder.y + 46 - 14 * d };
     var hand = { x: elbow.x + 14 + 40 * d, y: elbow.y + 44 - 56 * d };
+    // `lean` stays a drawing input only. It used to be returned in degrees and
+    // shown as a "TORSO LEAN" readout, which advertised a measurement the pose
+    // tracker does not make — it measures six joints, knee/hip/elbow on each
+    // side, and no trunk angle anywhere. The readouts now report only angles
+    // that exist, so the panel and the product agree.
     return {
       ankle: ankle, knee: knee, hip: hip, shoulder: shoulder,
       head: head, elbow: elbow, hand: hand,
-      lean: (lean * 180) / Math.PI,
     };
   }
 
@@ -2103,7 +2109,7 @@ section[id] { scroll-margin-top: var(--nav-h); }
     head: $("#fHead"), hip: $("#fHip"), knee: $("#fKnee"),
     shoulder: $("#fShoulder"), kneeArc: $("#fKneeArc"), kneeLabel: $("#fKneeLabel"),
     frameNum: $("#frameNum"), frameFill: $("#frameFill"), repStamp: $("#repStamp"),
-    leanFlag: $("#leanFlag"),
+    hipFlag: $("#hipFlag"),
   };
 
   function setAttrs(el, attrs) {
@@ -2111,11 +2117,17 @@ section[id] { scroll-margin-top: var(--nav-h); }
     for (var k in attrs) el.setAttribute(k, attrs[k]);
   }
 
-  /** One readout: the number, its out-of-band state, and the mark on its ruler. */
+  /**
+   * One readout: the number, its out-of-band state, and the mark on its ruler.
+   *
+   * `bandLo === null` means this joint has no band on this lift, which is a real
+   * state the app renders — nothing can be outside a band that does not exist,
+   * so the value never marks itself out.
+   */
   function putReadout(key, value, lo, hi, bandLo, bandHi) {
     var v = $('[data-rv="' + key + '"]');
     var m = $('[data-rm="' + key + '"]');
-    var out = value < bandLo || value > bandHi;
+    var out = bandLo !== null && (value < bandLo || value > bandHi);
     if (v) {
       v.textContent = Math.round(value) + "°";
       v.classList.toggle("is-out", out);
@@ -2152,7 +2164,7 @@ section[id] { scroll-margin-top: var(--nav-h); }
 
     var kneeAngle = angleAt(P.knee, P.hip, P.ankle);
     var hipAngle = angleAt(P.hip, P.shoulder, P.knee);
-    var lean = P.lean;
+    var elbowAngle = angleAt(P.elbow, P.shoulder, P.hand);
 
     if (fig.kneeLabel) {
       fig.kneeLabel.setAttribute("x", (P.knee.x + 42).toFixed(0));
@@ -2170,11 +2182,15 @@ section[id] { scroll-margin-top: var(--nav-h); }
         "REP " + Math.min(REPS, Math.floor(q * REPS) + 1) + " OF " + REPS;
     }
 
+    // One axis, 30–190°, for all three. The hip's low edge is 80° — the shipped
+    // low-side caution threshold in `riskProfiles.ts` — and the hip is the joint
+    // that crosses it, at depth, so the flag hangs off the hip readout. The
+    // elbow gets no band: this is a squat, and lockout is technique there.
     putReadout("knee", kneeAngle, 30, 190, 72, 175);
-    putReadout("hip", hipAngle, 30, 190, 65, 175);
-    putReadout("lean", lean, 0, 60, 0, 35);
+    putReadout("hip", hipAngle, 30, 190, 80, 175);
+    putReadout("elbow", elbowAngle, 30, 190, null, null);
 
-    if (fig.leanFlag) fig.leanFlag.classList.toggle("is-on", lean > 35);
+    if (fig.hipFlag) fig.hipFlag.classList.toggle("is-on", hipAngle < 80);
   }
 
   // ── The waitlist form ──────────────────────────────────────────────────────

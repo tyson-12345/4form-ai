@@ -49,18 +49,36 @@ const PUBLISHING_NOTE = /delete (?:this block )?before publishing/i;
 /**
  * Values the author left for a human to fill in.
  *
- * Two shapes, because the documents use two conventions:
+ * Three shapes, because the documents use three conventions:
  *
  *  - Shouted, like `[LEGAL ENTITY NAME]` or `[DATE — set when published]`.
- *  - Contact addresses, like `[privacy@yourdomain.com]` — lowercase, and
- *    therefore invisible to a capitals-only rule. Publishing one of those on a
- *    live privacy policy is exactly the failure this function exists to stop,
- *    so `yourdomain` is matched explicitly.
+ *  - Addressed, like `[privacy@yourdomain.com]` — lowercase, and therefore
+ *    invisible to a capitals-only rule. Publishing one of those on a live
+ *    privacy policy is exactly the failure this function exists to stop, so an
+ *    unspaced `@` is matched, and `yourdomain` on its own as well (a bare
+ *    `[https://yourdomain.com/…]` carries no `@`).
+ *  - Numeric, like the `[30]` in the privacy policy's retention section — a
+ *    figure nobody had settled yet. That one shipped. The rule here used to
+ *    require an uppercase first character, so `[30]` scanned clean, the 503
+ *    guard in routes/legalPages.ts passed, and "Backups roll off within [30]
+ *    days" was served live on /privacy: the precise outcome that file's header
+ *    says cannot happen.
  *
- * Deliberately does not match ordinary bracketed prose such as
- * `[see section 4]`, which is content rather than a blank.
+ * Deliberately does not match ordinary bracketed prose such as `[see section
+ * 4]`. The line between the two is that a placeholder is a *value* — shouted,
+ * addressed, or numeric — where prose is a phrase opening with a lowercase
+ * word. That is why the numeric rule is anchored on the first character rather
+ * than "contains a digit", which `[see section 4]` satisfies too.
+ *
+ * The trailing lookahead keeps Markdown link syntax out: `[text](url)`,
+ * `[text][ref]`, and a `[ref]: https://…` definition line are syntax, not
+ * blanks. Nothing here renders an anchor and neither document contains a link,
+ * but this scan reads the source rather than the output, and a false positive
+ * is not cosmetic — it pins both documents at 503 for ever over something no
+ * reader can see, which is the same trap the publisher-note stripping avoids.
  */
-const PLACEHOLDER = /\[(?:[A-Z][A-Z0-9 ,.—/–-]*(?:—[^\]]*)?|[^\]]*yourdomain[^\]]*)\]/g;
+const PLACEHOLDER =
+  /\[(?:[A-Z][A-Z0-9 ,.—/–-]*(?:—[^\]]*)?|[^\]]*yourdomain[^\]]*|[^\]\s]*@[^\]\s]*|\d[^\]]*)\](?![([]|:\s*(?:<|https?:|mailto:|\/|#))/g;
 
 /**
  * Every unresolved placeholder a reader could actually see, in document order.

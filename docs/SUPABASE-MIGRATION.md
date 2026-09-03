@@ -247,6 +247,21 @@ curl -s https://<host>/api/health/metrics | jq '.status'
 - [ ] **Sign Supabase's DPA** if you have EU users (`docs/LEGAL-RISK.md` §7).
 - [ ] **Turn on Point-in-Time Recovery** if you ever hold real user data. The
       free tier's daily backup means up to 24 hours lost.
+- [x] **Establish the backup retention** — needed by the privacy policy, which
+      has to tell users how long a deleted record can survive in a backup.
+      Supabase's published figures, from
+      `supabase.com/docs/guides/platform/backups` and `supabase.com/pricing`
+      (both read 2 Sep 2026): **Free** — no automatic backups, export with the
+      CLI instead; **Pro** — the last 7 days of daily backups; **Team** — 14
+      days; **Enterprise** — up to 30 days. The **PITR** add-on replaces daily
+      backups and is sold in 7-, 14- and 28-day windows, with longer retention
+      available only on Enterprise.
+
+      So **30 days is a ceiling that holds on every published plan**, which is
+      what `docs/PRIVACY-POLICY.md` §7 now commits to rather than a
+      plan-specific figure that would go stale on the next upgrade. A
+      negotiated Enterprise retention beyond 30 days is the only thing that
+      would break it, and would need §7 changed to match.
 - [ ] **Row Level Security.** Supabase enables RLS prompting because its usual
       model is clients talking to Postgres directly. **Yours do not** — every
       query goes through the API, which enforces ownership in the repository

@@ -257,7 +257,9 @@ export default function PricingScreen() {
                 // that nothing can be bought yet, which is more useful than an
                 // inert control. Announced as such rather than as disabled.
                 accessibilityLabel={
-                  billingEnabled ? "Start free week" : "Coming soon. Not available to buy yet."
+                  billingEnabled
+                    ? `Start Pro, ${pro.price.toFixed(2)} dollars per month`
+                    : "Coming soon. Not available to buy yet."
                 }
                 /*
                   Full strength, deliberately.
@@ -271,8 +273,19 @@ export default function PricingScreen() {
                 */
                 style={s.proCta}
               >
+                {/* Sells what the server can actually deliver.
+
+                    It said "Start free week". There is no free week: PLANS in
+                    entitlementService carries no trial or introductory-offer
+                    field and verify-purchase has no intro-offer handling, so
+                    the first charge is the full price on day one. A trial
+                    offer also drags its own required disclosures — length, the
+                    price it converts to, the renewal cadence, how to cancel
+                    before it converts — and none of those had a home on this
+                    screen either. The price comes off the plan rather than a
+                    literal, so it cannot drift from what the server charges. */}
                 <Text style={[T.button, { color: color.cobalt }]}>
-                  {billingEnabled ? "Start free week" : "Coming soon"}
+                  {billingEnabled ? `Start Pro — $${pro.price.toFixed(2)}/month` : "Coming soon"}
                 </Text>
               </Tappable>
             )}
@@ -333,9 +346,15 @@ export default function PricingScreen() {
           </View>
         )}
 
+        {/* "Cancel any time in Settings" was not true, and it was the sentence
+            most likely to be relied on. POST /subscriptions/cancel only writes
+            our own record — the handler's docblock says so — while the store
+            subscription keeps renewing until it is cancelled with Apple or
+            Google. Someone who read that line, switched to Free and then saw a
+            charge would have been told the wrong thing by us. */}
         <Text style={s.footnote}>
           {billingEnabled
-            ? "Cancel any time in Settings. Your measured sessions stay readable on the free plan."
+            ? "Renews every month until you cancel. Cancelling has to be done in your App Store or Google Play subscription settings — switching to Free here changes your 4Form AI plan but does not stop the store charging you. Your measured sessions stay readable on the free plan."
             : "When plans go on sale, purchases will be handled entirely by the App Store or Google Play. 4Form AI will never see or store your card details."}
         </Text>
       </ScrollView>
