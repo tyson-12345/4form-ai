@@ -34,12 +34,40 @@ export interface JwtPayload {
 export interface VerifiedToken extends JwtPayload {
   /** `iat` as a Date. Compared against the user's `sessionsValidAfter`. */
   issuedAt: Date;
+  /**
+   * This token's own id, for revoking *one* session.
+   *
+   * `undefined` on a token minted before `jti` existed. Those cannot be
+   * individually revoked — they are still bounded by `sessionsValidAfter` and by
+   * their own 7-day expiry, and they age out on their own. Signing out on one is
+   * handled by the older, blunter mechanism; see `POST /auth/logout`.
+   */
+  jti?: string;
 }
+
+/**
+ * How long a session token lives, in milliseconds — the same value as
+ * `JWT_EXPIRES_IN`, in a form arithmetic can use.
+ *
+ * A revocation record only has to outlive the token it revokes: once the token
+ * expires on its own, the row is dead weight. See `pruneRevokedSessions`.
+ */
+export const JWT_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function signToken(payload: JwtPayload): string {
   return jwt.sign(payload, JWT_SECRET!, {
     expiresIn: JWT_EXPIRES_IN,
     issuer: JWT_ISSUER,
+    /**
+     * A per-token id, so one session can be revoked without ending the others.
+     *
+     * `sessionsValidAfter` is a cutoff: it revokes *everything* issued before an
+     * instant, which is right for a password reset and much too blunt for
+     * signing out one device. Without a `jti` there is nothing to name a single
+     * token by, so "sign out" on a borrowed phone had to be either a no-op or a
+     * sign-out everywhere.
+     */
+    jwtid: crypto.randomUUID(),
   });
 }
 
@@ -80,6 +108,8 @@ export function verifyToken(token: string): VerifiedToken {
     email: decoded.email as string,
     // `iat` is in seconds; Date wants milliseconds.
     issuedAt: new Date(decoded.iat * 1000),
+    // Absent on tokens minted before `jti` existed — see `VerifiedToken`.
+    jti: typeof decoded.jti === "string" ? decoded.jti : undefined,
   };
 }
 

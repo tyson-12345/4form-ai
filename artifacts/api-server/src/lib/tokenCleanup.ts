@@ -19,7 +19,7 @@
  */
 
 import { lt, and, isNotNull, or } from "drizzle-orm";
-import { db, passwordResetTokensTable } from "@workspace/db";
+import { db, passwordResetTokensTable, revokedSessionsTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { pruneDeletedAnalyses } from "../repositories/analysisRepository.js";
 
@@ -110,6 +110,41 @@ export async function pruneDeletedAnalysisRows(now = new Date()): Promise<number
   }
 }
 
+/**
+ * Remove revocations whose token has expired on its own.
+ *
+ * A row in `revoked_sessions` exists to refuse one token. Once that token would
+ * have been rejected anyway — its 7-day expiry has passed — the row answers a
+ * question nobody will ask again, and every authenticated request pays a
+ * fractionally larger join for it.
+ *
+ * No grace period, unlike the reset tokens above: there is no user-facing
+ * message that depends on distinguishing "signed out" from "expired", and both
+ * produce the same 401 by design.
+ */
+export async function pruneRevokedSessions(now = new Date()): Promise<number> {
+  try {
+    const deleted = await db
+      .delete(revokedSessionsTable)
+      .where(lt(revokedSessionsTable.expiresAt, now))
+      .returning({ jti: revokedSessionsTable.jti });
+
+    if (deleted.length > 0) {
+      logger.info(
+        { count: deleted.length, event: "revoked_sessions_pruned" },
+        "Pruned revocations for tokens that have expired anyway",
+      );
+    }
+    return deleted.length;
+  } catch (err) {
+    logger.error(
+      { err, event: "revoked_session_prune_failed" },
+      "Failed to prune revoked sessions",
+    );
+    return 0;
+  }
+}
+
 let timer: NodeJS.Timeout | undefined;
 
 /**
@@ -125,6 +160,7 @@ export function startResetTokenCleanup(): void {
   timer = setInterval(() => {
     void pruneResetTokens();
     void pruneDeletedAnalysisRows();
+    void pruneRevokedSessions();
   }, SWEEP_INTERVAL_MS);
 
   // Do not hold the event loop open — this must never delay a shutdown or keep

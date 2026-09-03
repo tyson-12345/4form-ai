@@ -3,9 +3,17 @@
  * migration, and reset-link minting.
  *
  * ── Why this is a module and not inline in the login route ──────────────────
- * Two endpoints now check a password: `POST /auth/login`, and the account-link
- * challenge at `POST /auth/oauth/link` where a user proves ownership of an
- * existing account before a provider identity is attached to it.
+ * Three endpoints check a password: `POST /auth/login`; the account-link
+ * challenge at `POST /auth/oauth/link`, where a user proves ownership of an
+ * existing account before a provider identity is attached to it; and
+ * `DELETE /profile/account`, where a user re-authenticates before erasing
+ * everything.
+ *
+ * The third one is the cautionary tale the paragraph below predicted. It was
+ * added later, called `verifyPassword` directly, and for as long as it did so
+ * it was an unthrottled password oracle reachable with nothing but a session
+ * token — no lockout, no counter, no delay — sitting beside a login route that
+ * was carefully all three. It now goes through here like the others.
  *
  * A second endpoint that checks passwords with its own copy of this logic is
  * how a rate limit gets bypassed. The copy starts identical, then one side
@@ -17,11 +25,12 @@
  * So there is one implementation, and both callers are thin.
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db, usersTable, passwordResetTokensTable } from "@workspace/db";
 
 import {
   dummyHash,
+  isLegacyAlgo,
   generateResetToken,
   hashPassword,
   needsRehash,
@@ -30,7 +39,7 @@ import {
 } from "./auth.js";
 import { logger } from "./logger.js";
 import { recordAlert } from "./alerting.js";
-import { MAX_FAILED_ATTEMPTS, LOCKOUT_MS, progressiveDelayMs, sleep } from "./rateLimit.js";
+import { MAX_FAILED_ATTEMPTS, LOCKOUT_MS, failureDelayMs, sleep } from "./rateLimit.js";
 import { deferEmail, sendEmail, accountLockedEmail } from "./mailer.js";
 
 /** The columns a password check needs. */
@@ -72,6 +81,26 @@ export async function attemptPasswordAuth(
   const algoToCheck = (user?.passwordAlgo ?? "bcrypt") as PasswordAlgo;
   const passwordValid = await verifyPassword(password, hashToCheck, algoToCheck);
 
+  /**
+   * Legacy hashes are fast, and that inverts the oracle the dummy hash closed.
+   *
+   * `dummyHash()` makes the "no such account" path cost a full cost-12 bcrypt.
+   * But `verifyPassword` takes the non-bcrypt arm for a row tagged
+   * `md5`/`sha1`/`sha256`/`plaintext` and returns in microseconds — so a failed
+   * login against one of those accounts came back *measurably faster* than one
+   * against an address that was never registered. The equalisation held for
+   * every account except the ones still on a legacy hash, and those are exactly
+   * the accounts worth finding.
+   *
+   * Burning an equivalent bcrypt afterwards costs nothing on the path that
+   * matters (there should be no legacy rows left; the migration script and
+   * migrate-on-login exist to see to that) and removes the tell while any
+   * remain. The result is discarded — this is spent time, not a check.
+   */
+  if (isLegacyAlgo(algoToCheck)) {
+    await verifyPassword(password, await dummyHash(), "bcrypt");
+  }
+
   if (!user || isLocked || !passwordValid) {
     if (user && !isLocked) {
       await registerFailure(user.id, user.email, user.failedLoginAttempts, ip);
@@ -80,12 +109,13 @@ export async function attemptPasswordAuth(
         { userId: user.id, ip, event: "login_while_locked" },
         "Login attempt on a locked account",
       );
-      // Match the delay a non-locked failure would incur so lockout is not
-      // detectable by response time.
-      await sleep(progressiveDelayMs(MAX_FAILED_ATTEMPTS));
+      // Same delay as every other failure — see `failureDelayMs`. A locked
+      // account must not be distinguishable from a wrong password, and neither
+      // must be distinguishable from an address that was never registered.
+      await sleep(failureDelayMs(ip));
     } else {
       logger.warn({ ip, event: "login_unknown_email" }, "Login attempt for unknown email");
-      await sleep(progressiveDelayMs(1));
+      await sleep(failureDelayMs(ip));
     }
     return { ok: false };
   }
@@ -124,19 +154,42 @@ async function registerFailure(
   currentAttempts: number,
   ip: string,
 ): Promise<void> {
-  const attempts = currentAttempts + 1;
-  const shouldLock = attempts >= MAX_FAILED_ATTEMPTS;
-  const lockedUntil = shouldLock ? new Date(Date.now() + LOCKOUT_MS) : null;
-
-  await db
+  /**
+   * The increment is computed by the database, not by us.
+   *
+   * `currentAttempts` was read before the ~250ms bcrypt comparison that
+   * precedes this call, so every attempt that starts inside that window reads
+   * the same value and, under the previous `set({ failedLoginAttempts:
+   * currentAttempts + 1 })`, wrote the same value. Ten concurrent guesses
+   * advanced the counter by one. The lockout was therefore not "five
+   * consecutive failures" but "five consecutive *serialised* failures", and an
+   * attacker willing to open connections in parallel never reached it.
+   *
+   * `failed_login_attempts + 1` evaluated inside the UPDATE is atomic per row,
+   * so N concurrent failures advance it by N. `locked_until` is set in the same
+   * statement, from the post-increment value, so the decision to lock is made
+   * against the count the database actually holds. The parameter is kept only
+   * for the log line.
+   */
+  const [row] = await db
     .update(usersTable)
     .set({
-      failedLoginAttempts: attempts,
+      failedLoginAttempts: sql`${usersTable.failedLoginAttempts} + 1`,
       lastFailedLoginAt: new Date(),
-      ...(shouldLock ? { lockedUntil } : {}),
+      lockedUntil: sql`CASE WHEN ${usersTable.failedLoginAttempts} + 1 >= ${MAX_FAILED_ATTEMPTS}
+        THEN now() + ${sql.raw(`interval '${Math.round(LOCKOUT_MS / 1000)} seconds'`)}
+        ELSE ${usersTable.lockedUntil} END`,
       updatedAt: new Date(),
     })
-    .where(eq(usersTable.id, userId));
+    .where(eq(usersTable.id, userId))
+    .returning({
+      attempts: usersTable.failedLoginAttempts,
+      lockedUntil: usersTable.lockedUntil,
+      notifiedAt: usersTable.lockoutNotifiedAt,
+    });
+
+  const attempts = row?.attempts ?? currentAttempts + 1;
+  const shouldLock = attempts >= MAX_FAILED_ATTEMPTS;
 
   if (shouldLock) {
     recordAlert("account_locked");
@@ -144,19 +197,7 @@ async function registerFailure(
       { userId, ip, attempts, event: "account_locked" },
       "Account locked after consecutive failed logins",
     );
-    // Notify out-of-band. The response to the caller is unchanged — only the
-    // account owner learns that a lockout happened.
-    //
-    // Deferred for the same reason as the reset mail: with retries a send can
-    // now take tens of seconds, and this sits inside a request. It is also the
-    // attempt that *transitions* an account into lockout, so awaiting delivery
-    // would make that one response measurably longer than the locked responses
-    // that follow it — a smaller tell than the reset route's, but the same
-    // kind, and free to remove.
-    deferEmail("account_locked", async () => {
-      const resetUrl = await createResetUrl(userId);
-      await sendEmail(accountLockedEmail(email, resetUrl, Math.round(LOCKOUT_MS / 60000)));
-    });
+    await notifyLockout(userId, email, row?.notifiedAt ?? null);
   } else {
     logger.warn(
       { userId, ip, attempts, event: "login_failed" },
@@ -164,7 +205,69 @@ async function registerFailure(
     );
   }
 
-  await sleep(progressiveDelayMs(attempts));
+  await sleep(failureDelayMs(ip));
+}
+
+/**
+ * How long a lockout notice suppresses the next one.
+ *
+ * `failedLoginAttempts` is never decayed, so once an account is past the
+ * threshold *every* subsequent failure satisfies `attempts >= MAX` and, before
+ * this existed, sent another lockout email. Four requests an hour kept an
+ * account permanently locked out of password login and turned our mail
+ * provider into an amplifier pointed at the victim's inbox — the only outbound
+ * mail path in the app with no per-account ceiling.
+ *
+ * One notice per lockout episode is the useful signal; the rest is noise the
+ * attacker chose to send.
+ */
+export const LOCKOUT_NOTICE_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Mail the account owner that their account is locked, at most once per
+ * cooldown window.
+ *
+ * The claim is written before the send, and only by a statement that also
+ * checks the previous value, so two concurrent lock transitions cannot both
+ * decide they are the one to send.
+ */
+async function notifyLockout(
+  userId: string,
+  email: string,
+  notifiedAt: Date | null,
+): Promise<void> {
+  const cutoff = new Date(Date.now() - LOCKOUT_NOTICE_COOLDOWN_MS);
+  if (notifiedAt && notifiedAt > cutoff) return;
+
+  const claimed = await db
+    .update(usersTable)
+    .set({ lockoutNotifiedAt: new Date() })
+    .where(
+      and(
+        eq(usersTable.id, userId),
+        or(
+          isNull(usersTable.lockoutNotifiedAt),
+          lt(usersTable.lockoutNotifiedAt, cutoff),
+        ),
+      ),
+    )
+    .returning({ id: usersTable.id });
+
+  if (claimed.length === 0) return;
+
+  // Notify out-of-band. The response to the caller is unchanged — only the
+  // account owner learns that a lockout happened.
+  //
+  // Deferred for the same reason as the reset mail: with retries a send can
+  // now take tens of seconds, and this sits inside a request. It is also the
+  // attempt that *transitions* an account into lockout, so awaiting delivery
+  // would make that one response measurably longer than the locked responses
+  // that follow it — a smaller tell than the reset route's, but the same
+  // kind, and free to remove.
+  deferEmail("account_locked", async () => {
+    const resetUrl = await createResetUrl(userId);
+    await sendEmail(accountLockedEmail(email, resetUrl, Math.round(LOCKOUT_MS / 60000)));
+  });
 }
 
 /**

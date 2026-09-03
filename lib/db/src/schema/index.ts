@@ -82,6 +82,17 @@ export const usersTable = pgTable("users", {
   lockedUntil: timestamp("locked_until", { withTimezone: true }),
   lastFailedLoginAt: timestamp("last_failed_login_at", { withTimezone: true }),
   /**
+   * When the account owner was last emailed that their account is locked.
+   *
+   * The counter is never decayed, so after the fifth failure *every* later
+   * failure re-satisfies the lock condition. Without this column each one sent
+   * another notice: a permanent password-login denial of service at four
+   * requests an hour, with our mail provider amplifying it into the victim's
+   * inbox. `notifyLockout` claims this column before sending, so concurrent
+   * lock transitions cannot both decide they are the one to mail.
+   */
+  lockoutNotifiedAt: timestamp("lockout_notified_at", { withTimezone: true }),
+  /**
    * Session cutoff. Any JWT issued at or before this instant is refused, even
    * though its signature is valid and it has not expired.
    *
@@ -136,6 +147,40 @@ export const passwordResetTokensTable = pgTable("password_reset_tokens", {
 });
 
 export type PasswordResetToken = typeof passwordResetTokensTable.$inferSelect;
+
+/**
+ * Sessions revoked individually, by token id.
+ *
+ * ── Why this is not just `users.sessions_valid_after` ───────────────────────
+ * That column is a cutoff: it refuses every token issued before an instant.
+ * Correct for a password reset, where the user means "whoever else is in here,
+ * get out" — and much too blunt for a sign-out, where they mean this device and
+ * not the tablet at home.
+ *
+ * Without a per-token id there was nothing to name one session by, so sign-out
+ * had to be either a no-op (which is what it was: the app deleted its copy and
+ * the credential stayed live for the rest of its seven days) or a sign-out
+ * everywhere. `signToken` now stamps a `jti`; a row here refuses exactly that
+ * token.
+ *
+ * A token minted before `jti` existed has none, so it cannot appear here. Those
+ * fall back to the cutoff and age out within a week.
+ */
+export const revokedSessionsTable = pgTable("revoked_sessions", {
+  /** The token's `jti` claim. */
+  jti: text("jti").primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => usersTable.id, { onDelete: "cascade" }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }).defaultNow().notNull(),
+  /**
+   * When the revoked token expires on its own. The prune key — a revocation
+   * that outlives its token is dead weight.
+   */
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+export type RevokedSession = typeof revokedSessionsTable.$inferSelect;
 
 // ─── Federated identities ───────────────────────────────────────────────────
 
@@ -320,6 +365,23 @@ export const analysesTable = pgTable("analyses", {
    * tracked well enough to score.
    */
   analysisMethod: text("analysis_method").notNull().default("pose-measured"),
+  /**
+   * Whether the coaching write-up behind this analysis exists.
+   *
+   * "ok" covers both "written" and "still being written"; the pipeline writes
+   * "unavailable" when the coach could not be reached and the athlete was left
+   * with measurements and no prose. The distinction is not cosmetic — it is
+   * what `countAnalysesSince` reads to keep half an analysis from spending a
+   * free user's monthly slot, the same rule that already spares them a clip we
+   * could not measure. Nothing retries a write-up, so "unavailable" is a
+   * terminal state, not a stage.
+   *
+   * NOT NULL with a default in both directions: existing rows become "ok"
+   * without a backfill, and the count's `<> 'unavailable'` predicate can never
+   * meet a NULL — which in SQL is not false, and would silently drop the row
+   * out of its own quota month.
+   */
+  narrativeStatus: text("narrative_status").notNull().default("ok"),
   /**
    * Set only when the measured movement contradicts the sport chosen for this
    * clip. Sport is picked per clip and cross-training is supported, so this is

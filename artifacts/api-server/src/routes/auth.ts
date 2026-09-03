@@ -29,9 +29,11 @@ import {
   athleteProfilesTable,
   subscriptionsTable,
   passwordResetTokensTable,
+  revokedSessionsTable,
 } from "@workspace/db";
 
-import { hashPassword, signToken, hashResetToken } from "../lib/auth.js";
+import { hashPassword, signToken, hashResetToken, JWT_LIFETIME_MS } from "../lib/auth.js";
+import { requestIdentity } from "../lib/requestIdentity.js";
 import {
   attemptPasswordAuth,
   completePasswordAuth,
@@ -49,6 +51,7 @@ import {
   safeText,
 } from "../lib/validate.js";
 import { clientIp } from "../lib/rateLimit.js";
+import { resolveEffectiveTier } from "../services/entitlementService.js";
 import { deferEmail, sendEmail, passwordResetEmail } from "../lib/mailer.js";
 
 const router = Router();
@@ -328,11 +331,95 @@ router.post("/auth/reset-password", async (req, res) => {
   res.json({ message: "Your password has been reset. You can now sign in." });
 });
 
+// ─── POST /api/auth/logout ───────────────────────────────────────────────────
+
+/**
+ * Sign out.
+ *
+ * ── Why this endpoint has to exist ──────────────────────────────────────────
+ * Signing out was a purely client-side act: the app deleted its copy of the JWT
+ * and nothing else. The token itself stayed valid for the remainder of its 7
+ * days, and `sessionsValidAfter` — the one mechanism that could call a token
+ * back — had exactly one writer, the password-reset handler.
+ *
+ * So a user who signed out on a borrowed or stolen phone had done nothing at
+ * all to the live credential still sitting in that device's storage, and the
+ * only way to invalidate it was to reset a password they had no reason to think
+ * was compromised.
+ *
+ * ── This device, not every device ───────────────────────────────────────────
+ * A token now carries a `jti`, and a row in `revoked_sessions` refuses exactly
+ * that token — so signing out on a phone does not sign the same person out of
+ * their tablet. `sessionsValidAfter` remains the blunt instrument, reserved for
+ * a password reset, where ending everything is the point.
+ *
+ * A token minted before `jti` existed has nothing to name it by. Rather than
+ * letting sign-out silently do nothing for those, it falls back to the cutoff —
+ * blunter than the user asked for, but a sign-out that does not sign you out is
+ * the failure this endpoint exists to fix. Those tokens age out within a week
+ * and the fallback goes with them.
+ *
+ * Answers 204 whatever happens. A sign-out that reports failure leaves the user
+ * with a button that appears not to work, and the client has already discarded
+ * its token by the time it would read the status.
+ */
+router.post("/auth/logout", authenticate, async (req: AuthRequest, res) => {
+  try {
+    const identity = requestIdentity(req);
+
+    if (identity?.jti) {
+      // The revocation only has to outlive the token, so it expires with it.
+      await db
+        .insert(revokedSessionsTable)
+        .values({
+          jti: identity.jti,
+          userId: req.userId!,
+          expiresAt: new Date(identity.issuedAt.getTime() + JWT_LIFETIME_MS),
+        })
+        // Signing out twice on the same token is not an error.
+        .onConflictDoNothing({ target: revokedSessionsTable.jti });
+
+      logger.info(
+        { userId: req.userId, event: "logout" },
+        "Session revoked on sign out",
+      );
+    } else {
+      await db
+        .update(usersTable)
+        .set({ sessionsValidAfter: new Date(), updatedAt: new Date() })
+        .where(eq(usersTable.id, req.userId!));
+
+      logger.info(
+        { userId: req.userId, event: "logout_legacy_token" },
+        "Signed out a token with no jti; revoked every session for the account",
+      );
+    }
+  } catch (err) {
+    // Logged, not surfaced: see above.
+    logger.error({ err, userId: req.userId, event: "logout_failed" }, "Could not revoke session");
+  }
+
+  res.status(204).end();
+});
+
 // ─── GET /api/auth/me ────────────────────────────────────────────────────────
 
 router.get("/auth/me", authenticate, async (req: AuthRequest, res) => {
   const [user] = await db
-    .select({ id: usersTable.id, email: usersTable.email })
+    .select({
+      id: usersTable.id,
+      email: usersTable.email,
+      /**
+       * Selected only to derive `hasPassword` below — never returned.
+       *
+       * The client needs to know which proof it can offer when re-authenticating
+       * for account deletion. It used to assume "password", which meant an
+       * Apple/Google-only account (password_hash IS NULL) could never satisfy
+       * the check and could never delete itself in-app — something both stores
+       * require to be possible.
+       */
+      passwordHash: usersTable.passwordHash,
+    })
     .from(usersTable)
     .where(eq(usersTable.id, req.userId!))
     .limit(1);
@@ -356,7 +443,27 @@ router.get("/auth/me", authenticate, async (req: AuthRequest, res) => {
     .where(eq(subscriptionsTable.userId, user.id))
     .limit(1);
 
-  res.json({ user, profile, subscription });
+  /**
+   * `hasPassword` says which re-authentication proof the client should ask for;
+   * the hash itself never leaves the server.
+   *
+   * `subscription.tier` is replaced with the *effective* tier. The stored row
+   * keeps working forever on its own — nothing downgrades it when a period
+   * ends — so a lapsed subscriber was shown "PRO" on every screen while the
+   * server, which calls `resolveEffectiveTier` on each entitlement check,
+   * refused them the features and hid the purchase button they needed to fix
+   * it. The one endpoint that resolved it correctly (`/subscriptions/current`)
+   * is not the one the app reads.
+   */
+  const { passwordHash, ...safeUser } = user;
+
+  res.json({
+    user: { ...safeUser, hasPassword: passwordHash !== null },
+    profile,
+    subscription: subscription
+      ? { ...subscription, tier: resolveEffectiveTier(subscription) }
+      : null,
+  });
 });
 
 export default router;

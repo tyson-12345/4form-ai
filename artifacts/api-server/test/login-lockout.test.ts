@@ -13,6 +13,17 @@ import bcrypt from "bcryptjs";
 
 // ─── In-memory database fake ─────────────────────────────────────────────────
 
+/**
+ * The lockout policy, restated here rather than imported.
+ *
+ * The fake has to evaluate the same `CASE` the real UPDATE does (see
+ * `applyUpdate`), and importing `lib/rateLimit.js` at module scope would pull a
+ * chunk of the app in ahead of `vi.mock`. These are asserted against the real
+ * behaviour by the tests below, so a drift in either direction fails loudly.
+ */
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_MS = 15 * 60 * 1000;
+
 interface UserRow {
   id: string;
   email: string;
@@ -21,6 +32,7 @@ interface UserRow {
   failedLoginAttempts: number;
   lockedUntil: Date | null;
   lastFailedLoginAt: Date | null;
+  lockoutNotifiedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -57,6 +69,53 @@ let currentEmail = "";
 /** Captures the values passed to the most recent `.set()` so we can apply them. */
 let pendingUpdate: Partial<UserRow> | null = null;
 
+/**
+ * Apply a `.set()` payload to a row, evaluating the SQL expressions the auth
+ * path relies on.
+ *
+ * ── Why the fake has to understand these ────────────────────────────────────
+ * `registerFailure` no longer computes the new failure count in JavaScript. It
+ * did, from a value read *before* the ~250ms bcrypt comparison, which meant
+ * every attempt inside that window read and wrote the same number and N
+ * concurrent guesses advanced the counter by one — the "5 consecutive failures"
+ * lockout admitted 5 x concurrency. The increment is now evaluated by the
+ * database inside the UPDATE, and `locked_until` is decided in the same
+ * statement from the post-increment value.
+ *
+ * A fake that stores drizzle's `SQL` object verbatim would record
+ * `failedLoginAttempts = SQL{...}` and no lockout would ever trigger. Modelling
+ * the two expressions is what makes this fake a fake of the current database
+ * behaviour rather than of the previous code.
+ */
+function applyUpdate(user: UserRow, values: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(values)) {
+    if (!isSqlExpression(value)) {
+      (user as Record<string, unknown>)[key] = value;
+      continue;
+    }
+
+    if (key === "failedLoginAttempts") {
+      // `failed_login_attempts + 1`
+      user.failedLoginAttempts += 1;
+    } else if (key === "lockedUntil") {
+      // `CASE WHEN failed_login_attempts + 1 >= MAX THEN now() + interval … ELSE locked_until END`
+      // Evaluated after the increment above, matching the statement's own
+      // post-increment comparison.
+      user.lockedUntil =
+        user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS
+          ? new Date(Date.now() + LOCKOUT_MS)
+          : user.lockedUntil;
+    } else {
+      throw new Error(`login-lockout fake: unmodelled SQL expression for column "${key}"`);
+    }
+  }
+}
+
+/** Drizzle's `sql` template returns an `SQL` instance carrying `queryChunks`. */
+function isSqlExpression(value: unknown): boolean {
+  return typeof value === "object" && value !== null && "queryChunks" in value;
+}
+
 const db = {
   select: (_projection?: unknown) =>
     chain(() => {
@@ -76,11 +135,15 @@ const db = {
   update: () => {
     const self = chain(() => {
       const user = state.users.find((u) => u.email === currentEmail);
-      if (user && pendingUpdate) Object.assign(user, pendingUpdate);
+      if (user && pendingUpdate) applyUpdate(user, pendingUpdate);
       pendingUpdate = null;
-      return [];
+      // `.returning()` callers read the post-update row — `registerFailure`
+      // decides whether to lock from the value the database hands back, not
+      // from the one it read before bcrypt. Returning it unconditionally is
+      // harmless for the callers that ignore it.
+      return user ? [user] : [];
     });
-    self.set = (values: Partial<UserRow>) => {
+    self.set = (values: Record<string, unknown>) => {
       pendingUpdate = values;
       return self;
     };
@@ -93,7 +156,13 @@ const db = {
 vi.mock("@workspace/db", () => ({
   db,
   pool: { end: async () => {} },
-  usersTable: { email: "email", id: "id" },
+  usersTable: {
+    email: "email",
+    id: "id",
+    failedLoginAttempts: "failed_login_attempts",
+    lockedUntil: "locked_until",
+    lockoutNotifiedAt: "lockout_notified_at",
+  },
   athleteProfilesTable: { userId: "user_id", name: "name" },
   subscriptionsTable: { userId: "user_id" },
   passwordResetTokensTable: { id: "id", tokenHash: "token_hash", userId: "user_id", expiresAt: "expires_at", usedAt: "used_at" },
@@ -147,6 +216,7 @@ async function seedUser(): Promise<void> {
       failedLoginAttempts: 0,
       lockedUntil: null,
       lastFailedLoginAt: null,
+      lockoutNotifiedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     },
@@ -297,12 +367,25 @@ describe("progressive delay", () => {
     };
 
     const first = await timeOne();
-    const second = await timeOne();
+    await timeOne();
     const third = await timeOne();
 
-    // 250ms, 500ms, 1000ms nominal — assert the trend, not exact timings.
-    expect(second).toBeGreaterThan(first);
-    expect(third).toBeGreaterThan(second);
+    /**
+     * Compares the first failure with the *third*, not each with its neighbour.
+     *
+     * Nominal delays are 250ms, 500ms and 1000ms, so adjacent samples differ by
+     * 250ms — and every one of them also carries a bcrypt comparison whose own
+     * cost varies by more than that when the machine is busy. `second > first`
+     * therefore failed with 1085 against 1122 on a loaded runner, which says
+     * nothing about the delay and everything about scheduling noise.
+     *
+     * First to third is a 750ms nominal gap. A 400ms floor survives the jitter
+     * and still fails outright if the escalation is removed, which is the only
+     * regression worth catching here. The exact curve is pinned deterministically
+     * by the unit tests on `failureDelayMs` in test/failure-delay.test.ts; this
+     * one exists to prove it is actually wired into the request path.
+     */
+    expect(third - first).toBeGreaterThan(400);
   });
 
   it("does not delay a successful sign-in", async () => {
@@ -325,7 +408,14 @@ describe("rate limiting", () => {
       }
     }
     expect(sawRateLimit).toBe(true);
-  }, 30000);
+    /**
+     * 90s, not 30. Every one of these twelve attempts deliberately sleeps — the
+     * per-origin failure delay escalates to its 1.5s cap — and each also runs a
+     * real bcrypt. The wall-clock cost is the feature working, so a timeout
+     * tuned to the old flat 250ms delay was measuring the wrong thing and
+     * failing on a busy machine while the limiter it tests was fine.
+     */
+  }, 90_000);
 });
 
 describe("POST /api/auth/forgot-password", () => {
@@ -382,10 +472,24 @@ describe("POST /api/auth/forgot-password", () => {
         .send({ email: "nobody@example.com" });
       const unknownMs = Date.now() - startUnknown;
 
-      // Generous: the assertion is "the send is not on the response path at
-      // all", not "the two are within a few microseconds".
-      expect(knownMs).toBeLessThan(200);
-      expect(Math.abs(knownMs - unknownMs)).toBeLessThan(150);
+      /**
+       * Both thresholds are derived from the stubbed provider delay rather than
+       * being absolute wall-clock numbers.
+       *
+       * They used to be `< 200` and `< 150`. The claim being made is "the 400ms
+       * send is not on the response path at all" — and a machine busy enough to
+       * make an empty Express round trip take 344ms (which has happened here)
+       * fails a 200ms floor while that claim is still perfectly true. That is a
+       * test measuring the CI runner, not the code.
+       *
+       * Expressed against `mailDelayMs`, a response that awaited the send is
+       * necessarily >= 400ms and fails; one that did not has to be pathologically
+       * slow to reach 300ms; and the gap between the two branches has to grow to
+       * half the send before it trips. The regression this exists to catch moves
+       * these numbers by 400ms, not by 50.
+       */
+      expect(knownMs).toBeLessThan(mailDelayMs * 0.75);
+      expect(Math.abs(knownMs - unknownMs)).toBeLessThan(mailDelayMs / 2);
 
       // And the mail really was sent, just afterwards — otherwise this would
       // also pass if the feature had simply been deleted.

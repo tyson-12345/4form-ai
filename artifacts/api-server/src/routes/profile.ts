@@ -8,13 +8,18 @@ import { Router } from "express";
 import { z } from "zod";
 import { authenticate, type AuthRequest } from "../middlewares/authenticate.js";
 import { parseOrReject, safeText } from "../lib/validate.js";
-import { verifyPassword, type PasswordAlgo } from "../lib/auth.js";
+import {
+  attemptPasswordAuth,
+  completePasswordAuth,
+  type PasswordAuthUser,
+} from "../lib/passwordAuth.js";
 import {
   verifyIdentityToken,
   IDENTITY_PROVIDERS,
   isIdentityProvider,
 } from "../lib/oauthProviders.js";
 import { logger } from "../lib/logger.js";
+import { resolveEffectiveTier } from "../services/entitlementService.js";
 import { clientIp } from "../lib/rateLimit.js";
 import {
   findProfileByUserId,
@@ -47,7 +52,16 @@ router.get("/profile", authenticate, async (req: AuthRequest, res) => {
   }
 
   const subscription = await findSubscriptionByUserId(req.userId!);
-  res.json({ profile, subscription });
+  // Effective, not stored — see the note on GET /auth/me. Nothing downgrades
+  // the row when a period ends, so returning `subscription.tier` raw shows a
+  // lapsed subscriber "PRO" on a screen whose purchase button is hidden because
+  // the app believes they already have it.
+  res.json({
+    profile,
+    subscription: subscription
+      ? { ...subscription, tier: resolveEffectiveTier(subscription) }
+      : null,
+  });
 });
 
 // ─── PATCH /api/profile ──────────────────────────────────────────────────────
@@ -108,7 +122,7 @@ router.delete("/profile/account", authenticate, async (req: AuthRequest, res) =>
     return;
   }
 
-  const valid = await reauthenticate(user, data, req.userId!);
+  const valid = await reauthenticate(user, data, req.userId!, clientIp(req));
 
   if (!valid) {
     logger.warn(
@@ -138,12 +152,33 @@ router.delete("/profile/account", authenticate, async (req: AuthRequest, res) =>
  * this one" all mean the same thing to the caller.
  */
 async function reauthenticate(
-  user: { passwordHash: string | null; passwordAlgo: string },
+  user: PasswordAuthUser,
   data: { password?: string; provider?: string; identityToken?: string },
   userId: string,
+  ip: string,
 ): Promise<boolean> {
   if (user.passwordHash !== null && data.password) {
-    return verifyPassword(data.password, user.passwordHash, user.passwordAlgo as PasswordAlgo);
+    /**
+     * Goes through the shared path rather than calling `verifyPassword`
+     * directly.
+     *
+     * This endpoint checks a password, which makes it a credential endpoint,
+     * which makes it a guessing target — and it is reachable with nothing but a
+     * session token, which is exactly what an attacker holding a stolen phone
+     * or a leaked JWT has. Calling `verifyPassword` here (what this did until
+     * now) skipped every control that `/auth/login` has: no `lockedUntil`
+     * check, no failure counter, no progressive delay, no dummy-hash timing
+     * equalisation. The account could be brute-forced here at the full rate of
+     * the catch-all limiter while the login route sat locked after five tries.
+     *
+     * That is the precise failure the header comment on lib/passwordAuth.ts
+     * warns about. There is one password-checking implementation; this is the
+     * third caller, and like the other two it is thin.
+     */
+    const attempt = await attemptPasswordAuth(user, data.password, ip);
+    if (!attempt.ok) return false;
+    await completePasswordAuth(attempt.user, data.password);
+    return true;
   }
 
   if (data.identityToken && isIdentityProvider(data.provider)) {

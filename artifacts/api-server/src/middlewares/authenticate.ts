@@ -1,7 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
-import { eq } from "drizzle-orm";
-import { db, usersTable } from "@workspace/db";
+import { eq, sql } from "drizzle-orm";
+import { db, usersTable, revokedSessionsTable } from "@workspace/db";
 import { verifyToken } from "../lib/auth.js";
+import { requestIdentity } from "../lib/requestIdentity.js";
 import { logger } from "../lib/logger.js";
 
 export interface AuthRequest extends Request {
@@ -61,29 +62,62 @@ export async function authenticate(
     return;
   }
 
-  let payload;
-  try {
-    payload = verifyToken(token);
-  } catch (err) {
+  /**
+   * Reuses the verification the account-keyed rate limiters already did.
+   *
+   * Those run above the router, so on an authenticated route the signature has
+   * been checked before this middleware is reached. `requestIdentity` memoises
+   * the result on the request; without it every such request would verify its
+   * own token twice. It returns `null` for every failure without distinguishing
+   * them, which is what this route wants anyway — the reason is logged, and the
+   * caller is told nothing beyond `AUTH_REQUIRED`.
+   */
+  const payload = requestIdentity(req);
+  if (!payload) {
+    // Re-run the verification purely to log *why*. Cheap, and only on the
+    // failure path.
+    let reason = "unknown";
+    try {
+      verifyToken(token);
+    } catch (err) {
+      reason = err instanceof Error ? err.message : "unknown";
+    }
     // Log the reason (expired vs malformed vs bad signature) but never the token.
     logger.warn(
-      {
-        path: req.path,
-        reason: err instanceof Error ? err.message : "unknown",
-        event: "auth_token_rejected",
-      },
+      { path: req.path, reason, event: "auth_token_rejected" },
       "Rejected bearer token",
     );
     res.status(401).json({ error: AUTH_REQUIRED });
     return;
   }
 
+  /**
+   * One round trip answers both revocation questions.
+   *
+   * The cutoff (`sessions_valid_after`) lives on the user row; the per-session
+   * revocation lives in `revoked_sessions`, keyed by this token's own `jti`. A
+   * second query for the second question would double the per-request cost of
+   * being authenticated, so the join asks both at once — and the join key is
+   * this token's id, so it matches at most one row.
+   *
+   * `payload.jti` is undefined on a token minted before `jti` existed. Joining
+   * on a NULL matches nothing, which is the correct answer for those: they
+   * cannot be individually revoked, only cut off, and the cutoff is checked
+   * below regardless.
+   */
   const [user] = await db
     .select({
       id: usersTable.id,
       sessionsValidAfter: usersTable.sessionsValidAfter,
+      revokedAt: revokedSessionsTable.revokedAt,
     })
     .from(usersTable)
+    .leftJoin(
+      revokedSessionsTable,
+      payload.jti
+        ? eq(revokedSessionsTable.jti, payload.jti)
+        : sql`false`,
+    )
     .where(eq(usersTable.id, payload.userId))
     .limit(1);
 
@@ -91,6 +125,15 @@ export async function authenticate(
     logger.warn(
       { path: req.path, event: "auth_user_gone" },
       "Valid token for a user that no longer exists",
+    );
+    res.status(401).json({ error: AUTH_REQUIRED });
+    return;
+  }
+
+  if (user.revokedAt) {
+    logger.warn(
+      { userId: payload.userId, path: req.path, event: "auth_session_signed_out" },
+      "Rejected a token that was signed out",
     );
     res.status(401).json({ error: AUTH_REQUIRED });
     return;

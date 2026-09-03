@@ -18,13 +18,22 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 interface FakeUser {
   id: string;
   sessionsValidAfter: Date | null;
+  /**
+   * What the left join contributes.
+   *
+   * `authenticate` selects `revokedSessionsTable.revokedAt` alongside the user
+   * columns, so a signed-out token comes back as one row with this populated and
+   * a live one as the same row with it null. Modelling it as a field on the fake
+   * user is the shape the real query actually returns.
+   */
+  revokedAt: Date | null;
 }
 
 const state: { user: FakeUser | null } = { user: null };
 
 function chain(resolve: () => unknown[]) {
   const self: Record<string, unknown> = {};
-  for (const method of ["from", "where", "limit"]) {
+  for (const method of ["from", "where", "limit", "leftJoin"]) {
     self[method] = () => self;
   }
   self.then = (onFulfilled: (v: unknown[]) => unknown, onRejected?: (e: unknown) => unknown) =>
@@ -35,9 +44,14 @@ function chain(resolve: () => unknown[]) {
 vi.mock("@workspace/db", () => ({
   db: { select: () => chain(() => (state.user ? [state.user] : [])) },
   usersTable: { id: "id", sessionsValidAfter: "sessions_valid_after" },
+  // `authenticate` left-joins the per-session denylist onto the user row so one
+  // round trip answers both "was this account cut off?" and "was this token
+  // signed out?". The join is a no-op for these cases — nothing here is signed
+  // out — but the table has to exist for the module to import.
+  revokedSessionsTable: { jti: "jti", revokedAt: "revoked_at" },
 }));
 
-vi.mock("drizzle-orm", () => ({ eq: () => ({}) }));
+vi.mock("drizzle-orm", () => ({ eq: () => ({}), sql: () => ({}) }));
 
 const { authenticate } = await import("../src/middlewares/authenticate.js");
 const { signToken } = await import("../src/lib/auth.js");
@@ -83,7 +97,7 @@ function tokenFor(userId = USER_ID): string {
 }
 
 beforeEach(() => {
-  state.user = { id: USER_ID, sessionsValidAfter: null };
+  state.user = { id: USER_ID, sessionsValidAfter: null, revokedAt: null };
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -133,7 +147,7 @@ describe("authenticate — session cutoff", () => {
     const token = tokenFor();
     const issuedAtSecond = new Date(Math.floor(Date.now() / 1000) * 1000);
 
-    state.user = { id: USER_ID, sessionsValidAfter: issuedAtSecond };
+    state.user = { id: USER_ID, sessionsValidAfter: issuedAtSecond, revokedAt: null };
 
     const result = await run(token);
     expect(result.nextCalled).toBe(false);
@@ -160,5 +174,53 @@ describe("authenticate — deleted account", () => {
     const result = await run(tokenFor());
     expect(result.nextCalled).toBe(false);
     expect(result.status).toBe(401);
+  });
+});
+
+describe("per-session sign-out", () => {
+  /**
+   * The regression: signing out used to delete only the device's copy of the
+   * token, leaving a live seven-day credential on a phone the user had just
+   * handed back. `POST /auth/logout` now lists the token's own `jti`, and this
+   * is the middleware half — the listed token is refused while every other
+   * session for the same account keeps working.
+   */
+  it("rejects a token whose session was signed out", async () => {
+    state.user = { id: USER_ID, sessionsValidAfter: null, revokedAt: new Date() };
+    const result = await run(tokenFor());
+    expect(result.nextCalled).toBe(false);
+    expect(result.status).toBe(401);
+  });
+
+  it("does not say a token was signed out rather than merely invalid", async () => {
+    state.user = { id: USER_ID, sessionsValidAfter: null, revokedAt: new Date() };
+    const signedOut = await run(tokenFor());
+
+    state.user = { id: USER_ID, sessionsValidAfter: null, revokedAt: null };
+    const garbage = await run("not-a-token");
+
+    // Distinguishing them would tell a token holder whether the account owner
+    // has noticed them and signed out.
+    expect(signedOut.body).toEqual(garbage.body);
+  });
+
+  it("admits a token that was not signed out", async () => {
+    state.user = { id: USER_ID, sessionsValidAfter: null, revokedAt: null };
+    const result = await run(tokenFor());
+    expect(result.nextCalled).toBe(true);
+    expect(result.req.userId).toBe(USER_ID);
+  });
+
+  it("stamps every token with a jti, so any session can be named", () => {
+    const a = tokenFor();
+    const b = tokenFor();
+
+    const jtiOf = (t: string) =>
+      (JSON.parse(Buffer.from(t.split(".")[1]!, "base64url").toString()) as { jti?: string }).jti;
+
+    expect(jtiOf(a)).toBeTruthy();
+    // Two sessions for the same account must be separately revocable, which is
+    // the whole point — a shared id would make signing out of one sign out both.
+    expect(jtiOf(a)).not.toBe(jtiOf(b));
   });
 });
