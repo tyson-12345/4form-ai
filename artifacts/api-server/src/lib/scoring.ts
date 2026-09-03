@@ -63,6 +63,22 @@ export type JointSeries = Partial<Record<JointKey, (number | null)[]>>;
  * Classification zones for one joint kind, in degrees. A frame is "risk" at or
  * below `loRisk` / at or above `hiRisk`, "caution" at or below `loWarn` / at or
  * above `hiWarn`. `-1` disables the low side, `999` the high side.
+ *
+ * ── Why these are "bands" and never "safe" ──────────────────────────────────
+ * A zone is a sport-typical joint-angle range and nothing more. Calling the
+ * inside of one "safe" upgrades a geometry reading into a medical-adjacent
+ * claim — that staying inside will not hurt you, and that leaving it will —
+ * which is precisely the claim this app declines to make everywhere else (every
+ * coaching surface carries "Not a medical assessment or an injury prediction").
+ *
+ * So the vocabulary, everywhere a person can reach it: a reading sits inside a
+ * *band*, or it is *outside the band*. That covers rendered strings, the
+ * fallback finding copy, and the model prompt in lib/claude.ts — the prompt
+ * counts, because the model reuses its own prompt's words in the coaching text
+ * the athlete then reads.
+ *
+ * The `safeMin`/`safeMax` fields on `RiskFinding` are the sole holdout, for a
+ * wire-compatibility reason spelled out there.
  */
 export interface JointZones {
   loRisk: number;
@@ -165,11 +181,11 @@ export function isScorable(metrics: PoseMetrics): boolean {
 }
 
 /**
- * Technique — the share of tracked time spent outside safe joint ranges.
+ * Technique — the share of tracked time spent outside the sport's joint bands.
  *
  * A frame in the "risk" band costs twice what a "caution" frame costs, so a
- * brief excursion into a dangerous position outweighs a long mildly-suboptimal
- * one. 100 means no frame left the safe band.
+ * brief excursion into an extreme position outweighs a long mildly-suboptimal
+ * one. 100 means no frame left its band.
  */
 export function techniqueScore(metrics: PoseMetrics): number | null {
   const tracked = metrics.frameCount;
@@ -725,9 +741,16 @@ export interface RiskFinding {
   observedMin: number;
   observedMax: number;
   /**
-   * The caution boundaries the frames were classified against — the "safe
-   * band" a finding is read against in the UI. `null` on a side the profile
-   * leaves unflagged (an open-ended band has no boundary to print).
+   * The caution boundaries the frames were classified against — the band a
+   * finding is read against in the UI. `null` on a side the profile leaves
+   * unflagged (an open-ended band has no boundary to print).
+   *
+   * These two keep the `safe` prefix while nothing the athlete reads does,
+   * because they are published wire fields: renaming them is a breaking change
+   * that has to land in the OpenAPI spec, the generated client and both sides
+   * of the app in one move. A stale internal name costs nothing; a half-renamed
+   * response field costs a broken client. See `JointZones` for the vocabulary
+   * decision itself.
    */
   safeMin: number | null;
   safeMax: number | null;
@@ -749,7 +772,10 @@ export function zonesForMetrics(metrics: PoseMetrics): RiskZones {
   return metrics.riskProfile?.zones ?? LEGACY_ZONES;
 }
 
-/** Display boundaries of a zone set: null on a side with no flags. */
+/**
+ * Display boundaries of a zone set: null on a side with no flags. Named after
+ * the wire fields it fills, not after the vocabulary — see `RiskFinding`.
+ */
 export function safeBandOf(zones: JointZones): { safeMin: number | null; safeMax: number | null } {
   return {
     safeMin: zones.loWarn >= 0 ? zones.loWarn : null,

@@ -246,6 +246,16 @@ export default function CompleteSignupScreen() {
             </Text>
             . You must be at least 13 years old.
           </Text>
+
+          {/* And the same medical disclaimer, for the same reason. This is the
+              signup every Apple and Google user reaches, and it was the only
+              one of the two that created an account without ever saying it —
+              so the mitigation docs/LEGAL-RISK.md records as "above the fold,
+              before the account exists" held on one path out of two. */}
+          <Text style={s.legal}>
+            4Form AI measures how you move. It is not medical advice and does not diagnose
+            injuries. See a professional about pain or injury.
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>

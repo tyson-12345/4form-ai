@@ -1,5 +1,5 @@
 /**
- * How often a joint sat outside its safe range, as a word.
+ * How often a joint sat outside its band, as a word.
  *
  * ── Why words instead of the angle range ────────────────────────────────────
  * The analysis screen used to stamp each flag with the raw measurement

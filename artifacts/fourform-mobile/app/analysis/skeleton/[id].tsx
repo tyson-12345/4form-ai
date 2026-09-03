@@ -8,7 +8,7 @@
  * writes to the server.
  *
  * ── What Caliper changes here ───────────────────────────────────────────────
- *  - Every live reading sits on a micro band axis, against the safe band for
+ *  - Every live reading sits on a micro band axis, against the band for
  *    the *athlete's sport* — the same zones the tracker classifies with, read
  *    from the same module, so the tile and the overlay cannot disagree.
  *  - Peak-position cards carry the OUTSIDE BAND / CAUTION chip and the peak
@@ -604,8 +604,8 @@ export default function SkeletonScreen() {
               )}
               <Text style={[T.bodySmall, { marginTop: 12, fontStyle: "italic" }]}>
                 Measured joint positions from your video, read against bands for your sport.
-                Not a medical assessment or an injury prediction. See a coach or physio for
-                pain that persists.
+                Not a medical assessment or an injury prediction. See a professional about pain
+                or injury.
               </Text>
             </View>
           )}

@@ -401,9 +401,14 @@ export function jointKind(key: string): keyof RiskZones {
 }
 
 /**
- * The safe band implied by a set of zones, for display: `[low, high]`, either
- * end `null` when that side is unflagged. `null` entirely when the joint has
- * no flags at all — an unflagged joint has no band to show.
+ * The band implied by a set of zones, for display: `[low, high]`, either end
+ * `null` when that side is unflagged. `null` entirely when the joint has no
+ * flags at all — an unflagged joint has no band to show.
+ *
+ * Nothing the athlete reads calls a band "safe" — that would be a medical claim
+ * about a joint-angle reading (the reasoning lives on `JointZones` in the
+ * server's lib/scoring.ts). The function name survives only because the
+ * skeleton overlay imports it by this name; it prints no word of its own.
  */
 export function safeBand(zones: JointZones): { low: number | null; high: number | null } | null {
   const low = zones.loWarn >= 0 ? zones.loWarn : null;

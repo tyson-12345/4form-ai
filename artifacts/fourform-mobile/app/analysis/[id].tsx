@@ -632,7 +632,6 @@ export default function AnalysisDetailScreen() {
             ))}
             <Text style={[T.bodySmall, { marginTop: 12, fontStyle: "italic" }]}>
               Measured joint positions from your video, read against bands for your sport.
-              Not a medical assessment or an injury prediction.
             </Text>
           </Entering>
         )}
@@ -712,6 +711,20 @@ export default function AnalysisDetailScreen() {
             ))}
           </View>
         )}
+
+        {/* ── Not a medical assessment ──
+            This sentence used to live inside the findings block, which meant a
+            clip that produced no flags rendered a summary, a full DRILLS list
+            and a cobalt next action with no disclaimer anywhere on the screen —
+            on the one screen that prescribes exercise. It belongs with the
+            coaching, not with the flags, so it renders whenever the screen
+            does. Last in the scroll, covering everything above it. */}
+        <View style={s.section}>
+          <Text style={[T.bodySmall, { fontStyle: "italic" }]}>
+            Not a medical assessment or an injury prediction. See a professional about pain
+            or injury.
+          </Text>
+        </View>
       </ScrollView>
 
       {/* ── The one next action ── */}
@@ -830,7 +843,7 @@ function SubScoreTile({
 
 /**
  * One finding as an evidence card: how often it happened, which joint, and the
- * observed range drawn against the sport's safe band — the claim and its
+ * observed range drawn against the sport's band — the claim and its
  * measurement on one axis. Prose readouts used to carry this alone; the card
  * makes the evidence visible without the athlete holding numbers in their head.
  */
@@ -859,6 +872,13 @@ function FindingCard({ risk }: { risk: RiskRecord }) {
 
       {hasRange && (
         <>
+          {/*
+            The caption says BAND, never SAFE BAND: the numbers are a
+            sport-typical angle range, and calling the inside of it "safe" is a
+            medical claim this app does not make (see JointZones in the server's
+            lib/scoring.ts). `risk.safeMin`/`safeMax` keep their names because
+            they are wire fields; the words beside them do not.
+          */}
           <RangeRuler
             observedMin={risk.observedMin!}
             observedMax={risk.observedMax!}
@@ -869,11 +889,11 @@ function FindingCard({ risk }: { risk: RiskRecord }) {
           <View style={s.findingAxis}>
             <Text style={T.measuredSmall}>
               {risk.safeMin != null && risk.safeMax != null
-                ? `SAFE BAND ${Math.round(risk.safeMin)}–${Math.round(risk.safeMax)}°`
+                ? `BAND ${Math.round(risk.safeMin)}–${Math.round(risk.safeMax)}°`
                 : risk.safeMax != null
-                  ? `SAFE UP TO ${Math.round(risk.safeMax)}°`
+                  ? `UP TO ${Math.round(risk.safeMax)}°`
                   : risk.safeMin != null
-                    ? `SAFE FROM ${Math.round(risk.safeMin)}°`
+                    ? `FROM ${Math.round(risk.safeMin)}°`
                     : hasBand
                       ? ""
                       : "NO BAND FOR THIS SPORT"}

@@ -90,7 +90,21 @@ const NarrativeSchema = z.object({
         drill: z.string().max(400).describe("A named drill with sets, reps, and a coaching cue."),
       }),
     )
-    .min(1)
+    /**
+     * Zero tips is a valid answer.
+     *
+     * This was `.min(1)`, which meant the schema *required* a drill with sets
+     * and reps on every write-up — including one where the prompt had just been
+     * told the athlete's knee is currently injured. A hard rule saying "do not
+     * prescribe loaded work for a declared injury" cannot be obeyed by a model
+     * that is structurally unable to return an empty list; the schema would win
+     * and something would get prescribed.
+     *
+     * The prompt still asks for tips in the ordinary case, and already says
+     * thin data means fewer tips rather than vaguer ones. The client renders
+     * `tips[0] ?? null`, so an empty list was always safe to receive.
+     */
+    .min(0)
     .max(5),
   riskExplanations: z
     .array(
@@ -141,7 +155,7 @@ export type Narrative = z.infer<typeof NarrativeSchema>;
 
 const NARRATIVE_SYSTEM = `You are a great coach talking to an amateur athlete about the clip they just filmed. Think of the tone as a coach standing next to them at practice, not a clinician writing a report.
 
-You will be given REAL measurements taken from pose tracking of their video: joint angle ranges, left/right symmetry, and how much of the clip each joint spent outside its safe range. Scores have already been computed from those measurements. The measurements are your evidence; they are NOT your vocabulary.
+You will be given REAL measurements taken from pose tracking of their video: joint angle ranges, left/right symmetry, and how much of the clip each joint spent outside its band (the sport-typical angle range for that joint). Scores have already been computed from those measurements. The measurements are your evidence; they are NOT your vocabulary.
 
 ── How to write ──
 - **Lead with what to do, not what was measured.** "Sit back into your hips more at the bottom" beats "your hip flexion measured 84°".
@@ -171,8 +185,24 @@ This athlete may upload three videos of the same sport in one afternoon, and eac
 - Ground every statement in the measurements you were given. You may describe them in plain words, but never invent one.
 - If something was not measured, do not discuss it as though it was.
 - Never state or imply a probability of future injury. You may say a position puts stress somewhere.
+- Never call a position, angle or movement "safe" or "unsafe". A band is a sport-typical angle range, not a verdict on whether something will hurt the athlete, and the app deliberately says "outside the band" instead. Say a joint went outside its band, or stayed inside it.
 - Do not diagnose. You are describing movement, not medical conditions.
+- You are not a doctor. If the athlete describes pain, tell them to see a physio or doctor about it. Do not work around it, and do not offer a substitute for that visit.
 - Every tip must name a real drill with sets, reps, and one coaching cue.
+
+── When the athlete has declared an injury ──
+The prompt may contain "Existing injury concerns" naming a body part. That is the
+athlete telling you something is already wrong with it. When it does:
+- Do NOT prescribe loaded, end-range, plyometric or high-repetition work for that
+  body part, however well-indicated the movement would otherwise be. "Every tip
+  must name a real drill" does not override this: it is better to return fewer
+  tips, or none, than to hand an injured joint a set-and-rep prescription.
+- Say plainly, once, that a current injury is a question for a physio or doctor
+  and that this write-up is not a substitute for one.
+- You may still describe what the measurements show for that joint. Describing a
+  movement is not the same as prescribing work on it.
+- Never suggest the movement will rehabilitate, strengthen or "fix" the declared
+  injury. That is a treatment claim and you are not in a position to make one.
 
 If the measurements are limited (few joints tracked, short clip), say so plainly in the summary and keep the advice narrow rather than padding it with generic tips.
 

@@ -363,6 +363,20 @@ export default function CoachScreen() {
           )}
         </View>
 
+        {/* ── Not a medical assessment ──
+            Atlas prescribes exercise — sets, reps, drills — and this was the
+            only coaching surface in the app carrying none of the wording
+            signup and the analysis screen both carry. Same sentence as
+            analysis/[id].tsx, deliberately: one claim, worded once.
+
+            Above the transcript rather than under it. A disclaimer inside the
+            list is a disclaimer that scrolls away with the conversation, and
+            this list auto-scrolls to its end. */}
+        <Text style={s.disclaimer}>
+          Not a medical assessment or an injury prediction. See a professional about pain
+          or injury.
+        </Text>
+
         {/*
           A FlatList, because a transcript only grows. Every message was
           mounted eagerly, and a coach reply carries evidence cards and a
@@ -631,7 +645,12 @@ function Message({
 
       {prescription && (
         <View style={s.prescriptionBubble}>
-          <Label tone={color.onCobaltMuted}>PRESCRIPTION</Label>
+          {/* The shared `Prescription` component's default label, spelled out
+              because this bubble is a hand-rolled copy of it rather than the
+              component. It read "PRESCRIPTION" — a regulated word to stamp on
+              exercise a language model just wrote, and the only place in the
+              app that said it. */}
+          <Label tone={color.onCobaltMuted}>DO THIS NEXT</Label>
           <Text style={[T.prescriptionSmall, { marginTop: 6 }]}>{prescription}</Text>
         </View>
       )}
@@ -702,6 +721,14 @@ const s = StyleSheet.create({
   },
 
   empty: { paddingTop: 60, paddingHorizontal: 12 },
+
+  // Italic bodySmall, matching the same line on the analysis screen.
+  disclaimer: {
+    ...T.bodySmall,
+    fontStyle: "italic",
+    paddingHorizontal: GUTTER,
+    paddingBottom: 12,
+  },
 
   userBubble: {
     alignSelf: "flex-end",

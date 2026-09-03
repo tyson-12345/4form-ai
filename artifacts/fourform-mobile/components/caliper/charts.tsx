@@ -349,7 +349,7 @@ export function FrequencyChip({ label, alarming }: { label: string; alarming: bo
 }
 
 /**
- * The evidence card's ruler: the joint's safe band as a cobalt wash, the
+ * The evidence card's ruler: the joint's band as a cobalt wash, the
  * observed range as a line with end stems. One glance answers "how far outside
  * the band did it actually go?" — the claim and its evidence on one axis.
  *
@@ -396,14 +396,20 @@ export function RangeRuler({
     Math.min(100 - ratio(bandLeft), ratio(bandRight) - ratio(bandLeft)),
   )}%` as `${number}%`;
 
+  // Says "band", not "safe band" — this is what VoiceOver reads aloud, so it is
+  // as user-facing as the caption printed above it, and until now the two
+  // disagreed: the label said "safe band" while its own closing sentence
+  // already said "Outside the band." Calling an angle safe is a medical-adjacent
+  // verdict about a body, which is the one claim this app is careful never to
+  // make. See the `JointZones` note in the server's scoring.ts.
   const description =
     `Observed ${Math.round(observedMin)} to ${Math.round(observedMax)} degrees` +
     (safeMin !== null && safeMax !== null
-      ? `, against a safe band of ${Math.round(safeMin)} to ${Math.round(safeMax)}`
+      ? `, against a band of ${Math.round(safeMin)} to ${Math.round(safeMax)}`
       : safeMax !== null
-        ? `, safe up to ${Math.round(safeMax)}`
+        ? `, up to ${Math.round(safeMax)}`
         : safeMin !== null
-          ? `, safe from ${Math.round(safeMin)}`
+          ? `, from ${Math.round(safeMin)}`
           : ", with no band for this sport") +
     (alarming ? ". Outside the band." : ".");
 
@@ -767,7 +773,7 @@ const s = StyleSheet.create({
     paddingVertical: 4,
   },
 
-  // Range ruler (observed vs safe band)
+  // Range ruler (observed vs band)
 
   rangeRuler: { height: 24, marginTop: 14, position: "relative" },
 
@@ -780,7 +786,7 @@ const s = StyleSheet.create({
     backgroundColor: color.ruleStrong,
   },
 
-  // The safe band on an evidence card. Ink, because a finding list draws one
+  // The band on an evidence card. Ink, because a finding list draws one
   // of these per flagged joint — up to six on an analysis — and cobalt that
   // repeats six times is no longer reserved for anything.
   rangeRulerBand: {
