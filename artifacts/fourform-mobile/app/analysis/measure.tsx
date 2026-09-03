@@ -33,7 +33,7 @@ import {
 import { color, type as T, GUTTER } from "@/constants/caliper";
 import { analyses as analysesApi, ApiError, NetworkError } from "@/lib/api";
 import { buildPoseHtml, type PoseMessage, type PoseMetrics } from "@/lib/poseTracker";
-import { persistVideo, stageForWebView } from "@/lib/videoStore";
+import { persistVideo, stageForWebView, isLocalAppFile } from "@/lib/videoStore";
 import * as haptics from "@/lib/haptics";
 
 type Phase = "preparing" | "measuring" | "saving" | "error";
@@ -65,6 +65,17 @@ export default function MeasureScreen() {
     (async () => {
       if (!params.uri) {
         fail("No video was provided.");
+        return;
+      }
+      /**
+       * This screen is reachable by deep link, so `params.uri` is untrusted
+       * input — and it ends up interpolated into a WebView document that runs
+       * with `allowFileAccessFromFileURLs` and `allowUniversalAccessFromFileURLs`.
+       * Only a clip inside our own sandbox is ever measured. `buildPoseHtml`
+       * escapes for the script context too; this is the other half.
+       */
+      if (!isLocalAppFile(params.uri)) {
+        fail("That video isn't available on this device.");
         return;
       }
       try {

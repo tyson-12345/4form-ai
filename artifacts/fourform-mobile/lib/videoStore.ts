@@ -108,13 +108,97 @@ export async function deleteVideo(analysisId: string): Promise<void> {
  * This copy is disposable — the durable original stays in documentDirectory.
  */
 export async function stageForWebView(uri: string): Promise<string> {
+  if (!isLocalAppFile(uri)) {
+    throw new Error("Refusing to stage a video from outside the app's own storage");
+  }
+
   const target = `${FileSystem.cacheDirectory}pose-video.${extensionOf(uri)}`;
   try {
     await FileSystem.deleteAsync(target, { idempotent: true });
     await FileSystem.copyAsync({ from: uri, to: target });
     return target;
   } catch {
-    return uri;
+    /**
+     * Fails closed.
+     *
+     * This used to `return uri` — hand back whatever it was given when the copy
+     * did not work. The caller writes that value into an inline `<script>` in a
+     * document loaded with `allowUniversalAccessFromFileURLs`, and the value
+     * originates in a route param that a deep link can set. So the one branch
+     * that ran when staging failed was also the one branch that passed an
+     * unvalidated, un-copied, caller-supplied URI straight through.
+     *
+     * There is nothing useful to do with a clip we could not stage; refusing is
+     * both safer and more honest than measuring something we cannot vouch for.
+     */
+    throw new Error("Could not stage this video for measurement");
+  }
+}
+
+/**
+ * True only for a `file://` path inside this app's own sandbox.
+ *
+ * The measure screen's `uri` param is reachable from a deep link, which makes
+ * it untrusted input to a WebView with filesystem privileges. Anything that is
+ * not a file we wrote is refused — `http(s):`, `data:`, `javascript:`, a path
+ * traversing out with `..`, and a `file://` path belonging to another app.
+ */
+export function isLocalAppFile(uri: string): boolean {
+  if (typeof uri !== "string" || !uri.startsWith("file://")) return false;
+  if (uri.includes("..")) return false;
+
+  const roots = [FileSystem.documentDirectory, FileSystem.cacheDirectory].filter(
+    (r): r is string => typeof r === "string" && r.length > 0,
+  );
+  return roots.some((root) => uri.startsWith(root));
+}
+
+/**
+ * Remove every stored clip and every legacy pointer to one.
+ *
+ * ── Why this exists ─────────────────────────────────────────────────────────
+ * The delete-account sheet tells the user, in its own words, "Clips stored on
+ * this phone are removed too." That was not true: the handler removed the
+ * avatar and the session token and nothing else, so every analysed clip — the
+ * most personal thing the app holds, video of the user's body — survived an
+ * account deletion that had just reported success.
+ *
+ * The server-side half is genuinely complete (`deleteUser` cascades across every
+ * child table). This is the device-side half the promise also covers.
+ *
+ * Best-effort by design: a clip we cannot unlink must not turn a successful
+ * account deletion into an error the user cannot act on. Failures are swallowed
+ * per item, and the directory removal is idempotent.
+ */
+export async function clearAllVideos(): Promise<void> {
+  try {
+    await FileSystem.deleteAsync(VIDEO_DIR, { idempotent: true });
+  } catch {
+    // Fall through to the staged copy and the legacy keys regardless.
+  }
+
+  // The measurement staging copy lives outside VIDEO_DIR, in the cache.
+  try {
+    const cache = FileSystem.cacheDirectory;
+    if (cache) {
+      const staged = await FileSystem.readDirectoryAsync(cache);
+      await Promise.all(
+        staged
+          .filter((name) => name.startsWith("pose-video."))
+          .map((name) => FileSystem.deleteAsync(`${cache}${name}`, { idempotent: true })),
+      );
+    }
+  } catch {
+    // Cache is evictable anyway; a failure here is not worth surfacing.
+  }
+
+  // Older builds stored the clip URI in AsyncStorage rather than on disk.
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const legacy = keys.filter((k) => k.startsWith("video_uri_"));
+    if (legacy.length > 0) await AsyncStorage.multiRemove(legacy);
+  } catch {
+    // Same reasoning.
   }
 }
 
