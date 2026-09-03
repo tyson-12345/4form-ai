@@ -24,6 +24,17 @@ interface AuthUser {
   id: string;
   email: string;
   name: string;
+  /**
+   * False for an account created through Sign in with Apple or Google, which
+   * has no password at all.
+   *
+   * Only `GET /auth/me` reports this, so it is undefined until the first
+   * refresh completes and on the responses from login/signup — both of which
+   * only ever produce password accounts, so treating undefined as "has a
+   * password" would be right there and wrong on the path that matters. The
+   * deletion sheet handles the undefined case explicitly instead.
+   */
+  hasPassword?: boolean;
 }
 
 interface AuthState {
@@ -120,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!token) return;
       setHasStoredToken(true);
       const { user: u, profile: p, subscription: s } = await auth.me();
-      setUser({ id: u.id, email: u.email, name: p?.name ?? "" });
+      setUser({ id: u.id, email: u.email, name: p?.name ?? "", hasPassword: u.hasPassword });
       setUserProfile(p);
       setSubscription(s);
     } catch (err) {
@@ -173,6 +184,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function logout() {
+    /**
+     * Tell the server first, while the token is still in storage to authorise
+     * the call.
+     *
+     * Deleting the local copy is not a sign-out — the JWT stays valid for the
+     * rest of its 7 days, so a sign-out on a borrowed phone used to leave a
+     * live credential on that device with no way to revoke it. `auth.logout()`
+     * bumps `sessionsValidAfter`, which refuses every token issued before now.
+     *
+     * Best-effort: a user signing out on a flaky connection must still end up
+     * signed out locally. The failure is silent by design — there is no useful
+     * action to offer, and refusing to sign out because the network is down is
+     * the worse outcome. (The consequence is that a token whose revocation call
+     * never landed stays valid; a later successful sign-out or password reset
+     * clears it.)
+     */
+    await auth.logout().catch(() => {});
+
     // Drop any half-finished federated flow. Its token is single-use and tied
     // to the session being ended; leaving it would offer the next person at
     // this device a link challenge for the account that just signed out.

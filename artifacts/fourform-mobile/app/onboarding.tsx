@@ -51,15 +51,39 @@ const GOALS = [
   "Improve mobility",
 ];
 
-const CONCERNS = [
+/**
+ * The joints an athlete can flag as giving them trouble.
+ *
+ * This is health data — GDPR Art. 9 special category — so it is the one list in
+ * onboarding that is exported rather than kept local. Profile imports it for
+ * the row that edits and clears these, and Art. 7(3) requires withdrawal to be
+ * as easy as consent: the screen where you take a concern back has to offer
+ * exactly the joints you were offered when you gave it. Two copies of this
+ * array would drift, and the half that drifts is the half that can no longer
+ * un-say something.
+ *
+ * (Its natural home is `constants/`, next to SPORTS. Left here for now because
+ * onboarding is where it is answered.)
+ */
+export const CONCERN_JOINTS: readonly string[] = [
   "Knees",
   "Hips",
   "Lower back",
   "Shoulders",
   "Elbows",
   "Ankles",
-  "None right now",
 ];
+
+/**
+ * The affirmative "nothing to report" answer, stored as an empty list.
+ *
+ * Distinct from skipping the step: this one is an answer. Both end up storing
+ * nothing, which is the point — declining to answer must cost the athlete
+ * exactly as much as answering.
+ */
+export const CONCERN_NONE = "None right now";
+
+const CONCERNS: string[] = [...CONCERN_JOINTS, CONCERN_NONE];
 
 const STEPS = [
   { label: "WHAT ARE WE MEASURING", title: "Pick the movements you train most." },
@@ -88,9 +112,14 @@ export default function OnboardingScreen() {
     if (step === 0) return sports.length > 0;
     if (step === 1) return !!level;
     if (step === 2) return goals.length > 0;
-    if (step === 3) return concerns.length > 0;
+    // Steps 3 and 4 never block. Step 3 used to: it required a concern to be
+    // picked, which made answering a question about your body the only way into
+    // the app — and consent you cannot decline is not consent (GDPR Art. 7(4),
+    // and these joints are Art. 9 health data). It is skippable now, and the
+    // button below reads "Skip" while nothing is picked so the way past it is
+    // visible rather than something you have to work out.
     return true;
-  }, [step, sports, level, goals, concerns]);
+  }, [step, sports, level, goals]);
 
   function toggle(list: string[], setList: (v: string[]) => void, item: string, exclusive?: string) {
     if (exclusive && item === exclusive) {
@@ -117,7 +146,9 @@ export default function OnboardingScreen() {
         sport: sports[0]!.toLowerCase(),
         level: level as "beginner",
         goals: sports.length > 1 ? [...goals, `Also trains: ${sports.slice(1).join(", ")}`] : goals,
-        injuryConcerns: concerns.includes("None right now") ? [] : concerns,
+        // Skipped and "None right now" both store nothing. The athlete can
+        // change or clear this later from Profile → Injury concerns.
+        injuryConcerns: concerns.includes(CONCERN_NONE) ? [] : concerns,
         weeklyGoal: weekly,
       });
       router.replace("/(tabs)");
@@ -225,7 +256,7 @@ export default function OnboardingScreen() {
                 key={concern}
                 label={concern}
                 selected={concerns.includes(concern)}
-                onPress={() => toggle(concerns, setConcerns, concern, "None right now")}
+                onPress={() => toggle(concerns, setConcerns, concern, CONCERN_NONE)}
               />
             ))}
 
@@ -249,8 +280,18 @@ export default function OnboardingScreen() {
         {/* Chips used to be cut in half against the footer's hard top edge. */}
         <FooterFade />
         <PrimaryButton
+          // "Skip" on the health-data step while nothing is picked. An enabled
+          // "Continue" is not enough on its own: it looks identical to a step
+          // you have simply not finished yet, so the athlete still reads the
+          // question as something they owe us.
           label={
-            saving ? "Saving…" : step === STEPS.length - 1 ? "Start measuring" : "Continue"
+            saving
+              ? "Saving…"
+              : step === 3 && concerns.length === 0
+                ? "Skip"
+                : step === STEPS.length - 1
+                  ? "Start measuring"
+                  : "Continue"
           }
           onPress={next}
           disabled={!canContinue || saving}
@@ -274,8 +315,12 @@ function subtitleFor(step: number): string {
       return "This only changes how we phrase feedback. The measurements are the same either way.";
     case 2:
       return "Atlas uses this to decide which measurement matters most to you.";
+    // The only question here that asks about the athlete's body rather than
+    // their training, which makes it health data under GDPR Art. 9 and the one
+    // step that has to say what it is for before it is answered: who sees it,
+    // that it is optional, and that it can be taken back.
     case 3:
-      return "We'll watch these joints more closely and flag them earlier.";
+      return "We'll watch these joints more closely and flag them earlier, and Atlas sees them so it can coach around them. This one's optional — skip it if you'd rather not say, and change or clear it any time in Profile.";
     default:
       return "Used for your weekly target. Nothing is locked. Measure whenever you train.";
   }
@@ -294,7 +339,9 @@ function summaryFor(
     return state.goals.length ? `${state.goals.length} picked` : "Pick at least one";
   }
   if (step === 3) {
-    return state.concerns.length ? state.concerns.join(", ") : "Pick at least one";
+    // Not "Pick at least one" any more — the footer line was the last place
+    // still telling the athlete this was required.
+    return state.concerns.length ? state.concerns.join(", ") : "Optional · nothing recorded";
   }
   return `${state.weekly} sessions a week`;
 }

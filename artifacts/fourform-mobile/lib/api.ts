@@ -228,10 +228,21 @@ export const auth = {
 
   me: () =>
     request<{
-      user: { id: string; email: string };
+      // `hasPassword` is false for an Apple/Google-only account. The deletion
+      // sheet needs it to know which re-authentication proof to ask for.
+      user: { id: string; email: string; hasPassword: boolean };
       profile: Profile | null;
       subscription: SubscriptionRecord | null;
     }>("/auth/me"),
+
+  /**
+   * Revoke every session for this account, server-side.
+   *
+   * Deleting the device's copy of the token is not a sign-out: the token stays
+   * valid for the rest of its 7 days, and until this existed nothing could call
+   * it back short of a password reset. Best-effort — see the caller.
+   */
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
 
   forgotPassword: (email: string) =>
     request<{ message: string }>("/auth/forgot-password", {
@@ -336,6 +347,16 @@ export interface Profile {
   sport: string;
   level: "beginner" | "intermediate" | "advanced" | "elite";
   goals: string[];
+  /**
+   * Joints the athlete has told us give them trouble.
+   *
+   * The only special-category data in this type — health data under GDPR
+   * Art. 9 — and it is sent to the coaching model with every analysis (see the
+   * API's `buildNarrativePrompt`), so it is not merely stored at rest.
+   * `update` below already carries it, and Profile → Injury concerns is
+   * where it is changed or cleared; sending `[]` is the withdrawal the server
+   * has always accepted (Art. 7(3)).
+   */
   injuryConcerns: string[];
   weeklyGoal: number;
   weeklyProgress: number;
@@ -350,6 +371,17 @@ export interface SubscriptionRecord {
   currentPeriodEnd?: string;
 }
 
+/**
+ * Proof of account ownership for deletion. Exactly one form is sent.
+ *
+ * The federated form additionally requires, server-side, that the identity is
+ * already linked to *this* account — so a valid Apple token belonging to
+ * someone else cannot delete an account whose session happens to be held.
+ */
+export type DeleteAccountProof =
+  | { password: string }
+  | { provider: "apple" | "google"; identityToken: string };
+
 export const profile = {
   get: () => request<{ profile: Profile; subscription: SubscriptionRecord }>("/profile"),
 
@@ -362,13 +394,24 @@ export const profile = {
   /**
    * Permanently delete the account and all server-side data.
    *
-   * Requires the current password — a stolen unlocked phone must not be able to
-   * erase someone's history. Irreversible.
+   * Requires re-authentication — a stolen unlocked phone must not be able to
+   * erase someone's history with nothing but a live session. Irreversible.
+   *
+   * ── Two proofs, because there are two kinds of account ─────────────────────
+   * A password account sends its password. An account created through Sign in
+   * with Apple or Google has `password_hash IS NULL` and no password to send,
+   * so it re-authenticates by signing in with the provider again and sending
+   * that fresh identity token.
+   *
+   * The server has accepted both since the endpoint was written. This client
+   * only ever sent a password, which meant every federated account was unable
+   * to delete itself — the request could not succeed by construction — and both
+   * stores require in-app deletion for any app that offers in-app sign-up.
    */
-  deleteAccount: (password: string) =>
+  deleteAccount: (proof: DeleteAccountProof) =>
     request<{ deleted: boolean }>("/profile/account", {
       method: "DELETE",
-      body: JSON.stringify({ password }),
+      body: JSON.stringify(proof),
     }),
 };
 
@@ -459,7 +502,7 @@ export interface RiskRecord {
   observedMax?: number | null;
   /**
    * The caution boundaries this finding was classified against — the sport's
-   * safe band, attached by the server from the profile stored with the
+   * band, attached by the server from the profile stored with the
    * analysis. `null` on a side that sport leaves unflagged.
    */
   safeMin?: number | null;

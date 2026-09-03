@@ -43,16 +43,23 @@ import {
   analyses as analysesApi,
   profile as profileApi,
   type AnalysisRecord,
+  type DeleteAccountProof,
   type UsageRecord,
   ApiError,
 } from "@/lib/api";
+import { SocialSignIn } from "@/components/SocialSignIn";
+import { clearAllVideos } from "@/lib/videoStore";
 import { SPORTS, displaySport } from "@/constants/sports";
+// The same joints onboarding offers, from onboarding's own list — see the note
+// there. The screen where you withdraw a concern must offer exactly the ones
+// you were offered when you gave it.
+import { CONCERN_JOINTS } from "@/app/onboarding";
 import { closedFlagCount } from "@/utils/closedFlags";
 import { alert } from "@/lib/alert";
 
 const LEVELS = ["Beginner", "Intermediate", "Advanced", "Elite"] as const;
 
-type EditField = "name" | "sport" | "level" | "weeklyGoal" | null;
+type EditField = "name" | "sport" | "level" | "weeklyGoal" | "injuryConcerns" | null;
 
 /** What the confirmation calls each field. Spoken as well as shown. */
 const LABELS: Record<Exclude<EditField, null>, string> = {
@@ -60,6 +67,7 @@ const LABELS: Record<Exclude<EditField, null>, string> = {
   sport: "Sport",
   level: "Level",
   weeklyGoal: "Weekly goal",
+  injuryConcerns: "Injury concerns",
 };
 
 export default function ProfileScreen() {
@@ -72,6 +80,8 @@ export default function ProfileScreen() {
   const [usage, setUsage] = useState<UsageRecord | null>(null);
   const [edit, setEdit] = useState<EditField>(null);
   const [value, setValue] = useState("");
+  /** Injury concerns are multi-select, so they need a list, not `value`. */
+  const [concerns, setConcerns] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
@@ -133,11 +143,29 @@ export default function ProfileScreen() {
   // Progress, on the same account at the same moment, listed 1.
   const flagsClosed = closedFlagCount(sessions);
 
+  /**
+   * The joints offered in the concerns sheet: the current list, plus anything
+   * already stored that is no longer on it. A stored value with no chip could
+   * not be seen and could not be taken off — and would be dropped silently by
+   * the next save of a different concern, which is the account quietly editing
+   * the athlete's health record on their behalf.
+   */
+  const concernOptions = [
+    ...CONCERN_JOINTS,
+    ...concerns.filter((c) => !CONCERN_JOINTS.includes(c)),
+  ];
+
   const displayName = profile?.name || user?.name || "Athlete";
   const tier = subscription?.tier ?? "free";
 
   function openEdit(field: Exclude<EditField, null>) {
     setEdit(field);
+
+    if (field === "injuryConcerns") {
+      setConcerns(profile?.injuryConcerns ?? []);
+      return;
+    }
+
     setValue(
       field === "name"
         ? (profile?.name ?? "")
@@ -168,6 +196,33 @@ export default function ProfileScreen() {
       // anyway" looked identical.
       setEdit(null);
       setSaved(LABELS[edit] ?? "Saved");
+    } catch {
+      alert("Couldn't save", "Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * Injury concerns save on their own path rather than through `save()` above,
+   * because that function refuses an empty value — and empty is the entire
+   * point of this one.
+   *
+   * These joints are special-category health data (GDPR Art. 9(2)(a)), and
+   * Art. 7(3) requires withdrawing that consent to be as easy as giving it.
+   * Onboarding has always collected them and `PATCH /api/profile` has always
+   * accepted them, but no screen ever sent the field — so until this row
+   * existed, the only way to take back something you said about your knees was
+   * to delete the entire account. That is not "as easy".
+   */
+  async function saveConcerns(next: string[]) {
+    if (saving) return;
+
+    setSaving(true);
+    try {
+      await updateProfile({ injuryConcerns: next });
+      setEdit(null);
+      setSaved(LABELS.injuryConcerns);
     } catch {
       alert("Couldn't save", "Please try again.");
     } finally {
@@ -240,6 +295,16 @@ export default function ProfileScreen() {
               label="Weekly goal"
               value={`${profile?.weeklyGoal ?? 3} sessions`}
               onPress={() => openEdit("weeklyGoal")}
+            />
+            {/* The withdrawal control for the health data onboarding collects.
+                It sits in TRAINING rather than under a privacy heading on
+                purpose: this is where you already come to change what the
+                coaching is built on, and consent you have to go hunting for is
+                not meaningfully withdrawable. */}
+            <Row
+              label="Injury concerns"
+              value={concernSummary(profile?.injuryConcerns)}
+              onPress={() => openEdit("injuryConcerns")}
               last
             />
           </Card>
@@ -340,7 +405,9 @@ export default function ProfileScreen() {
       <Sheet
         visible={edit !== null}
         onClose={() => setEdit(null)}
-        title={(edit ?? "").toUpperCase()}
+        // The field's own name, not the state key: upper-casing the key gave
+        // "WEEKLYGOAL", and would have given "INJURYCONCERNS".
+        title={edit ? LABELS[edit].toUpperCase() : ""}
       >
         {edit === "sport" && (
           <View style={s.chipWrap}>
@@ -388,6 +455,47 @@ export default function ProfileScreen() {
               />
             ))}
           </View>
+        )}
+
+        {edit === "injuryConcerns" && (
+          <>
+            <Text style={T.body}>
+              Anything giving you trouble? We watch these joints more closely and flag
+              them earlier, and Atlas sees them so it can coach around them.
+            </Text>
+            <Text style={[T.bodySmall, { marginTop: 10, marginBottom: 20 }]}>
+              Leave none selected and we hold nothing here.
+            </Text>
+
+            <View style={s.chipWrap}>
+              {concernOptions.map((joint) => (
+                <Chip
+                  key={joint}
+                  label={joint}
+                  selected={concerns.includes(joint)}
+                  onPress={saving ? undefined : () =>
+                    setConcerns(
+                      concerns.includes(joint)
+                        ? concerns.filter((c) => c !== joint)
+                        : [...concerns, joint],
+                    )
+                  }
+                />
+              ))}
+            </View>
+
+            <View style={{ marginTop: 24 }}>
+              {/* Never disabled on an empty selection — that is the withdrawal,
+                  and a greyed-out button would be the same dead end as the
+                  onboarding step that would not let you past without an answer.
+                  The label says which of the two things it is about to do. */}
+              <PrimaryButton
+                label={saving ? "Saving…" : concerns.length ? "Save" : "Clear and save"}
+                onPress={() => void saveConcerns(concerns)}
+                disabled={saving}
+              />
+            </View>
+          </>
         )}
 
         {edit === "name" && (
@@ -457,8 +565,16 @@ export default function ProfileScreen() {
         onClose={() => setDeleteOpen(false)}
           onDeleted={async () => {
             // Deleting the account deletes everything — the device-local photo
-            // included. Must run before logout clears the user id it is keyed by.
+            // and every stored clip included. Must run before logout clears the
+            // user id the avatar is keyed by.
+            //
+            // The clips were the omission: the sheet's own copy two screens down
+            // says "Clips stored on this phone are removed too", and until this
+            // line existed that was simply untrue. Video of the user's body is
+            // the most personal thing this app holds, and it was surviving the
+            // deletion that had just told them it was gone.
             await removeAvatarPhoto().catch(() => {});
+            await clearAllVideos().catch(() => {});
             await logout();
             router.replace("/welcome");
           }}
@@ -481,23 +597,47 @@ function DeleteAccountSheet({
   onClose: () => void;
   onDeleted: () => void;
 }) {
+  const { user } = useAuth();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const armed = confirm.trim().toUpperCase() === "DELETE" && password.length > 0;
+  /**
+   * Which proof this account can actually offer.
+   *
+   * An account created through Sign in with Apple or Google has no password —
+   * `users.password_hash` is NULL — so asking it for one produces a form that
+   * can never be satisfied. That is what shipped: the sheet armed only on a
+   * typed password and sent a password-only body, so every federated user was
+   * structurally unable to delete their account. Both stores require in-app
+   * deletion for any app offering in-app sign-up, and the server had
+   * implemented the provider-token proof for exactly this case — the client
+   * simply never used it.
+   *
+   * `hasPassword` arrives with `GET /auth/me`, so it is undefined until the
+   * first refresh lands. Undefined is treated as "ask for a password", which is
+   * the safe default: it is right for every password account, and a federated
+   * user in that window sees the provider button as soon as the refresh
+   * completes rather than a broken form forever.
+   */
+  const usesPassword = user?.hasPassword !== false;
 
-  async function run() {
+  const confirmed = confirm.trim().toUpperCase() === "DELETE";
+  const armed = confirmed && (usesPassword ? password.length > 0 : true);
+
+  async function run(proof: DeleteAccountProof) {
     setWorking(true);
     setError(null);
     try {
-      await profileApi.deleteAccount(password);
+      await profileApi.deleteAccount(proof);
       onDeleted();
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 401
-          ? "That password doesn't match."
+          ? usesPassword
+            ? "That password doesn't match."
+            : "We couldn't confirm that sign-in. Please try again."
           : "We couldn't delete your account. Please try again.",
       );
     } finally {
@@ -525,16 +665,23 @@ function DeleteAccountSheet({
         autoCorrect={false}
       />
 
-      <TextField
-        label="Your password"
-        value={password}
-        onChangeText={setPassword}
-        placeholder="Password"
-        secure
-        autoCapitalize="none"
-        autoComplete="current-password"
-        containerStyle={{ marginTop: 20 }}
-      />
+      {usesPassword ? (
+        <TextField
+          label="Your password"
+          value={password}
+          onChangeText={setPassword}
+          placeholder="Password"
+          secure
+          autoCapitalize="none"
+          autoComplete="current-password"
+          containerStyle={{ marginTop: 20 }}
+        />
+      ) : (
+        <Text style={[T.bodySmall, { marginTop: 20, color: color.onInkMuted }]}>
+          Your account signs in with Apple or Google, so there is no password to
+          type. Confirm below by signing in with the same provider.
+        </Text>
+      )}
 
       {error && (
         <Text
@@ -547,13 +694,35 @@ function DeleteAccountSheet({
       )}
 
       <View style={{ marginTop: 28 }}>
-        <PrimaryButton
-          label={working ? "Deleting…" : "Delete my account"}
-          onPress={run}
-          disabled={!armed || working}
-          tone={color.rust}
-          labelTone={color.onCobalt}
-        />
+        {usesPassword ? (
+          <PrimaryButton
+            label={working ? "Deleting…" : "Delete my account"}
+            onPress={() => run({ password })}
+            disabled={!armed || working}
+            tone={color.rust}
+            labelTone={color.onCobalt}
+          />
+        ) : (
+          /**
+           * The provider button *is* the confirm button here: completing the
+           * sign-in produces the proof and the deletion runs on the credential.
+           * Held back until DELETE is typed so the provider sheet cannot be the
+           * first thing that happens.
+           */
+          confirmed && (
+            <SocialSignIn
+              busy={working}
+              onStart={() => setError(null)}
+              onError={(message) => setError(message)}
+              onCredential={(credential) =>
+                run({
+                  provider: credential.provider,
+                  identityToken: credential.identityToken,
+                })
+              }
+            />
+          )
+        )}
       </View>
 
       {working && <ActivityIndicator style={{ marginTop: 16 }} color={color.rust} />}
@@ -622,6 +791,21 @@ function Row({
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * What the row shows for the stored concerns.
+ *
+ * A row value sits on one line beside its label and does not wrap, so all six
+ * joints spelled out would shove "Injury concerns" off its own row. Up to two
+ * are named; beyond that it counts, and the sheet says which. "None" is a real
+ * state and reads as one — not an empty column that looks like a value failed
+ * to load.
+ */
+function concernSummary(list: string[] | undefined): string {
+  if (!list || list.length === 0) return "None";
+  if (list.length <= 2) return list.join(", ");
+  return `${list.length} areas`;
+}
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
