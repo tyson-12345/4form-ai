@@ -1,0 +1,32 @@
+-- A coaching write-up that never arrived must not cost a monthly analysis.
+--
+-- When `generateNarrative` failed, the row was left `status = 'complete'` and
+-- `analysis_method = 'pose-measured'`, so `countAnalysesSince` counted it in
+-- full. A free user's third clip of the month could therefore burn their last
+-- slot and hand back a summary apologising for the notes it could not write.
+-- There is no retry, no queue and no regenerate control anywhere in the app,
+-- so that charge was final and the athlete had received half of what the slot
+-- buys.
+--
+-- This column is the flag the count reads, alongside the two exclusions
+-- already there: a 'failed' row is our fault rather than a slot, and an
+-- 'unscored' clip gave the user nothing so it must cost them nothing. A
+-- write-up that could not be generated is the same kind of debt.
+--
+-- ── Why NOT NULL DEFAULT ────────────────────────────────────────────────────
+-- It matters in both directions. Every existing row becomes 'ok' from the
+-- default, so no backfill statement is needed and this file stays pure DDL.
+-- And the count's `narrative_status <> 'unavailable'` predicate can never meet
+-- a NULL — which in SQL is not false, it is NULL, and would silently drop the
+-- row out of the very quota month it belongs to.
+--
+-- Additive and idempotent. Safe to run twice, and safe to run against
+-- production while the previous build is still serving traffic: the old code
+-- never writes this column and the default keeps its rows counting.
+--
+-- Apply to an existing database with:
+--   psql "$DATABASE_URL" -f lib/db/migrations/0011_narrative_status.sql
+-- (A fresh database gets this column from `drizzle-kit push` / schema/index.ts.)
+
+ALTER TABLE "analyses"
+  ADD COLUMN IF NOT EXISTS "narrative_status" text NOT NULL DEFAULT 'ok';

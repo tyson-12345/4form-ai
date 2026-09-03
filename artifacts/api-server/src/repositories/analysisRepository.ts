@@ -20,6 +20,7 @@ import {
   coachingTipsTable,
   injuryRisksTable,
   progressEntriesTable,
+  usersTable,
 } from "@workspace/db";
 import { eq, and, ne, desc, count, gte, lt, isNull, isNotNull } from "drizzle-orm";
 
@@ -83,6 +84,59 @@ export async function findLatestAnalysis(userId: string): Promise<AnalysisRow | 
 export async function createAnalysis(data: NewAnalysis): Promise<AnalysisRow> {
   const [row] = await db.insert(analysesTable).values(data).returning();
   return row;
+}
+
+/** Admitted, with the row that was created; or refused, with the count that refused it. */
+export type QuotaGuardedInsert =
+  | { admitted: true; row: AnalysisRow }
+  | { admitted: false; used: number };
+
+/**
+ * Count this month's slots and insert the analysis, atomically, or do neither.
+ *
+ * ── Why the count cannot live outside this transaction ──────────────────────
+ * It used to: the route read the usage snapshot, then inserted, in two
+ * unsynchronised statements with no lock and no constraint between them. Twenty
+ * concurrent uploads from one free account all observed `used = 0`, all passed,
+ * and a plan advertising three a month delivered twenty. Every admitted request
+ * also buys a Claude call, so the entitlement hole was a spend hole with it. The
+ * only other control on that endpoint keys on the client IP, which bounds a
+ * network origin and has never bounded an account.
+ *
+ * `SELECT ... FOR UPDATE` on the owner's `users` row is what serialises them:
+ * the second upload blocks until the first commits, then counts the row the
+ * first just wrote. The lock is on `users` and not `subscriptions` because a
+ * free account — the only kind with a limit to race against — frequently has no
+ * subscription row at all, and a lock on a row that does not exist locks
+ * nothing.
+ *
+ * An unlimited plan has no counter to race, so it skips the lock outright
+ * rather than serialising every upload behind the owner's row.
+ */
+export async function insertAnalysisWithinQuota(
+  data: NewAnalysis,
+  quota: { since: Date; limit: number },
+): Promise<QuotaGuardedInsert> {
+  if (quota.limit === -1) return { admitted: true, row: await createAnalysis(data) };
+
+  return db.transaction(async (tx): Promise<QuotaGuardedInsert> => {
+    await tx
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.id, data.userId))
+      .for("update");
+
+    const [counted] = await tx
+      .select({ total: count() })
+      .from(analysesTable)
+      .where(quotaConsuming(data.userId, quota.since));
+
+    const used = Number(counted?.total ?? 0);
+    if (used >= quota.limit) return { admitted: false, used };
+
+    const [row] = await tx.insert(analysesTable).values(data).returning();
+    return { admitted: true, row };
+  });
 }
 
 /**
@@ -151,27 +205,39 @@ export async function deleteAnalysis(
 }
 
 /**
- * How many quota-consuming analyses this user has created since `since`.
+ * Which of a user's rows spend a monthly slot.
  *
- * Three deliberate properties, each an honesty rule in one direction or the
+ * Four deliberate properties, each an honesty rule in one direction or the
  * other:
  *   - soft-deleted rows still count — deleting a session must not refund it;
  *   - failed rows do not count — a pipeline fault is our problem, not a slot;
  *   - unscored rows do not count — a clip we couldn't measure gave the user
- *     nothing, so it must not cost them anything.
+ *     nothing, so it must not cost them anything;
+ *   - rows whose write-up never arrived do not count — the athlete got the
+ *     measurements and none of the coaching, and nothing in this codebase ever
+ *     retries the missing half.
+ *
+ * Extracted so the enforcing count inside `insertAnalysisWithinQuota` and the
+ * count the usage screen displays are the same predicate. Two spellings of this
+ * rule would eventually disagree, and the shape of that bug is an athlete told
+ * they have one analysis left being refused it.
  */
+function quotaConsuming(userId: string, since: Date) {
+  return and(
+    eq(analysesTable.userId, userId),
+    gte(analysesTable.uploadedAt, since),
+    ne(analysesTable.status, "failed"),
+    ne(analysesTable.analysisMethod, "unscored"),
+    ne(analysesTable.narrativeStatus, "unavailable"),
+  );
+}
+
+/** How many quota-consuming analyses this user has created since `since`. */
 export async function countAnalysesSince(userId: string, since: Date): Promise<number> {
   const [row] = await db
     .select({ total: count() })
     .from(analysesTable)
-    .where(
-      and(
-        eq(analysesTable.userId, userId),
-        gte(analysesTable.uploadedAt, since),
-        ne(analysesTable.status, "failed"),
-        ne(analysesTable.analysisMethod, "unscored"),
-      ),
-    );
+    .where(quotaConsuming(userId, since));
   return Number(row?.total ?? 0);
 }
 

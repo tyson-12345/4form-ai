@@ -29,7 +29,7 @@ import { SPORTS_WITH_RESEARCH } from "../lib/sportResearch.js";
 import { logger } from "../lib/logger.js";
 import { recordAlert } from "../lib/alerting.js";
 import {
-  createAnalysis,
+  insertAnalysisWithinQuota,
   updateAnalysisById,
   countAnalysesSince,
   createRisks,
@@ -91,15 +91,19 @@ export interface QuotaRejection {
 }
 
 /**
- * `null` when the user may create another analysis, or the 403 body to return.
+ * The 403 body for an account that has spent this month's allowance.
  *
  * Returning the payload rather than throwing keeps the route handler a straight
- * line and keeps this function testable without an Express response.
+ * line and keeps the decision testable without an Express response.
+ *
+ * There is deliberately no exported "may this user upload?" helper beside it.
+ * One existed — `checkQuota` — and the route called it, then inserted, which is
+ * the check-then-act race `insertAnalysisWithinQuota` now closes. A read-only
+ * quota check that returns a verdict a caller is meant to act on is an
+ * invitation to reopen that hole, so the only way to spend a slot is to take
+ * one atomically.
  */
-export async function checkQuota(userId: string): Promise<QuotaRejection | null> {
-  const { limit, used } = await getUsage(userId);
-  if (limit === -1 || used < limit) return null;
-
+function quotaRejection(limit: number): QuotaRejection {
   const resetsAt = startOfNextMonth();
   return {
     error: "Monthly analysis limit reached",
@@ -127,15 +131,30 @@ export interface AthleteContext {
   injuryConcerns: string[];
 }
 
+/** Admitted, with the row to poll; or refused, with the 403 body to send back. */
+export type StartAnalysisResult =
+  | { admitted: true; analysis: AnalysisRow }
+  | { admitted: false; rejection: QuotaRejection };
+
 /**
- * Create the analysis row in `processing` and hand back the row immediately.
+ * Claim a monthly slot and create the analysis row in `processing` — or
+ * neither.
+ *
+ * The slot is claimed by the same transaction that writes the row (see
+ * `insertAnalysisWithinQuota`), which is the whole point: the count and the
+ * insert used to be two statements with a window between them wide enough to
+ * drive twenty concurrent uploads through on a three-a-month plan. The caller
+ * gets a decision it cannot race, not a verdict it has to act on in time.
  *
  * The write-up runs afterwards via `runPipeline`; the client polls for status.
  */
 export async function startAnalysis(
   userId: string,
   input: CreateAnalysisInput,
-): Promise<AnalysisRow> {
+): Promise<StartAnalysisResult> {
+  const subscription = await findSubscriptionByUserId(userId);
+  const limit = TIER_LIMITS[resolveEffectiveTier(subscription)].analysesPerMonth;
+
   const metrics = input.poseMetrics;
   const scorable = metrics ? isScorable(metrics) : false;
 
@@ -150,7 +169,10 @@ export async function startAnalysis(
     analysisMethod: scorable ? "pose-measured" : "unscored",
   };
 
-  return createAnalysis(row);
+  const result = await insertAnalysisWithinQuota(row, { since: startOfMonth(), limit });
+  return result.admitted
+    ? { admitted: true, analysis: result.row }
+    : { admitted: false, rejection: quotaRejection(limit) };
 }
 
 // ─── Pipeline ────────────────────────────────────────────────────────────────
@@ -162,15 +184,26 @@ const UNSCORABLE_SUMMARY =
 
 /**
  * Shown on the analysis screen when the measurements landed but the coach did
- * not. It told the reader to "Pull to refresh" — an affordance that screen does
- * not have: `app/analysis/[id].tsx` has no `RefreshControl`, only a focus
- * refetch and a bounded poll while the write-up is still pending. Copy that
- * names a gesture the screen cannot receive reads as a broken screen.
+ * not.
+ *
+ * Two promises have been taken out of this string, both of them things the app
+ * cannot do. It first told the reader to "Pull to refresh" — an affordance that
+ * screen does not have: `app/analysis/[id].tsx` has no `RefreshControl`, only a
+ * focus refetch and a bounded poll. It then said the notes "will appear here
+ * shortly", which was worse, because nothing in this codebase retries a
+ * write-up: there is no queue, no job, and no regenerate control. The athlete
+ * was told to wait for something that was never coming.
+ *
+ * What is left is the truth and the two things that are actually true of the
+ * screen: the measurements are real and readable, and this clip was not
+ * charged (see `narrativeStatus` below, and `quotaConsuming` in the
+ * repository).
  */
 const NO_NARRATIVE_SUMMARY =
-  "Your movement was measured and scored. The written coaching notes " +
-  "couldn't be generated this time. They will appear here shortly, or open " +
-  "the skeleton overlay to review your joint angles directly.";
+  "Your movement was measured and scored, but the written coaching notes " +
+  "couldn't be generated for this clip and won't arrive later. Open the " +
+  "skeleton overlay to read your joint angles directly. This session doesn't " +
+  "count against your monthly analyses.";
 
 /**
  * Score the measurements, persist them, then attempt the coaching write-up.
@@ -247,7 +280,16 @@ export async function runPipeline(
       "Scores stored; coaching write-up could not be generated",
     );
 
-    await updateAnalysisById(analysisId, { summary: NO_NARRATIVE_SUMMARY });
+    // Half an analysis is not an analysis. The row stays `complete` and
+    // `pose-measured` because the measurements genuinely are both — but it is
+    // flagged here so `countAnalysesSince` stops counting it, exactly the way
+    // an unscored clip is already spared. Without this, a free user's third
+    // clip of the month could spend their last slot on measurements plus an
+    // apology, with nothing anywhere that would ever write the missing half.
+    await updateAnalysisById(analysisId, {
+      summary: NO_NARRATIVE_SUMMARY,
+      narrativeStatus: "unavailable",
+    });
 
     logger.info(
       {
@@ -280,7 +322,7 @@ export async function runPipeline(
  *
  * Band-aware, because the previous copy read `riskPercent` alone: a joint that
  * spent 7% of the clip in the caution band and never entered the risk band was
- * described as having "spent 0% of the clip outside its typical safe range" —
+ * described as having "spent 0% of the clip outside its typical band" —
  * directly beside a severity stamp that counts both bands and therefore said
  * BRIEFLY. The sentence and the stamp must agree on what "out of range" means
  * (see the client's utils/flagSeverity.ts, which settled the same question the

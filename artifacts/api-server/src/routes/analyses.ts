@@ -23,7 +23,6 @@ import {
 import { findProfileByUserId } from "../repositories/userRepository.js";
 import {
   getUsage,
-  checkQuota,
   startAnalysis,
   runPipeline,
   markFailed,
@@ -151,16 +150,22 @@ router.post("/analyses", authenticate, async (req: AuthRequest, res) => {
   });
   if (!data) return;
 
-  const rejection = await checkQuota(req.userId!);
-  if (rejection) {
-    res.status(403).json(rejection);
-    return;
-  }
-
-  const profile = await findProfileByUserId(req.userId!);
   const metrics = data.poseMetrics;
 
-  const analysis = await startAnalysis(req.userId!, { ...data, poseMetrics: metrics });
+  // Quota and creation are one call because they are one transaction. This was
+  // a `checkQuota` here and a `startAnalysis` below it, and the gap between the
+  // two was wide enough that twenty simultaneous uploads from one free account
+  // all read `used = 0` and all went through — twenty Claude calls against a
+  // three-a-month plan. Nothing else on this route bounds an account: the
+  // limiter in front of it keys on the client IP.
+  const claim = await startAnalysis(req.userId!, { ...data, poseMetrics: metrics });
+  if (!claim.admitted) {
+    res.status(403).json(claim.rejection);
+    return;
+  }
+  const analysis = claim.analysis;
+
+  const profile = await findProfileByUserId(req.userId!);
 
   // Run the write-up asynchronously; the client polls for status.
   runPipeline(
@@ -212,7 +217,7 @@ router.get("/analyses/:id", authenticate, async (req: AuthRequest, res) => {
     findRisksByAnalysis(analysis.id),
   ]);
 
-  // Attach the safe band each finding was classified against, derived at read
+  // Attach the band each finding was classified against, derived at read
   // time from the profile stored inside the analysis's own metrics (legacy
   // clips fall back to the fixed bands that were in force when they were
   // measured). Derived rather than stored: the band is a property of the
