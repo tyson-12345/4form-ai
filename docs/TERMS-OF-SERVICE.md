@@ -38,7 +38,7 @@ technique feedback and drill suggestions based on those measurements.
 
 **It is a training aid. It is not a coach, a physiotherapist, or a doctor.**
 
-## 4. What 4Form AI is not — please read this one
+## 4. What 4Form AI is not (please read this one)
 
 > ### Not medical advice
 >
@@ -64,7 +64,7 @@ technique feedback and drill suggestions based on those measurements.
 
 Measurements come from pose tracking of a single 2D video. Accuracy depends on
 camera angle, lighting, clothing, framing, and how much of you is visible. The
-app reports its tracking quality and marks what it could not measure — power and
+app reports its tracking quality and marks what it could not measure. Power and
 speed, for instance, are shown as "not measured" because they cannot be derived
 from 2D video. **Treat every reading as an estimate.**
 
@@ -76,7 +76,7 @@ and your coach's.
 
 ## 5. Your content
 
-Your videos stay on your device — we never receive them. You keep ownership of
+Your videos stay on your device. We never receive them. You keep ownership of
 everything you create.
 
 You grant us a licence to store and process the measurements, text, and messages
@@ -135,7 +135,7 @@ us. We never see or store your card details.
 
 - Prices are shown in the app before you buy.
 - Subscriptions **renew automatically** until you cancel.
-- **Cancel through your App Store or Google Play account settings** — cancelling
+- **Cancel through your App Store or Google Play account settings**: cancelling
   inside 4Form AI changes our record but does not stop store billing.
 - Cancelling takes effect at the end of the current period; you keep access
   until then.
@@ -144,7 +144,7 @@ us. We never see or store your card details.
 - We may change prices with at least 30 days' notice. Changes never apply to a
   period you've already paid for.
 
-Your statutory rights — including EU/UK withdrawal rights — are not affected.
+Your statutory rights, including EU/UK withdrawal rights, are not affected.
 
 ## 10. Free plan and limits
 
@@ -178,7 +178,7 @@ mandatory laws of the country you live in.
 ## 14. Disputes
 
 **Talk to us first.** Most problems are solved by writing to
-support@4formai.com. Please give us 30 days — we'd rather fix it than
+support@4formai.com. Please give us 30 days. We'd rather fix it than
 argue about it.
 
 If we can't resolve it that way, either of us may bring the dispute before any

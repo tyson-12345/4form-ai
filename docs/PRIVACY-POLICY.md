@@ -18,8 +18,8 @@
 
 - **Your videos never leave your phone.** Analysis happens on your device. We
   never receive, store, or see your footage.
-- **What we do receive are measurements** — joint angles and movement
-  statistics — plus your account details and what you type into the app.
+- **What we do receive are measurements**: joint angles and movement
+  statistics, plus your account details and what you type into the app.
 - **We don't sell your data, and we don't advertise.**
 - **You can delete your account and everything in it from inside the app**, at
   any time, without contacting us.
@@ -29,7 +29,7 @@
 ## 1. Who we are
 
 4Form AI is operated by Tyson Youm and Oscar Chuang.
-There is no office and no postal correspondence — every route to us is by
+There is no office and no postal correspondence. Every route to us is by
 email, and each address below reaches a person.
 Questions: **privacy@4formai.com**
 
@@ -43,7 +43,7 @@ here.
 | Data | Why | Kept |
 |---|---|---|
 | Email address | Sign-in, password reset, security notices | Until you delete your account |
-| Password | Sign-in. Stored only as a bcrypt hash — we cannot read it | Until you delete your account |
+| Password | Sign-in. Stored only as a bcrypt hash, which we cannot read | Until you delete your account |
 | Name | Shown in the app | Until you delete your account |
 | Date of birth | Checking you are old enough to use the app (see §9). Required on both ways of signing up, and kept afterwards rather than discarded once checked, so the check can be re-verified. We store the date only, never a time | Until you delete your account |
 | If you sign in with Apple or Google: the account identifier that provider gives us, and the email address it tells us | Recognising you as the same person on your next sign-in, and letting support see which provider your account uses. With Apple this address may be a private relay address rather than your own | Until you delete your account |
@@ -87,7 +87,7 @@ delete the session or uninstall the app.
 
 ## 3. A note on what the measurements are, and are not
 
-The app measures **how a body moves in a video** — angles between limbs over
+The app measures **how a body moves in a video**: angles between limbs over
 time. It does not perform facial recognition, fingerprinting, or any form of
 identification from your body. The measurements cannot be used to recognise you
 in another video, and we do not attempt to.
@@ -114,7 +114,7 @@ choosing "Return from injury" or "Stay injury-free" as a goal. UK/EU law treats
 health data as a *special category*: an ordinary legal basis is not enough by
 itself, and a second condition from Article 9 has to sit on top of it. The
 condition we rely on is your explicit consent, Article 9(2)(a). It covers those
-two items and nothing else in this policy — your measurements, scores and risk
+two items and nothing else in this policy. Your measurements, scores and risk
 flags are not health data in our view, for the reasons in §3.
 
 Concretely, that consent is the answer you give during onboarding, at the step
@@ -165,12 +165,12 @@ When a clip is analysed, we send the measurements and scores from that clip,
 the sport and level on your profile, **the session title you typed**, your
 stated goals, **your injury concerns** if you have given any, and **the
 coaching notes we wrote for your two most recent completed sessions in the same
-sport** — so the coach builds on what it already told you instead of repeating
+sport**, so the coach builds on what it already told you instead of repeating
 it. When you write to the coach in chat, we send the last ten messages of that
 conversation, your sport and level, and the title, scores, strengths and
 improvements from your most recent measured session.
 
-Your **video is not sent** — Anthropic receives numbers and text, never footage.
+Your **video is not sent**: Anthropic receives numbers and text, never footage.
 Your name, email address and date of birth are not sent either, and neither is
 anything from your Apple or Google sign-in. Under Anthropic's commercial terms,
 this data is not used to train their models.
@@ -185,8 +185,8 @@ rights and safety of our users.
 are listed in §5, and some of them are in the United States.
 
 If you are in the UK or EU, your data therefore moves between countries. We
-have a data processing agreement with **each** of the four companies in §5 —
-Railway, Supabase, Anthropic and Resend — and every one of them incorporates
+have a data processing agreement with **each** of the four companies in §5
+(Railway, Supabase, Anthropic and Resend), and every one of them incorporates
 the European Commission's **Standard Contractual Clauses**, and the UK addendum
 to them where UK data is involved. If you would like a copy of those
 arrangements, write to privacy@4formai.com and we will send them.
@@ -245,7 +245,7 @@ only companies your device contacts are the four above.
 ## 7. How long we keep it
 
 Your data stays until you delete it. When you delete your account, your account
-row — including your date of birth and any Apple or Google sign-in link — and
+row (including your date of birth and any Apple or Google sign-in link) and
 your profile, analyses, measurements, coaching notes and chat history are
 removed. A copy can survive for a short time in our database provider's routine
 backups, which are overwritten on a rolling schedule. No backup is kept for
@@ -271,15 +271,15 @@ identify you may be retained.
 
 **In the app, right now:**
 
-- **Delete your account and all your data** — Profile → Delete account. Takes
+- **Delete your account and all your data**: Profile → Delete account. Takes
   effect immediately and needs no email to us.
-- **Delete a single session** — swipe it away in your sessions list.
-- **Delete a clip** — it is a file on your device; deleting the session removes
+- **Delete a single session**: swipe it away in your sessions list.
+- **Delete a clip**: it is a file on your device; deleting the session removes
   it.
 
 **On request, at privacy@4formai.com:** access a copy of your data,
 correct it, restrict or object to processing, withdraw a consent you have given
-— including the injury information covered by §4, which we will clear for you —
+(including the injury information covered by §4, which we will clear for you),
 or receive it in portable form. We respond within 30 days.
 
 UK/EU users may complain to their supervisory authority (in the UK, the ICO).

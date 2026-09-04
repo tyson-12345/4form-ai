@@ -166,7 +166,7 @@ function serveDocument(
     );
     res.status(503).send(
       shell(
-        `${title} — 4Form AI`,
+        `${title} · 4Form AI`,
         nonce,
         `<h1>${title}</h1>
   <p class="lede">This document is not published yet.</p>
@@ -178,7 +178,7 @@ function serveDocument(
     return;
   }
 
-  res.status(200).send(shell(`${title} — 4Form AI`, nonce, renderMarkdown(markdown)));
+  res.status(200).send(shell(`${title} · 4Form AI`, nonce, renderMarkdown(markdown)));
 }
 
 router.get("/privacy", (_req, res) => {
